@@ -140,7 +140,7 @@ footer {
   color:var(--chapter); font-size:var(--text-xs); white-space:nowrap;
 }
 .intro { max-width:74ch; margin:var(--s-4) 0 var(--s-6); color:var(--text-muted); font-size:var(--text-md); line-height:1.7; }
-.play-layout { display:grid; grid-template-columns:minmax(0,1.1fr) minmax(0,1fr); gap:var(--s-4); align-items:start; }
+.play-layout { display:grid; grid-template-columns:minmax(0,1.35fr) minmax(0,1fr); gap:var(--s-4); align-items:start; }
 
 .arena-panel, .console-panel {
   display:flex; flex-direction:column; min-width:0;
@@ -650,3 +650,4 @@ kbd { padding:2px 5px; border:1px solid var(--line-strong); border-radius:4px; b
 .city-swatch.is-hot { border-top-width:5px; border-top-color:var(--danger); }
 .city-swatch.is-starved, .city-swatch.is-offline { width:18px; height:12px; border:1.5px solid var(--warn); border-radius:4px; }
 .city-swatch.is-offline { border-color:var(--danger); border-style:dashed; }
+.iso-stage { display:block; width:100%; height:auto; touch-action:manipulation; }

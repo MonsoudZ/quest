@@ -6,6 +6,8 @@ import {mountCity} from './citylab.js';
 import {registerGameTools} from './webmcp.js';
 import {createScene} from './scene.js';
 import {reveal, reduceMotion} from './ui.js';
+import {createStage} from './stage.js';
+import {sceneFor} from './scenes.js';
 
 const $ = id => document.getElementById(id);
 const saveKey = 'signal-quest-v2';
@@ -18,6 +20,7 @@ const collapsed = new Set(Array.isArray(saved?.collapsed) ? saved.collapsed : []
 let hintIndex = 0, unit = null, visited = [], trace = null, traceIndex = 0, runToken = 0, running = false;
 let sound = false, audioContext = null, scene = null, sceneLevel = null, networkResult = null;
 let puzzleState = null, algoResult = null, mode = 'campaign';
+let stage = null, stageKind = null;
 const level = () => levels[current];
 
 function persist() {
@@ -158,6 +161,7 @@ function loadMission(index) {
   hintIndex = 0; trace = null; traceIndex = 0; visited = []; networkResult = null; algoResult = null;
   unit = item.start ? {x:item.start[0], y:item.start[1], dir:item.start[2]} : null;
   scene?.destroy(); scene = null; sceneLevel = null;
+  stage?.destroy(); stage = null; stageKind = null;
   puzzleState = isPuzzle(item) ? initialState(item) : null;
 
   $('mission-meta').textContent = `MISSION ${String(current + 1).padStart(2, '0')} / ${String(levels.length).padStart(2, '0')} · ${item.chapter.toUpperCase()}`;
@@ -210,14 +214,41 @@ function renderArena(failed = -1) {
     return;
   }
   scene?.destroy(); scene = null; sceneLevel = null;
-  if (item.kind === 'algo') { renderCases(); return; }
+  if (item.kind === 'algo') { stage?.destroy(); stage = null; stageKind = null; renderCases(); return; }
   const rendered = view(item, puzzleState);
   document.querySelector('.network-instructions').textContent = rendered.instructions;
   $('legend').innerHTML = rendered.legend.map((entry, position) => `<span${position === 0 ? ' class="legend-unit"' : ''}>${entry}</span>`).join('');
   $('link-total').textContent = rendered.summary;
-  if (rendered.diagram.type === 'graph') renderNetwork(failed);
-  else renderDiagram(rendered.diagram);
+  const built = sceneFor(item);
+  if (built) renderStage(item, built);
+  else {
+    stage?.destroy(); stage = null; stageKind = null;
+    if (rendered.diagram.type === 'graph') renderNetwork(failed);
+    else renderDiagram(rendered.diagram);
+  }
   renderWidgets();
+}
+
+// A mission with an isometric scene draws it on a canvas; clicking a solid does
+// whatever clicking the matching control would.
+function renderStage(item, built) {
+  if (!stage || stageKind !== item.id) {
+    stage?.destroy();
+    stage = createStage($('arena'), {
+      bounds:state => built.bounds(state.level, state.state),
+      build:(scene, context) => built.build(scene, {...context, level:context.state.level, state:context.state.state}),
+      describe:state => built.describe(state.level, state.state),
+      still:built.still ?? false,
+      aspect:built.aspect ?? 0.58,
+      onPick:id => {
+        const [type, index] = String(id).split('-');
+        if (type === 'bit') act({type:'bit', index:Number(index)});
+        if (type === 'link') act({type:'link', index:Number(index)});
+      }
+    });
+    stageKind = item.id;
+  }
+  stage.update({level:item, state:puzzleState});
 }
 
 // Diagrams are described by the puzzle layer and drawn by these few renderers,
