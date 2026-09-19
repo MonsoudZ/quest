@@ -230,3 +230,62 @@ test('the chips beside the console name things that exist in that mission', () =
     }
   }
 });
+
+test('every mission that ships evidence ships all of it', () => {
+  // A language panel and an artifact panel are the same panel: read-only
+  // material beside the lesson, never a control and never the answer.
+  const panels = levels.filter(level => level.artifact).map(level => ({level, panel:level.artifact, key:'panes'}));
+  assert.ok(panels.length >= 4, `only ${panels.length} missions carry an artifact panel`);
+  for (const {level, panel} of panels) {
+    assert.ok(panel.title.length > 8 && panel.note.length > 30, `${level.id} panel needs a title and a note`);
+    assert.ok(panel.panes.length >= 3, `${level.id} shows only ${panel.panes.length} panes`);
+    const seen = new Set();
+    for (const pane of panel.panes) {
+      assert.ok(pane.label && pane.code && pane.note, `${level.id} has an incomplete pane`);
+      assert.ok(pane.note.length > 30, `${level.id}/${pane.label} needs a note that says what to read in it`);
+      assert.ok(!seen.has(pane.label), `${level.id} lists ${pane.label} twice`);
+      seen.add(pane.label);
+      assert.ok(pane.code.split('\n').length <= 10, `${level.id}/${pane.label} is too tall for the panel`);
+    }
+  }
+  // Both chapters that were built out carry evidence, not just Programming.
+  for (const chapter of ['Networking', 'System design']) {
+    assert.ok(levels.some(level => level.chapter === chapter && level.artifact), `${chapter} has no mission with an artifact panel`);
+  }
+});
+
+test('the diagnosis missions hand over something broken and accept only the repair', () => {
+  const byId = id => levels.find(level => level.id === id);
+
+  // A misconfiguration, not a blank form: the mission starts wrong on purpose.
+  const wiring = byId('same-deck-or-not');
+  assert.equal(evaluate(wiring, initialState(wiring)).success, false);
+  assert.equal(evaluate(wiring, solutionState(wiring)).success, true);
+  // The fault is the mask, so the right gateway with the wrong mask still fails.
+  const halfFixed = {...initialState(wiring), dials:{prefix:24, gateway:'10.20.0.1'}};
+  assert.equal(evaluate(wiring, halfFixed).success, false);
+  assert.match(evaluate(wiring, halfFixed).message, /directly/);
+
+  // The incident mission is handed a running design that is saturated in one tier.
+  const incident = byId('bring-it-back');
+  const before = evaluate(incident, initialState(incident));
+  assert.equal(before.success, false);
+  assert.match(before.message, /Overloaded/);
+  assert.equal(before.result.utilisation.read > 1, true, 'the tier the mission is about is the one over capacity');
+  assert.equal(before.result.utilisation.app < 1, true, 'no other tier is saturated, so the diagnosis is unambiguous');
+  // Buying capacity in the wrong tier does not fix it, and buying everything is refused on cost.
+  const wrongTier = {...initialState(incident), dials:{...initialState(incident).dials, servers:18}};
+  assert.equal(evaluate(incident, wrongTier).success, false);
+  const everything = {...initialState(incident), dials:{servers:18, web:2, db:2, cache:3, replicas:4}};
+  const lavish = evaluate(incident, everything);
+  assert.equal(lavish.success, false);
+  assert.match(lavish.message, /credits|budget/);
+  assert.equal(evaluate(incident, solutionState(incident)).success, true);
+
+  // The estimation mission is checked against its own model, not a stored key.
+  const estimate = byId('size-it-yourself');
+  const rows = evaluate(estimate, solutionState(estimate));
+  assert.equal(rows.success, true);
+  assert.deepEqual(solutionState(estimate).choices, rows.rows.map(row => row.answer),
+    'the shipped answers are the ones the estimators compute');
+});

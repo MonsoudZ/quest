@@ -1,7 +1,7 @@
 # Signal Quest
 
 A game that teaches programming, computer science, networking, and system design by making you
-do each of them. Thirty-eight missions across four chapters, plus an architecture lab where you
+do each of them. Forty-four missions across four chapters, plus an architecture lab where you
 design a service against a latency, availability, and cost target.
 
 ## Play
@@ -36,14 +36,41 @@ signed integers, sorting by adjacent swaps, hash tables and collisions, growth r
 paths on unweighted and weighted graphs. The missions that ask you to *write* an algorithm moved
 to Chapter 1; what is left is the ideas, taught through models you manipulate directly.
 
-**Chapter 3 — Networking** (8 missions). Protocol layering and the maximum segment size, CIDR
+**Chapter 3 — Networking** (11 missions). Protocol layering and the maximum segment size, CIDR
 addressing, variable-length subnet planning inside a single /24, longest-prefix-match forwarding,
 window sizing against the bandwidth-delay product, retransmission strategy and wasted bandwidth
 under loss, DNS resolution and caching, and the round trips before an HTTPS response's first byte.
+Then three that go further:
 
-**Chapter 4 — System design** (3 missions plus the lab). Capacity estimation, queueing and tail
+- **local delivery** — a host that has been unreachable since a re-addressing. Its address is
+  right; its mask and gateway are not. A host decides whether a destination is a neighbour from
+  its own mask and nothing else, and both faults here follow from that;
+- **address translation** — one public address for the whole station. Replies find their way
+  home through the translation table, an unsolicited probe matches nothing and is dropped, and
+  publishing a port is a decision with a blast radius;
+- **congestion control** — the same 4 MiB over a short fat link and a long thin one. Every fixed
+  window fails one of them: too small and the link idles, too large and the excess sits in a
+  buffer until it overflows. Slow start meets both without being told either path's capacity.
+
+**Chapter 4 — System design** (6 missions plus the lab). Capacity estimation, queueing and tail
 latency, fan-out, redundancy arithmetic, and the trades behind eventual consistency, idempotency,
-and cache invalidation. The architecture lab then gives you five contracts to design for.
+and cache invalidation. Three of the six are worked rather than chosen:
+
+- **estimation** — five given numbers and five figures to derive: peak requests per second,
+  storage a day, a year of it with replicas, monthly egress, and servers at 70% headroom. The
+  model computes each answer from the givens, so a mission cannot ship a figure that disagrees
+  with its own arithmetic;
+- **error budgets** — an objective, a month's incident log with one partial outage, and a policy.
+  Work out what is left of the budget, then decide whether the risky change ships;
+- **an incident** — not a blank page but the design that is running, saturated in exactly one
+  tier, with a credit cap tighter than the contract's. One of 192 configurations is a repair.
+
+The architecture lab then gives you five contracts to design for.
+
+Missions in both chapters carry a read-only **evidence panel**: `ip addr` and `ip neigh` output
+for the unreachable host, `conntrack` rows for the NAT, `ss -ti` for the congestion window, an
+SLO definition and an error budget policy, the page and dashboard for the incident. Same panel as
+Chapter 1's language comparison, different material.
 
 ### The two build modes
 
@@ -98,7 +125,7 @@ mission on a 1366×768 screen changed nothing visible at all.
 The colour scheme follows the operating system and can be overridden with the toggle in the
 header, which is then remembered. Text meets WCAG AA contrast in both schemes, icon-only
 controls on small screens keep their labels in the accessibility tree, and everything honours
-`prefers-reduced-motion`. The 38 missions are grouped into four collapsible chapters, each
+`prefers-reduced-motion`. The 44 missions are grouped into four collapsible chapters, each
 carrying its own progress and accent colour; on a phone the rail becomes a drawer over the
 mission it is currently on.
 
@@ -149,6 +176,25 @@ and so does this list:
   approximated from cache size against the working set. Availability composes redundant instances
   in parallel and tiers in series. Prices, capacities, and failure rates are fictional. Real
   systems add bursty arrivals, correlated failures, coordination, and cold starts.
+- **Congestion control.** A round-trip-at-a-time model: the window doubles until the path plus
+  its bottleneck buffer cannot hold it, then halves and climbs by one. It reproduces slow start,
+  additive increase / multiplicative decrease, and the fact that a window past the
+  bandwidth-delay product buys retransmissions rather than throughput. It has one sender, one
+  bottleneck, no competing flows, no delayed acknowledgements, and no fast retransmit, so it
+  cannot show senders converging on a fair share.
+- **Local delivery and NAT.** The addressing arithmetic is real. Everything around it is a single
+  hop: no switching fabric, no ARP timers or caches, no route metrics, and a translation table
+  that never expires an entry. The NAT allocates ports sequentially from 49152 rather than
+  randomising them, which a real implementation does precisely because predictable ports are
+  guessable.
+- **Error budgets.** Downtime is minutes of total unavailability weighted by the fraction of
+  users affected, which is the simplest of several real definitions; measuring against requests
+  rather than time gives different numbers. The ship / slow-down / freeze thresholds are this
+  game's policy, stated in `errorBudget` so a mission can be checked against it, not an industry
+  standard.
+- **Estimation.** The estimators use powers of ten for storage and bandwidth and ignore the
+  ~7% difference from powers of two, because an estimate scored on its order of magnitude cannot
+  tell the difference.
 - **Graph missions.** Link weights are fixed delays. Real packet delay also depends on
   transmission, processing, and queueing.
 - **Signal City.** Routing is shortest-path on an OSPF-style metric (a reference bandwidth over
@@ -162,7 +208,7 @@ and the tests check them against independent implementations.
 
 ## Validation
 
-Run `npm test` and `npm run check`. 93 tests across nine files:
+Run `npm test` and `npm run check`. 119 tests across ten files:
 
 - `tests/lang.test.mjs` — 30 programs run in both the interpreter and real JavaScript via
   `node:vm` and compared, plus the refusals, the deliberate deviations, and the bounds.
@@ -191,7 +237,7 @@ Run `npm test` and `npm run check`. 93 tests across nine files:
   against path enumeration, and every puzzle's whole option space enumerated to prove it is
   winnable, not winnable by accident, and solved by the answer it ships.
 
-A browser pass was run with Playwright against the development server: all 31 missions complete
+A browser pass was run with Playwright against the development server: all 44 missions complete
 from their own "show a solution" button, all 5 architecture contracts and all 5 city contracts
 are met, a city built by clicking the map passes its contract and fails again when cables are
 removed, and the page reports no script errors. Outcomes were checked to land on screen at 1440×960,

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {parseAddress, formatAddress, maskFor, subnet, smallestPrefixFor, allocate, longestPrefixMatch, encapsulate, transfer, timeline, NetError} from '../dist/net.js';
+import {parseAddress, formatAddress, maskFor, subnet, smallestPrefixFor, allocate, longestPrefixMatch, encapsulate, transfer, timeline, NetError, reachability, translate, congestion} from '../dist/net.js';
 
 // An independent implementation of IPv4 addressing that works on binary strings
 // instead of 32-bit integer arithmetic, so the two cannot share a mistake.
@@ -206,4 +206,110 @@ test('a timeline accumulates elapsed time in order', () => {
   assert.deepEqual(path.rows.map(row => row.elapsed), [10, 15, 17.5]);
   assert.equal(path.totalMs, 17.5);
   assert.equal(timeline([]).totalMs, 0);
+});
+
+test('a host decides local delivery from its own mask, and nothing else', () => {
+  // The same destination, two masks: /24 makes it a neighbour, /25 does not.
+  const wide = reachability({host:'10.20.0.10', prefix:24, gateway:'10.20.0.1', destination:'10.20.0.130'});
+  const tight = reachability({host:'10.20.0.10', prefix:25, gateway:'10.20.0.1', destination:'10.20.0.130'});
+  assert.equal(wide.delivery, 'direct');
+  assert.equal(tight.delivery, 'gateway');
+  assert.equal(tight.arpFor, '10.20.0.1');
+
+  // A gateway outside the host's own block cannot be used, however valid it looks.
+  const stranded = reachability({host:'10.20.0.10', prefix:25, gateway:'10.20.0.129', destination:'10.30.0.5'});
+  assert.equal(stranded.delivery, 'none');
+  assert.equal(stranded.gatewayLocal, false);
+  assert.match(stranded.reason, /outside/);
+
+  // No gateway at all is a different fault with the same symptom.
+  assert.equal(reachability({host:'10.20.0.10', prefix:25, gateway:null, destination:'10.30.0.5'}).delivery, 'none');
+
+  // Network and broadcast addresses are not hosts, in either direction.
+  assert.equal(reachability({host:'10.20.0.10', prefix:25, gateway:'10.20.0.1', destination:'10.20.0.127'}).reachable, false);
+  assert.throws(() => reachability({host:'10.20.0.0', prefix:25, gateway:'10.20.0.1', destination:'10.20.0.9'}), /network address/);
+  assert.throws(() => reachability({host:'10.20.0.127', prefix:25, gateway:'10.20.0.1', destination:'10.20.0.9'}), /broadcast address/);
+
+  // A /31 has no network or broadcast address to lose, so both ends are hosts.
+  assert.equal(reachability({host:'10.20.0.0', prefix:31, gateway:null, destination:'10.20.0.1'}).delivery, 'direct');
+
+  // Checked against the arithmetic done independently: same block, same answer.
+  const mask = prefix => prefix === 0 ? 0 : (0xFFFFFFFF << (32 - prefix)) >>> 0;
+  const value = text => text.split('.').reduce((total, part) => total * 256 + Number(part), 0);
+  for (const prefix of [8, 16, 20, 24, 25, 26, 28, 30]) {
+    for (const destination of ['10.20.0.20', '10.20.0.130', '10.20.5.5', '10.30.0.5', '192.0.2.1']) {
+      const expected = ((value('10.20.0.10') & mask(prefix)) >>> 0) === ((value(destination) & mask(prefix)) >>> 0);
+      const actual = reachability({host:'10.20.0.10', prefix, gateway:'10.20.0.1', destination}).local;
+      assert.equal(actual, expected, `/${prefix} → ${destination}`);
+    }
+  }
+});
+
+test('NAT tells flows apart by port, and drops what nothing inside asked for', () => {
+  const flows = [
+    {direction:'out', source:'10.20.0.10', sourcePort:51000, destination:'203.0.113.9', destinationPort:443},
+    {direction:'out', source:'10.20.0.11', sourcePort:51000, destination:'203.0.113.9', destinationPort:443},
+    {direction:'in', source:'203.0.113.9', sourcePort:443, replyTo:0},
+    {direction:'in', source:'203.0.113.9', sourcePort:443, replyTo:1},
+    {direction:'in', source:'198.51.100.7', sourcePort:40112, destinationPort:22}
+  ];
+  const run = translate({publicAddress:'198.51.100.2', flows});
+  // Two inside hosts using the identical private port still get distinct
+  // outside ports, which is the only thing keeping their replies apart.
+  assert.equal(run.table.length, 2);
+  assert.notEqual(run.table[0].outsidePort, run.table[1].outsidePort);
+  assert.equal(run.flows[2].seenAs, '10.20.0.10:51000');
+  assert.equal(run.flows[3].seenAs, '10.20.0.11:51000');
+  assert.equal(run.flows[4].delivered, false);
+  assert.match(run.flows[4].reason, /no forward covers it/);
+
+  // The same outbound flow seen twice reuses its entry rather than burning a port.
+  const repeated = translate({publicAddress:'198.51.100.2', flows:[flows[0], flows[0], flows[0]]});
+  assert.equal(repeated.table.length, 1);
+
+  // A forward is what makes an inside service reachable, and only that port.
+  const published = translate({publicAddress:'198.51.100.2', flows, forwards:[{publicPort:22, inside:'10.20.0.10', insidePort:22}]});
+  assert.equal(published.flows[4].delivered, true);
+  assert.equal(published.flows[4].seenAs, '10.20.0.10:22');
+  const other = translate({publicAddress:'198.51.100.2', flows:[{direction:'in', source:'198.51.100.7', sourcePort:1, destinationPort:80}], forwards:[{publicPort:22, inside:'10.20.0.10', insidePort:22}]});
+  assert.equal(other.flows[0].delivered, false);
+});
+
+test('slow start finds a path’s window; a fixed one is right for at most one path', () => {
+  const spine = {rttMs:8, capacityMbps:400, bufferPackets:12};
+  const relay = {rttMs:500, capacityMbps:1.5, bufferPackets:12};
+  const bytes = 4 * 1048576;
+
+  // The bandwidth-delay product, computed here independently of the model.
+  const bdp = link => Math.round((link.capacityMbps * 1e6 * (link.rttMs / 1000)) / 8 / 1460);
+  assert.equal(congestion(spine, {bytes, mode:'slow-start'}).bdpPackets, bdp(spine));
+  assert.equal(congestion(relay, {bytes, mode:'slow-start'}).bdpPackets, bdp(relay));
+
+  // Doubling every round trip until something is lost, then halving.
+  const ramp = congestion(spine, {bytes, mode:'slow-start'}).rounds.slice(0, 6).map(round => round.cwnd);
+  assert.deepEqual(ramp, [1, 2, 4, 8, 16, 32]);
+
+  // A window far past what the path holds buys no time and costs retransmissions.
+  const tuned = congestion(spine, {bytes, mode:'fixed', fixedWindow:bdp(spine)});
+  const bloated = congestion(spine, {bytes, mode:'fixed', fixedWindow:bdp(spine) * 4});
+  assert.equal(tuned.wasted, 0);
+  assert.ok(bloated.wasted > 0.3, `${bloated.wasted}`);
+  assert.ok(bloated.seconds >= tuned.seconds * 0.95, 'a bloated window is not faster');
+
+  // A window far under it leaves the link idle.
+  const starved = congestion(spine, {bytes, mode:'fixed', fixedWindow:16});
+  assert.ok(starved.utilisation < 0.1, `${starved.utilisation}`);
+  assert.ok(starved.seconds > tuned.seconds * 8);
+
+  // No single fixed window meets both links; slow start meets both.
+  const meets = (link, result) => result.seconds <= link.target && result.wasted <= 0.1;
+  const targets = [{...spine, target:0.3}, {...relay, target:30}];
+  for (const window of [16, 64, 274, 512]) {
+    const both = targets.every(link => meets(link, congestion(link, {bytes, mode:'fixed', fixedWindow:window})));
+    assert.equal(both, false, `a fixed window of ${window} met both links`);
+  }
+  assert.equal(targets.every(link => meets(link, congestion(link, {bytes, mode:'slow-start'}))), true);
+
+  assert.throws(() => congestion(spine, {bytes, mode:'fixed', fixedWindow:0}), /at least one packet/);
+  assert.throws(() => congestion(spine, {bytes, mode:'sideways'}), /slow start or a fixed window/);
 });

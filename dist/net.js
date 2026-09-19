@@ -223,3 +223,153 @@ export function timeline(steps) {
   });
   return {rows, totalMs:roundTo(elapsed, 2)};
 }
+
+// -------------------------------------------------------- local delivery
+
+// Whether a host puts a frame on the wire for the destination itself or hands it
+// to its gateway is decided entirely by the sending host's own mask — not by the
+// destination's. Two hosts with different masks can disagree about whether they
+// are neighbours, which is the fault this models.
+export function reachability({host, prefix, gateway, destination}) {
+  const hostValue = parseAddress(host);
+  const destinationValue = parseAddress(destination);
+  const block = subnet(hostValue, prefix);
+  if (hostValue === block.networkValue && prefix <= 30) fail(`${host} is the network address of ${block.cidr}, so it cannot be a host.`);
+  if (hostValue === block.broadcastValue && prefix <= 30) fail(`${host} is the broadcast address of ${block.cidr}, so it cannot be a host.`);
+
+  const local = block.inSubnet(destinationValue);
+  const gatewayValue = gateway === null || gateway === undefined ? null : parseAddress(gateway);
+  const gatewayLocal = gatewayValue !== null && block.inSubnet(gatewayValue);
+  const usable = value => !(prefix <= 30 && (value === block.networkValue || value === block.broadcastValue));
+
+  if (local) {
+    return {
+      delivery:'direct', reachable:usable(destinationValue), block, local, gatewayLocal,
+      arpFor:destination,
+      reason:usable(destinationValue)
+        ? `${destination} is inside ${block.cidr}, so this host ARPs for it and puts the frame on the wire itself.`
+        : `${destination} is the network or broadcast address of ${block.cidr}, so no host answers for it.`
+    };
+  }
+  if (gatewayValue === null) {
+    return {delivery:'none', reachable:false, block, local, gatewayLocal:false, arpFor:null,
+      reason:`${destination} is outside ${block.cidr} and this host has no gateway, so the packet has nowhere to go.`};
+  }
+  if (!gatewayLocal) {
+    return {delivery:'none', reachable:false, block, local, gatewayLocal, arpFor:null,
+      reason:`The gateway ${gateway} is outside ${block.cidr}. A host can only reach a gateway it believes is a neighbour, so this one is unusable.`};
+  }
+  return {delivery:'gateway', reachable:true, block, local, gatewayLocal, arpFor:gateway,
+    reason:`${destination} is outside ${block.cidr}, so this host ARPs for the gateway ${gateway} and sends the frame there.`};
+}
+
+// ----------------------------------------------------------------- NAT
+
+// Source NAT with port overloading, the way a home or office router works: many
+// private sources share one public address, distinguished by port. The table is
+// keyed by the outbound flow, which is why an unsolicited inbound packet has
+// nothing to match and is dropped unless a forward was configured in advance.
+export function translate({publicAddress, flows, forwards = [], firstPort = 49152}) {
+  const table = [];
+  const byKey = new Map();
+  let nextPort = firstPort;
+  const results = flows.map(flow => {
+    if (flow.direction === 'out') {
+      const key = `${flow.source}:${flow.sourcePort}->${flow.destination}:${flow.destinationPort}`;
+      let entry = byKey.get(key);
+      if (!entry) {
+        entry = {
+          key, inside:flow.source, insidePort:flow.sourcePort,
+          outside:publicAddress, outsidePort:nextPort++,
+          peer:flow.destination, peerPort:flow.destinationPort
+        };
+        byKey.set(key, entry);
+        table.push(entry);
+      }
+      return {
+        ...flow, delivered:true, entry,
+        seenAs:`${entry.outside}:${entry.outsidePort}`,
+        reason:`The router rewrites the source to ${entry.outside}:${entry.outsidePort} and remembers the flow, so the reply can be sent back to ${entry.inside}:${entry.insidePort}.`
+      };
+    }
+    // Inbound: a reply to a flow this router started, a configured forward, or
+    // nothing. A level names the flow being replied to rather than guessing which
+    // port the router happened to allocate.
+    const answered = flow.replyTo === undefined ? null : table[flow.replyTo];
+    const port = answered ? answered.outsidePort : flow.destinationPort;
+    const reply = table.find(entry => entry.outsidePort === port && entry.peer === flow.source);
+    if (reply) {
+      return {...flow, delivered:true, entry:reply, seenAs:`${reply.inside}:${reply.insidePort}`,
+        port, reason:`Port ${port} matches the flow ${reply.inside}:${reply.insidePort} started, so the reply is translated back to it.`};
+    }
+    const forward = forwards.find(rule => rule.publicPort === port);
+    if (forward) {
+      return {...flow, delivered:true, entry:null, port, seenAs:`${forward.inside}:${forward.insidePort}`,
+        reason:`A forward for port ${forward.publicPort} sends this to ${forward.inside}:${forward.insidePort}. Without it the router would have nothing to match.`};
+    }
+    return {...flow, delivered:false, entry:null, port, seenAs:null,
+      reason:`Nothing inside started a flow on port ${port} and no forward covers it, so the router drops the packet. This is why a device behind NAT is not reachable from outside by default.`};
+  });
+  return {publicAddress, table, flows:results, delivered:results.filter(flow => flow.delivered).length};
+}
+
+// -------------------------------------------------- congestion control
+
+// Slow start and congestion avoidance over the same link model as transfer():
+// the window is no longer chosen once, it is discovered. cwnd doubles each round
+// trip until it reaches ssthresh or loses a packet, then grows by one packet per
+// round trip. A loss halves ssthresh; a timeout drops cwnd back to one.
+export function congestion({rttMs, capacityMbps, mss = 1460, bufferPackets = Infinity}, plan) {
+  const {bytes, initialWindow = 1, mode = 'slow-start', fixedWindow = 0, maxRounds = 400} = plan;
+  if (!['slow-start', 'fixed'].includes(mode)) fail('Choose slow start or a fixed window.');
+  const packets = Math.ceil(bytes / mss);
+  // Packets a round trip can hold end to end: the bandwidth-delay product, plus
+  // whatever the bottleneck buffer will absorb before it starts dropping.
+  const bdpPackets = Math.max(1, Math.round((capacityMbps * 1e6 * (rttMs / 1000)) / 8 / mss));
+  const ceiling = bdpPackets + (bufferPackets === Infinity ? 0 : bufferPackets);
+
+  let cwnd = mode === 'fixed' ? fixedWindow : initialWindow;
+  if (mode === 'fixed' && (!Number.isInteger(fixedWindow) || fixedWindow < 1)) fail('A fixed window holds at least one packet.');
+  let ssthresh = Infinity, sent = 0, losses = 0, retransmitted = 0, elapsed = 0;
+  const rounds = [];
+
+  while (sent < packets && rounds.length < maxRounds) {
+    const inFlight = Math.max(1, Math.min(Math.floor(cwnd), packets - sent));
+    // Anything beyond what the path and its buffer hold is dropped this round.
+    const dropped = Math.max(0, inFlight - ceiling);
+    const through = inFlight - dropped;
+    // A round trip costs at least the RTT, and longer if the data cannot be
+    // serialised onto the link inside one.
+    const serialiseMs = (through * mss * 8) / (capacityMbps * 1000);
+    elapsed += Math.max(rttMs, serialiseMs);
+    sent += through;
+    rounds.push({round:rounds.length + 1, cwnd:Math.floor(cwnd), sent:through, dropped, delivered:sent, atMs:roundTo(elapsed, 2)});
+
+    if (dropped > 0) {
+      losses++;
+      retransmitted += dropped;
+      if (mode === 'slow-start') {
+        ssthresh = Math.max(2, Math.floor(cwnd / 2));
+        cwnd = ssthresh;                       // fast recovery, not a timeout
+      }
+      continue;
+    }
+    if (mode === 'fixed') continue;
+    cwnd = cwnd < ssthresh ? cwnd * 2 : cwnd + 1;
+  }
+
+  if (sent < packets) fail('This transfer never finishes. A window of one packet per round trip cannot move this much data.');
+  const seconds = elapsed / 1000;
+  const transmissions = packets + retransmitted;
+  return {
+    packets, rounds, losses, retransmitted, transmissions,
+    wasted:roundTo(retransmitted / transmissions, 4),
+    peakWindow:Math.max(...rounds.map(round => round.cwnd)),
+    roundTrips:rounds.length,
+    timeMs:roundTo(elapsed, 2),
+    seconds:roundTo(seconds, 3),
+    throughputMbps:roundTo((packets * mss * 8) / (seconds * 1e6), 3),
+    utilisation:roundTo((packets * mss * 8) / (seconds * 1e6) / capacityMbps, 4),
+    bdpPackets, ceiling, mode
+  };
+}

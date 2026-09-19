@@ -36,6 +36,12 @@ const refs = {
   risk:{label:'Reference: Google SRE — embracing risk', url:'https://sre.google/sre-book/embracing-risk/'},
   queueing:{label:'Reference: Little’s law', url:'https://en.wikipedia.org/wiki/Little%27s_law'},
   cap:{label:'Reference: the CAP theorem', url:'https://en.wikipedia.org/wiki/CAP_theorem'},
+  arp:{label:'Reference: RFC 826 — address resolution', url:'https://www.rfc-editor.org/rfc/rfc826'},
+  nat:{label:'Reference: RFC 3022 — network address translation', url:'https://www.rfc-editor.org/rfc/rfc3022'},
+  congestion:{label:'Reference: RFC 5681 — TCP congestion control', url:'https://www.rfc-editor.org/rfc/rfc5681'},
+  estimation:{label:'Reference: numbers every engineer should know', url:'https://static.googleusercontent.com/media/research.google.com/en//people/jeff/stanford-295-talk.pdf'},
+  errorBudget:{label:'Reference: Google SRE — error budgets', url:'https://sre.google/workbook/error-budget-policy/'},
+  incident:{label:'Reference: Google SRE — managing incidents', url:'https://sre.google/sre-book/managing-incidents/'},
   records:{label:'Reference: MDN — working with objects', url:'https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Working_with_objects'},
   offByOne:{label:'Reference: the off-by-one error', url:'https://en.wikipedia.org/wiki/Off-by-one_error'},
   nested:{label:'Reference: MDN — indexing nested arrays', url:'https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Indexed_collections'},
@@ -651,7 +657,278 @@ export const levels = [
     takeaway:'Round trips, not bandwidth, decide time to first byte. Every handshake you can avoid is a whole round trip saved.', reference:refs.tls
   },
 
+  {
+    id:'same-deck-or-not', kind:'reach', chapter:'Networking', concept:'Local delivery', name:'The deck that cannot talk', location:'Wiring closet',
+    objective:'Repair one host’s mask and gateway so every destination leaves the way the address plan says it should.',
+    intro:'Operations was re-addressed last night and one console has been unreachable since. Its address is right. Everything it does with that address is wrong.',
+    lesson:'Before a host sends anything it asks one question: is this destination inside my own subnet? It answers with its own mask and nothing else — not the destination’s mask, not the gateway’s opinion. Inside, it ARPs for the destination and puts the frame on the wire itself. Outside, it ARPs for its gateway and hands the frame over. Two faults follow from that. A mask that is too short makes a host believe a distant deck is a neighbour, so it shouts for a machine no one can hear. A gateway outside the host’s own subnet is unusable, because the host cannot reach it either — which is why a wrong mask and a right gateway still fail together.',
+    host:'10.20.0.10',
+    destinations:[
+      {name:'Console two, same deck', address:'10.20.0.20', expect:'direct'},
+      {name:'Printer, same deck', address:'10.20.0.100', expect:'direct'},
+      {name:'Laboratories deck', address:'10.20.0.130', expect:'gateway'},
+      {name:'Off-station uplink', address:'10.30.0.5', expect:'gateway'}
+    ],
+    dials:[
+      {id:'prefix', label:'Subnet mask', help:'What this host believes its own block is', value:24, options:[
+        {value:24, label:'/24 · 255.255.255.0'},
+        {value:25, label:'/25 · 255.255.255.128'},
+        {value:26, label:'/26 · 255.255.255.192'},
+        {value:27, label:'/27 · 255.255.255.224'}
+      ]},
+      {id:'gateway', label:'Default gateway', help:'Where anything outside the block is sent', value:'10.20.1.1', options:[
+        {value:'10.20.0.1', label:'10.20.0.1'},
+        {value:'10.20.0.129', label:'10.20.0.129'},
+        {value:'10.20.1.1', label:'10.20.1.1'},
+        {value:'none', label:'No gateway'}
+      ]}
+    ],
+    artifact:{
+      title:'What the console reports',
+      note:'The output below is what you would see on the broken host. Read it before you touch a dial: three of these four lines are already telling you the fault.',
+      panes:[
+        {label:'ip addr', code:'2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500\n    inet 10.20.0.10/24 brd 10.20.0.255 scope global eth0', note:'The address is correct and the mask is not. /24 makes this host believe everything from .0 to .255 is a neighbour.'},
+        {label:'ip route', code:'default via 10.20.1.1 dev eth0\n10.20.0.0/24 dev eth0 proto kernel scope link src 10.20.0.10', note:'The default route points at a gateway that is not inside the block above, so the host cannot reach it either.'},
+        {label:'ip neigh', code:'10.20.0.130 dev eth0 FAILED\n10.20.1.1   dev eth0 FAILED\n10.20.0.20  dev eth0 lladdr 3c:fd:fe:04:19:c1 REACHABLE', note:'FAILED means nobody answered the ARP. The one that works is the only destination genuinely on this wire.'},
+        {label:'the plan', code:'operations  10.20.0.0/25    gateway 10.20.0.1\nlaboratories 10.20.0.128/25  gateway 10.20.0.129', note:'The address plan the station was re-cabled to. Operations is the lower half of the /24, not all of it.'}
+      ]
+    },
+    solution:{dials:{prefix:25, gateway:'10.20.0.1'}},
+    hints:['The plan says operations is 10.20.0.0/25 — the lower half. Under a /24 the host thinks 10.20.0.130 is a neighbour, and ARP for it goes unanswered.','A gateway has to be inside the host’s own block, or the host cannot reach it to hand anything over. With a /25 starting at 10.20.0.0, only one of the offered gateways qualifies.'],
+    takeaway:'A host’s mask is a claim about who its neighbours are. Get it wrong and the symptom is not “no route” but silence: the host is shouting on its own wire for a machine that was never there.', reference:refs.arp
+  },
+  {
+    id:'one-address-many-decks', kind:'nat', chapter:'Networking', concept:'Address translation', name:'One address, many decks', location:'Station border router',
+    objective:'The station has one public address. Let the replies home, keep the probes out, and publish only what has to be public.',
+    intro:'Forty devices inside, one address outside. The border router makes that work by rewriting every packet on the way out and remembering what it did.',
+    lesson:'Source NAT rewrites the private source address to the router’s public one and picks a fresh source port for each flow. That port is the whole trick: two hosts can talk to the same server on the same port and still be told apart, because the router gave each flow a different outside port. Replies match the table and are rewritten back. An unsolicited inbound packet matches nothing — the router has no idea which of forty devices it was meant for — so it is dropped. That is why a device behind NAT is unreachable from outside by default, and why publishing a service means adding a forward. A forward is not a small thing: it opens that port to everyone who can find the address, not only to the people you had in mind.',
+    publicAddress:'198.51.100.2',
+    flows:[
+      {direction:'out', source:'10.20.0.10', sourcePort:51000, destination:'203.0.113.9', destinationPort:443, name:'Crew console → weather service', expect:true},
+      {direction:'out', source:'10.20.0.11', sourcePort:51000, destination:'203.0.113.9', destinationPort:443, name:'Second console → weather service', expect:true},
+      {direction:'in', source:'203.0.113.9', sourcePort:443, replyTo:0, name:'Weather service replies', expect:true},
+      {direction:'in', source:'198.51.100.7', sourcePort:40112, destinationPort:22, name:'Unknown host probes port 22', expect:false},
+      {direction:'in', source:'198.51.100.7', sourcePort:40113, destinationPort:80, name:'Visitor loads the station portal', expect:true}
+    ],
+    forwardOptions:[
+      {id:'none', label:'Publish nothing', rules:[]},
+      {id:'ssh', label:'Publish 22 → console', rules:[{publicPort:22, inside:'10.20.0.10', insidePort:22}]},
+      {id:'web', label:'Publish 80 → portal', rules:[{publicPort:80, inside:'10.20.0.12', insidePort:8080}]},
+      {id:'both', label:'Publish 22 and 80', rules:[{publicPort:22, inside:'10.20.0.10', insidePort:22}, {publicPort:80, inside:'10.20.0.12', insidePort:8080}]}
+    ],
+    dials:[{id:'forward', label:'Published ports', help:'What the outside world is allowed to start a connection to', value:'none', options:[
+      {value:'none', label:'Publish nothing'},
+      {value:'ssh', label:'Publish 22 → console'},
+      {value:'web', label:'Publish 80 → portal'},
+      {value:'both', label:'Publish 22 and 80'}
+    ]}],
+    artifact:{
+      title:'The same two flows, three ways to look at them',
+      note:'Two consoles are talking to the same server on the same port. Only the translation table tells them apart.',
+      panes:[
+        {label:'conntrack', code:'tcp 6 431999 ESTABLISHED\n  src=10.20.0.10 dst=203.0.113.9 sport=51000 dport=443\n  src=203.0.113.9 dst=198.51.100.2 sport=443 dport=49152\ntcp 6 431998 ESTABLISHED\n  src=10.20.0.11 dst=203.0.113.9 sport=51000 dport=443\n  src=203.0.113.9 dst=198.51.100.2 sport=443 dport=49153', note:'Each entry is a flow the router started. The second line of each pair is the same flow as the outside world sees it — same private port, different public one.'},
+        {label:'what the server sees', code:'198.51.100.2:49152 → GET /forecast\n198.51.100.2:49153 → GET /forecast', note:'Two customers, one address. The server cannot tell there are forty devices behind it, which is both the point and the problem.'},
+        {label:'the dropped probe', code:'IN=eth0 SRC=198.51.100.7 DST=198.51.100.2\n  PROTO=TCP SPT=40112 DPT=22 SYN\n  → no conntrack entry, no forward: DROP', note:'Nothing inside started a flow on port 22, so there is no row to match and nowhere to send it.'}
+      ]
+    },
+    solution:{dials:{forward:'web'}},
+    hints:['Replies are already handled: the router remembers the flows it started, so nothing needs publishing for them.','The portal is meant to be public and the console’s SSH is not. Publishing a port opens it to the whole internet, so publish the fewest that meet the requirement.'],
+    takeaway:'NAT gives you one address and, as a side effect, a default-closed border. That side effect is not a security model — it is an accident of having nothing to match — but the decision it forces, publish only what must be public, is a real one.', reference:refs.nat
+  },
+  {
+    id:'ramp-up-carefully', kind:'congestion', chapter:'Networking', concept:'Congestion control', name:'Ramp up carefully', location:'Transfer control',
+    objective:'Send the same 4 MiB archive over two very different links, meeting both deadlines without wasting more than a tenth of what you send.',
+    intro:'One link is short and fat; the other is long and thin. The same sender has to do well on both, and it is not told which one it is on.',
+    lesson:'“Fill the pipe” told you to size a window to one bandwidth-delay product. This mission asks what to do when you do not know the pipe. Slow start begins at one packet and doubles every round trip, so it finds the path’s capacity in a logarithmic number of trips rather than being told it. When something is lost it halves and then climbs by one packet per round trip — additive increase, multiplicative decrease — which is what keeps many senders sharing a link from collapsing together. A fixed window can beat it on the link it was tuned for, and only on that link: too small and the link idles waiting for acknowledgements, too large and the excess sits in the bottleneck’s buffer until it overflows, so every extra packet is sent twice for no extra speed.',
+    bytes:4194304,
+    links:[
+      {name:'station spine', rttMs:8, capacityMbps:400, bufferPackets:12, target:{seconds:0.3, wasted:0.1}},
+      {name:'deep-space relay', rttMs:500, capacityMbps:1.5, bufferPackets:12, target:{seconds:30, wasted:0.1}}
+    ],
+    dials:[
+      {id:'sender', label:'How the sender chooses its window', help:'A size fixed in advance, or one discovered while sending', value:'fixed-16', options:[
+        {value:'fixed-16', label:'Fixed · 16 packets'},
+        {value:'fixed-64', label:'Fixed · 64 packets'},
+        {value:'fixed-274', label:'Fixed · 274 packets'},
+        {value:'fixed-512', label:'Fixed · 512 packets'},
+        {value:'slow-start', label:'Slow start, then additive increase'}
+      ]}
+    ],
+    artifact:{
+      title:'A congestion window, as the sender records it',
+      note:'Both columns are the same code on different paths. The shape is the algorithm: double, lose, halve, climb.',
+      panes:[
+        {label:'ss -ti (spine)', code:'cwnd:274 ssthresh:137 bytes_acked:4194304\n rtt:8.1/0.4 delivery_rate:398Mbps retrans:0/2874', note:'A short round trip finds a large window quickly, and the whole transfer is over in a handful of trips.'},
+        {label:'ss -ti (relay)', code:'cwnd:64 ssthresh:64 bytes_acked:4194304\n rtt:503/11 delivery_rate:1.49Mbps retrans:52/2926', note:'The same sender settles two orders of magnitude lower on a path that holds two orders of magnitude less.'},
+        {label:'the sawtooth', code:'round  1   cwnd 1\nround  2   cwnd 2\nround  3   cwnd 4\n...\nround  9   cwnd 256   ← 77 dropped\nround 10   cwnd 128\nround 11   cwnd 129', note:'Doubling until something breaks, then halving and creeping back up. Every sender on the internet is doing a version of this right now.'}
+      ]
+    },
+    solution:{dials:{sender:'slow-start'}},
+    hints:['Try each fixed window on both links and read the two bars. One window is too small for the spine; another is fast on the relay but throws away most of what it sends.','No single fixed number meets both targets, which is the point: the sender has to discover the path rather than assume it.'],
+    takeaway:'A window tuned to a path is a guess that stops being true the moment the path changes. Slow start trades a few round trips at the beginning for being right on every link, which is why it is what actually runs.', reference:refs.congestion
+  },
+
   // -------------------------------------------------- chapter 4: system design
+  {
+    id:'size-it-yourself', kind:'estimate', chapter:'System design', concept:'Estimation', name:'Size it yourself', location:'Planning table',
+    objective:'Work out what the telemetry service will actually need, from five numbers and arithmetic you can do in your head.',
+    intro:'Nobody will give you a benchmark. You will be asked, in a meeting, roughly how big this has to be — and the answer you give decides what gets built.',
+    lesson:'An estimate is right when its order of magnitude is right; two significant figures is a luxury. Three habits carry most of the work. Convert to per-second early, because capacity is quoted per second and a day is 86,400 of them. Size for the peak, not the average, because a service sized for the average is down every lunchtime. And multiply storage by the number of copies you keep, because durability is not free and replicas are the factor people leave out. Headroom is the fourth: a server at 100% utilisation queues without limit, so a server that handles 900 requests a second is a server you plan 630 for.',
+    instructions:'Every figure below follows from the table on the left. Work it out, then pick the closest.',
+    given:[
+      {label:'Telemetry records a day', text:'86,400,000'},
+      {label:'Peak traffic', text:'3× the average'},
+      {label:'Bytes per record', text:'400 B'},
+      {label:'Copies kept for durability', text:'3'},
+      {label:'Bytes returned per request', text:'12,000 B'},
+      {label:'One server handles', text:'900 req/s'},
+      {label:'Planned headroom', text:'70% of capacity'}
+    ],
+    givens:{dailyRequests:86400000, peakMultiplier:3, bytesPerRecord:400, copies:3, responseBytes:12000, rpsPerServer:900, headroom:0.7},
+    questions:[
+      {estimator:'peakRequestsPerSecond', prompt:'What does the service have to handle at its peak second?', options:[
+        {label:'about 300 req/s', value:300},
+        {label:'about 1,000 req/s', value:1000},
+        {label:'about 3,000 req/s', value:3000},
+        {label:'about 30,000 req/s', value:30000}
+      ]},
+      {estimator:'storagePerDayGb', prompt:'How much new storage does one day add, before replication?', options:[
+        {label:'about 350 GB', value:350},
+        {label:'about 35 GB', value:35},
+        {label:'about 3.5 GB', value:3.5},
+        {label:'about 0.35 GB', value:0.35}
+      ]},
+      {estimator:'storagePerYearTb', prompt:'After a year, with every byte stored three times, how much is on disk?', options:[
+        {label:'about 4 TB', value:4},
+        {label:'about 40 TB', value:40},
+        {label:'about 400 TB', value:400},
+        {label:'about 4 PB', value:4000}
+      ]},
+      {estimator:'egressPerMonthTb', prompt:'How much data leaves the service in a month?', options:[
+        {label:'about 3 TB', value:3},
+        {label:'about 300 TB', value:300},
+        {label:'about 31 TB', value:31},
+        {label:'about 3 PB', value:3000}
+      ]},
+      {estimator:'serversForPeak', prompt:'How many servers does the peak need, at 70% of each one’s capacity?', options:[
+        {label:'about 50', value:50},
+        {label:'about 5', value:5},
+        {label:'about 500', value:500},
+        {label:'about 1', value:1}
+      ]}
+    ],
+    quizSuccess:'Five numbers, no benchmark, and a size you can defend in a meeting.',
+    solution:{choices:[2, 1, 1, 2, 1]},
+    artifact:{
+      title:'The numbers worth memorising',
+      note:'Estimation is not a talent. It is a handful of constants and the discipline of converting to per-second before anything else.',
+      panes:[
+        {label:'time', code:'1 day        = 86,400 s   ≈ 10^5 s\n1 month      = 2.6 × 10^6 s\n1 year       = 3.2 × 10^7 s\n1,000/s      = 86.4 million a day', note:'A day is close enough to 10^5 seconds that you can do the division in your head and fix it later.'},
+        {label:'size', code:'1 KB × 1,000/s = 1 MB/s\n1 MB/s         = 2.6 TB/month\n1 KB × 1M/day  = 1 GB/day\n10^9 B = 1 GB, 10^12 B = 1 TB', note:'Storage and bandwidth are quoted in powers of ten. Memory is quoted in powers of two. Mixing them is a 7% error, which does not matter here.'},
+        {label:'latency', code:'main memory reference      100 ns\nSSD random read            16 µs\nround trip within a region 500 µs\nround trip across an ocean 150 ms', note:'Six orders of magnitude between memory and a transatlantic round trip. Almost every design argument is about which of these a request pays for.'},
+        {label:'the meeting answer', code:'"About 3,000 a second at peak,\n roughly 35 GB a day, so call it\n 40 TB of disk after a year with\n three copies, and five servers.\n I would build for ten."', note:'Doubling the answer at the end is not sloppiness. It is the cost of being wrong in the direction that does not page anyone.'}
+      ]
+    },
+    hints:['Start by turning 86,400,000 a day into a per-second figure — the number of seconds in a day is the only constant you need — then multiply by the peak factor.','Storage: 86.4 million × 400 B is about 35 GB a day. A year is 365 of those, and then multiply by 3 for the copies.'],
+    takeaway:'Every capacity decision starts as arithmetic on a whiteboard. Getting the order of magnitude right, and knowing which way you rounded, is worth more than a benchmark you will not have time to run.', reference:refs.estimation
+  },
+  {
+    id:'the-budget-you-spend', kind:'budget', chapter:'System design', concept:'Error budgets', name:'The budget you spend', location:'Reliability review',
+    objective:'Work out what is left of the month’s error budget, then decide whether the risky change ships.',
+    intro:'The archive service promises 99.9% over thirty days. Three things went wrong this month. Someone wants to ship a storage migration on the 24th.',
+    lesson:'An availability objective is not a promise to be perfect; it is a licence to be unavailable for a stated amount of time. 99.9% over thirty days is 43.2 minutes. That licence is a budget, and it is meant to be spent: a team with budget to spare is being too careful, and a team with none is not allowed to take risks. A partial outage spends part of the budget — half the users down for twenty-six minutes costs thirteen minutes, not twenty-six. What makes this a policy rather than a metric is that the number decides something in advance: with budget left, risky changes ship; with three quarters gone, the reliability work goes first; with none left, nothing risky ships until the window rolls over. Agreeing to that before the outage is the entire point, because afterwards everyone has an opinion.',
+    objectiveTarget:0.999,
+    windowMinutes:43200,
+    incidents:[
+      {date:'2 Mar', name:'Datastore failover took longer than expected', minutes:18, share:1},
+      {date:'9 Mar', name:'Uplink degraded — half of users affected', minutes:26, share:0.5},
+      {date:'21 Mar', name:'Cache restart, reads fell through to the datastore', minutes:4, share:1}
+    ],
+    remainingOptions:[
+      {value:1.2, label:'about 1 minute'},
+      {value:8.2, label:'about 8 minutes'},
+      {value:22.4, label:'about 22 minutes'},
+      {value:35, label:'about 35 minutes'}
+    ],
+    dials:[
+      {id:'remaining', label:'Error budget left in this window', help:'Allowed downtime, minus what the incidents spent', value:35, options:[
+        {value:1.2, label:'about 1 minute'},
+        {value:8.2, label:'about 8 minutes'},
+        {value:22.4, label:'about 22 minutes'},
+        {value:35, label:'about 35 minutes'}
+      ]},
+      {id:'action', label:'The storage migration on the 24th', help:'What the policy says happens next', value:'ship', options:[
+        {value:'ship', label:'Ship it — there is budget'},
+        {value:'slow-down', label:'Hold it — reliability work first'},
+        {value:'freeze', label:'Freeze — nothing risky until April'}
+      ]}
+    ],
+    artifact:{
+      title:'What an error budget policy actually says',
+      note:'None of this is interesting during a good month. It is written down so that during a bad one, nobody has to win an argument.',
+      panes:[
+        {label:'the SLO', code:'objective: 99.9% of requests succeed\nwindow:    30 days, rolling\nmeasured:  at the load balancer,\n           5xx and >2s count as failures', note:'Where it is measured matters as much as the number. Measured on the server, an outage that never reached the server never happened.'},
+        {label:'the budget', code:'30 days           = 43,200 min\n0.1% of that      = 43.2 min\nspent so far      = 35.0 min  (81%)\nremaining         =  8.2 min', note:'The same month reads as "99.92% — fine" or "81% of the budget gone" depending on which number you put on the slide.'},
+        {label:'the policy', code:'budget remaining  > 25%: ship freely\nbudget remaining <= 25%: reliability\n  work takes priority; risky changes\n  wait for the window to roll\nbudget exhausted: change freeze,\n  except fixes that buy budget back', note:'A threshold agreed in advance, so the decision is arithmetic rather than seniority.'},
+        {label:'partial outages', code:'26 min × 50% of users = 13 min\n18 min × 100%         = 18 min\n 4 min × 100%         =  4 min\n                        ------\n                        35 min', note:'Weighting by the fraction of users affected is what stops a degraded region being scored the same as a total outage.'}
+      ]
+    },
+    solution:{dials:{remaining:8.2, action:'slow-down'}},
+    hints:['0.1% of 43,200 minutes is 43.2 minutes of allowed downtime. The 9 March incident affected half the users, so it spends half its minutes.','35 of 43.2 minutes is 81% of the budget. Read the policy pane: what happens past three quarters?'],
+    takeaway:'“We were up 99.92%” and “we have spent four fifths of the month’s budget” describe the same month and lead to opposite decisions. The budget is the one that tells you what to do next.', reference:refs.errorBudget
+  },
+  {
+    id:'bring-it-back', kind:'incident', chapter:'System design', concept:'Diagnosis', name:'Bring it back', location:'Incident bridge',
+    objective:'The archive service is down and the design in front of you is the one that is running. Find the tier that is saturated and fix only that.',
+    intro:'This is not a blank page. It is a design that worked last week, a maintenance window last night, and a service that has been failing since 04:12. Read the meters before you buy anything.',
+    lesson:'An incident is a diagnosis problem, and the temptation is to change everything at once. The utilisation bars say which tier is the problem: a tier above 100% is receiving more work than it can serve, so its queue grows without limit and latency is not a number any more. Everything downstream of it looks fine, because nothing is reaching it. Two rules keep a repair honest. Change the saturated tier and nothing else, so that when it recovers you know why. And read the cost line — an outage is not a licence to buy capacity you will still be paying for next quarter, which is why this repair has a credit cap tighter than the contract’s.',
+    instructions:'Read the utilisation bars, then change what they point at. The repair has to come in under the credit cap.',
+    scenario:1,
+    maxCost:61,
+    dials:[
+      {id:'servers', label:'Edge nodes', help:'How many request-handling nodes', value:11, options:[
+        {value:9, label:'9 nodes'},
+        {value:11, label:'11 nodes'},
+        {value:14, label:'14 nodes'},
+        {value:18, label:'18 nodes'}
+      ]},
+      {id:'web', label:'Edge node size', help:'Requests each node can serve', value:1, options:[
+        {value:0, label:'Edge node S · 400 rps'},
+        {value:1, label:'Edge node M · 900 rps'},
+        {value:2, label:'Edge node L · 2k rps'}
+      ]},
+      {id:'db', label:'Datastore size', help:'Reads and writes the primary can serve', value:0, options:[
+        {value:0, label:'Datastore S · 1.5k reads/s'},
+        {value:1, label:'Datastore M · 4k reads/s'},
+        {value:2, label:'Datastore L · 6k reads/s'}
+      ]},
+      {id:'cache', label:'Cache', help:'How much of the working set stays out of the datastore', value:0, options:[
+        {value:0, label:'No cache'},
+        {value:1, label:'Cache 8 GB'},
+        {value:2, label:'Cache 32 GB'},
+        {value:3, label:'Cache 128 GB'}
+      ]},
+      {id:'replicas', label:'Read replicas per shard', help:'Extra read capacity, and a second copy to fail over to', value:1, options:[
+        {value:0, label:'None'},
+        {value:1, label:'1 replica'},
+        {value:2, label:'2 replicas'},
+        {value:4, label:'4 replicas'}
+      ]}
+    ],
+    artifact:{
+      title:'The page, and what was on the dashboard',
+      note:'Everything here is real evidence from the incident. One pane names the cause outright; the others are what you would actually have looked at first.',
+      panes:[
+        {label:'the page', code:'04:12 ARCHIVE-READ-LATENCY critical\n  p99 unavailable (queue unbounded)\n  error rate 61%\n  duration 00:47 and counting', note:'“Latency unavailable” rather than a large number is the signature of a saturated tier: the queue has no steady state to measure.'},
+        {label:'utilisation', code:'edge nodes        91%\ndatastore reads  291%   ← here\ndatastore writes  14%', note:'One tier above 100%. Everything downstream looks healthy because almost nothing is getting through to it.'},
+        {label:'change log', code:'23:40  cache tier drained for\n       maintenance window\n23:55  maintenance completed\n00:02  cache tier NOT restored\n       (checklist step skipped)', note:'Read loads returned to the datastore that had not been sent there in months. Nothing failed; something was left off.'},
+        {label:'what not to do', code:'-  "add edge nodes"   → 91%, not the\n   bottleneck; costs credits, fixes\n   nothing\n-  "buy Datastore L"  → works, and\n   pays for capacity the cache makes\n   unnecessary\n-  "replicas: 4"      → over budget', note:'Three plausible changes that each make the graph look busy and the bill look worse. The bars already said which tier to touch.'}
+      ]
+    },
+    solution:{dials:{servers:11, web:1, db:0, cache:2, replicas:1}},
+    hints:['Only one bar is over 100%. Adding capacity anywhere else spends credits and changes nothing.','The change log says what was removed. Put it back — and the datastore does not also need to grow once the reads stop reaching it.'],
+    takeaway:'The meters name the tier; the change log names the cause. A repair that changes one thing tells you whether you were right, and a repair that changes five does not.', reference:refs.incident
+  },
   {
     id:'back-of-the-envelope', kind:'quiz', chapter:'System design', concept:'Estimation', name:'Back of the envelope', location:'Planning deck',
     objective:'Size the station’s service from user numbers alone.',

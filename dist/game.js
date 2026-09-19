@@ -55,7 +55,7 @@ function tone(success = true) {
 const slug = text => text.toLowerCase().replace(/[^a-z0-9]+/g, '-');
 const chevron = '<svg class="chapter-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>';
 
-// The rail groups 38 missions into four collapsible chapters, each showing how
+// The rail groups 44 missions into four collapsible chapters, each showing how
 // much of it is finished. The chapter you are in is always open.
 function navigation() {
   const container = $('missions');
@@ -161,33 +161,39 @@ function commandReference(item) {
 }
 
 
-// Read-only samples of the same idea in other languages. They never run: the
-// point is that a loop is a loop, and what differs is what each language makes
-// the author declare.
-let polyglotChoice = 0;
-function renderPolyglot(item) {
+// Read-only evidence beside the lesson: the same idea in other languages, or the
+// tool output an engineer would actually have been looking at. Nothing here
+// runs — it is there to be read against what the mission is asking.
+let panelChoice = 0;
+function readingPanel(item) {
+  const source = item.polyglot ?? item.artifact ?? null;
+  const panes = (source?.samples ?? source?.panes ?? []).map(pane => ({
+    label:pane.language ?? pane.label, code:pane.code, note:pane.note
+  }));
   const panel = $('polyglot');
-  const samples = item.polyglot?.samples ?? [];
-  panel.hidden = samples.length === 0;
-  if (!samples.length) return;
-  polyglotChoice = Math.min(polyglotChoice, samples.length - 1);
-  $('polyglot-title').textContent = item.polyglot.title;
-  $('polyglot-note').textContent = item.polyglot.note;
+  panel.hidden = panes.length === 0;
+  if (!panes.length) return;
+  panelChoice = Math.min(panelChoice, panes.length - 1);
+  $('polyglot-title').textContent = source.title;
+  $('polyglot-note').textContent = source.note;
+  $('polyglot-caveat').textContent = item.polyglot
+    ? 'Read-only. These samples are for comparison; only the JavaScript subset above runs here.'
+    : 'Read-only. This is evidence to read, not a control — the mission is changed with the dials.';
   const tabs = $('polyglot-tabs');
-  tabs.replaceChildren(...samples.map((sample, index) => {
+  tabs.replaceChildren(...panes.map((pane, index) => {
     const tab = document.createElement('button');
-    tab.className = `polyglot-tab ${index === polyglotChoice ? 'chosen' : ''}`;
+    tab.className = `polyglot-tab ${index === panelChoice ? 'chosen' : ''}`;
     tab.type = 'button';
     tab.role = 'tab';
-    tab.setAttribute('aria-selected', String(index === polyglotChoice));
-    tab.textContent = sample.language;
-    tab.addEventListener('click', () => { polyglotChoice = index; renderPolyglot(item); });
+    tab.setAttribute('aria-selected', String(index === panelChoice));
+    tab.textContent = pane.label;
+    tab.addEventListener('click', () => { panelChoice = index; readingPanel(item); });
     return tab;
   }));
-  const sample = samples[polyglotChoice];
-  $('polyglot-code').textContent = sample.code;
-  $('polyglot-code').setAttribute('aria-label', `${sample.language} sample`);
-  $('polyglot-sample-note').textContent = sample.note;
+  const pane = panes[panelChoice];
+  $('polyglot-code').textContent = pane.code;
+  $('polyglot-code').setAttribute('aria-label', `${pane.label} sample`);
+  $('polyglot-sample-note').textContent = pane.note;
 }
 
 function loadMission(index) {
@@ -195,7 +201,7 @@ function loadMission(index) {
   running = false;
   current = Math.max(0, Math.min(levels.length - 1, index));
   const item = level();
-  hintIndex = 0; polyglotChoice = 0; trace = null; traceIndex = 0; visited = []; networkResult = null; algoResult = null;
+  hintIndex = 0; panelChoice = 0; trace = null; traceIndex = 0; visited = []; networkResult = null; algoResult = null;
   unit = item.start ? {x:item.start[0], y:item.start[1], dir:item.start[2]} : null;
   scene?.destroy(); scene = null; sceneLevel = null;
   stage?.destroy(); stage = null; stageKind = null;
@@ -209,7 +215,7 @@ function loadMission(index) {
   $('objective').textContent = item.objective;
   $('lesson-title').textContent = item.concept;
   $('lesson').textContent = item.lesson;
-  renderPolyglot(item);
+  readingPanel(item);
   $('lesson-source').href = item.reference.url;
   $('lesson-source').textContent = item.reference.label;
   $('map-label').textContent = mapLabel(item.kind);
@@ -318,8 +324,12 @@ function renderDiagram(diagram) {
     wrap.innerHTML = `<div class="eyebrow">${diagram.caption ?? ''}</div><table class="data-table"><thead><tr>${diagram.columns.map(column => `<th>${column}</th>`).join('')}</tr></thead><tbody>${diagram.rows.map((row, index) => `<tr class="${diagram.problems?.[index] ? 'problem' : ''} ${diagram.highlight === index ? 'highlight' : ''}">${row.map(cell => `<td>${cell}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
   }
   if (diagram.type === 'bars') {
-    const widest = Math.max(1, ...diagram.rows.map(row => row.value));
-    wrap.innerHTML = `<div class="eyebrow">${diagram.caption ?? ''}</div><div class="bar-view">${diagram.rows.map(row => `<div class="bar-row ${row.problem ? 'problem' : ''}"><span class="bar-name">${row.name}</span><div class="bar-track"><i style="width:${Math.round(row.value / widest * 100)}%"></i></div><span class="bar-detail">${row.detail}</span></div>`).join('')}</div>`;
+    // A row may carry its own full-scale value, so bars that measure different
+    // things — seconds against a deadline, a fraction against a cap — each read
+    // against their own target instead of against the largest number present.
+    const widest = Math.max(1e-9, ...diagram.rows.map(row => row.value));
+    const fill = row => Math.max(1, Math.min(100, Math.round((row.value / (row.max ?? widest)) * 100)));
+    wrap.innerHTML = `<div class="eyebrow">${diagram.caption ?? ''}</div><div class="bar-view">${diagram.rows.map(row => `<div class="bar-row ${row.problem ? 'problem' : ''}"><span class="bar-name">${row.name}</span><div class="bar-track"><i style="width:${fill(row)}%"></i></div><span class="bar-detail">${row.detail}</span></div>`).join('')}</div>`;
   }
   if (diagram.type === 'timeline') {
     wrap.innerHTML = `<div class="eyebrow">${diagram.caption ?? ''} · ${diagram.total} MS</div><div class="bar-view">${diagram.rows.map(row => `<div class="bar-row"><span class="bar-name">${row.name}</span><div class="bar-track"><i style="width:${Math.max(2, Math.round(row.value / diagram.total * 100))}%;margin-left:${Math.round((row.at - row.value) / diagram.total * 100)}%"></i></div><span class="bar-detail">${row.detail}</span></div>`).join('')}</div>`;

@@ -264,3 +264,89 @@ export function search(scenarioIndex) {
   }
   return best;
 }
+
+// ------------------------------------------------- back-of-the-envelope
+
+// Estimation missions state their givens and name the arithmetic. The model
+// computes the answer, so a mission cannot ship an expectation that disagrees
+// with its own numbers — the tests check exactly that.
+export const estimators = {
+  peakRequestsPerSecond:{
+    label:'peak requests per second',
+    unit:'req/s',
+    needs:['dailyRequests', 'peakMultiplier'],
+    of:({dailyRequests, peakMultiplier}) => (dailyRequests / 86400) * peakMultiplier,
+    explain:({dailyRequests, peakMultiplier}) =>
+      `${dailyRequests.toLocaleString('en-US')} a day ÷ 86,400 seconds is the average; traffic peaks at ${peakMultiplier}× the average, and capacity is sized for the peak.`
+  },
+  storagePerDayGb:{
+    label:'new storage per day',
+    unit:'GB/day',
+    needs:['dailyRequests', 'bytesPerRecord'],
+    of:({dailyRequests, bytesPerRecord}) => (dailyRequests * bytesPerRecord) / 1e9,
+    explain:({dailyRequests, bytesPerRecord}) =>
+      `${dailyRequests.toLocaleString('en-US')} records × ${bytesPerRecord} bytes. Storage is quoted in powers of ten, so divide by 10^9.`
+  },
+  storagePerYearTb:{
+    label:'storage after a year, with replicas',
+    unit:'TB',
+    needs:['dailyRequests', 'bytesPerRecord', 'copies'],
+    of:({dailyRequests, bytesPerRecord, copies}) => (dailyRequests * bytesPerRecord * 365 * copies) / 1e12,
+    explain:({copies}) => `A year is 365 days, and every byte is stored ${copies} times for durability. Replicas are the factor people forget.`
+  },
+  egressPerMonthTb:{
+    label:'egress per month',
+    unit:'TB',
+    needs:['dailyRequests', 'responseBytes'],
+    of:({dailyRequests, responseBytes}) => (dailyRequests * responseBytes * 30) / 1e12,
+    explain:({responseBytes}) => `Every request sends ${responseBytes.toLocaleString('en-US')} bytes back. Egress is usually the line on the bill nobody estimated.`
+  },
+  serversForPeak:{
+    label:'servers needed at the peak',
+    unit:'servers',
+    needs:['dailyRequests', 'peakMultiplier', 'rpsPerServer', 'headroom'],
+    of:({dailyRequests, peakMultiplier, rpsPerServer, headroom}) =>
+      Math.ceil(((dailyRequests / 86400) * peakMultiplier) / (rpsPerServer * headroom)),
+    explain:({rpsPerServer, headroom}) =>
+      `Each server handles ${rpsPerServer} req/s, and running one at 100% queues without limit, so size for ${Math.round(headroom * 100)}% of its capacity.`
+  }
+};
+
+// Which option a given estimate belongs to: the closest one on a log scale,
+// because an estimate is right when it has the right order of magnitude.
+export function nearestEstimate(value, options) {
+  let best = 0;
+  let distance = Infinity;
+  options.forEach((option, index) => {
+    const gap = Math.abs(Math.log10(Math.max(option.value, 1e-9)) - Math.log10(Math.max(value, 1e-9)));
+    if (gap < distance) { distance = gap; best = index; }
+  });
+  return best;
+}
+
+// ------------------------------------------------------- error budgets
+
+// An availability objective is a licence to be down for a while. What is left of
+// that licence, not whether the last month was perfect, is what decides whether a
+// risky change ships today.
+export function errorBudget({objective, windowMinutes = constants.minutesPerMonth, incidents = []}) {
+  if (!(objective > 0 && objective < 1)) throw new DesignError('An availability objective is a fraction between 0 and 1.');
+  const allowedMinutes = (1 - objective) * windowMinutes;
+  const spentMinutes = incidents.reduce((total, incident) => total + incident.minutes * (incident.share ?? 1), 0);
+  const remainingMinutes = allowedMinutes - spentMinutes;
+  const achieved = 1 - spentMinutes / windowMinutes;
+  return {
+    objective, windowMinutes, incidents,
+    allowedMinutes:round(allowedMinutes, 2),
+    spentMinutes:round(spentMinutes, 2),
+    remainingMinutes:round(remainingMinutes, 2),
+    spentFraction:round(spentMinutes / allowedMinutes, 4),
+    achieved:round(achieved, 6),
+    achievedText:availabilityText(achieved),
+    exhausted:remainingMinutes <= 0,
+    // The policy this game uses, stated so a mission can be checked against it.
+    verdict:remainingMinutes <= 0 ? 'freeze'
+      : spentMinutes / allowedMinutes >= 0.75 ? 'slow-down'
+      : 'ship'
+  };
+}

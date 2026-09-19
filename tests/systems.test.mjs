@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {catalog, scenarios, shardOptions, replicaOptions, regionOptions, maxServers, maxWorkers, modelConstants, defaultDesign, evaluateArchitecture, search, DesignError} from '../dist/systems.js';
+import {catalog, scenarios, shardOptions, replicaOptions, regionOptions, maxServers, maxWorkers, modelConstants, defaultDesign, evaluateArchitecture, search, DesignError, estimators, nearestEstimate, errorBudget} from '../dist/systems.js';
 
 const design = update => ({...defaultDesign, ...update});
 
@@ -201,4 +201,59 @@ test('the reported hit ratio follows the cache size against the working set, and
     assert.ok(Math.abs(result.hitRatio - expected) < 1e-4, `${cache}`);
     assert.ok(result.hitRatio <= modelConstants.maxHitRatio);
   }
+});
+
+test('every estimator agrees with the arithmetic done by hand', () => {
+  const givens = {dailyRequests:86400000, peakMultiplier:3, bytesPerRecord:400, copies:3, responseBytes:12000, rpsPerServer:900, headroom:0.7};
+  // Worked out separately from the model, the way it would be on a whiteboard.
+  assert.equal(estimators.peakRequestsPerSecond.of(givens), 3000);
+  assert.equal(Number(estimators.storagePerDayGb.of(givens).toFixed(3)), 34.56);
+  assert.equal(Number(estimators.storagePerYearTb.of(givens).toFixed(3)), 37.843);
+  assert.equal(Number(estimators.egressPerMonthTb.of(givens).toFixed(3)), 31.104);
+  assert.equal(estimators.serversForPeak.of(givens), 5);
+  // Headroom is the difference between a server that works and one that queues.
+  assert.equal(estimators.serversForPeak.of({...givens, headroom:1}), 4);
+  for (const estimator of Object.values(estimators)) {
+    assert.ok(estimator.needs.every(key => key in givens), `${estimator.label} names a given nobody supplies`);
+    assert.ok(estimator.explain(givens).length > 40);
+  }
+});
+
+test('an estimate is scored on its order of magnitude, not its digits', () => {
+  const options = [{value:300}, {value:3000}, {value:30000}, {value:300000}];
+  assert.equal(nearestEstimate(3000, options), 1);
+  assert.equal(nearestEstimate(2400, options), 1, 'a fifth low is still the same answer');
+  assert.equal(nearestEstimate(9000, options), 1, 'three times high is nearer 3,000 than 30,000 on a log scale');
+  assert.equal(nearestEstimate(11000, options), 2);
+  assert.equal(nearestEstimate(1, options), 0);
+  assert.equal(nearestEstimate(1e9, options), 3);
+});
+
+test('an error budget is spent by outages in proportion to who they hit', () => {
+  const month = errorBudget({objective:0.999, incidents:[
+    {minutes:18, share:1},
+    {minutes:26, share:0.5},
+    {minutes:4, share:1}
+  ]});
+  assert.equal(month.allowedMinutes, 43.2, '0.1% of 43,200 minutes');
+  assert.equal(month.spentMinutes, 35, '18 + 13 + 4');
+  assert.equal(month.remainingMinutes, 8.2);
+  assert.equal(month.verdict, 'slow-down');
+  // The same month reported two ways, which is the mission's whole point.
+  assert.match(month.achievedText, /^99\.91/);
+  assert.ok(month.spentFraction > 0.75);
+
+  const quiet = errorBudget({objective:0.999, incidents:[{minutes:4, share:1}]});
+  assert.equal(quiet.verdict, 'ship');
+  assert.equal(quiet.exhausted, false);
+
+  const blown = errorBudget({objective:0.999, incidents:[{minutes:60, share:1}]});
+  assert.equal(blown.verdict, 'freeze');
+  assert.equal(blown.exhausted, true);
+  assert.ok(blown.remainingMinutes < 0);
+
+  // A tighter objective is a smaller licence: four nines is four minutes a month.
+  assert.equal(errorBudget({objective:0.9999, incidents:[]}).allowedMinutes, 4.32);
+  assert.throws(() => errorBudget({objective:1, incidents:[]}), /between 0 and 1/);
+  assert.throws(() => errorBudget({objective:0, incidents:[]}), /between 0 and 1/);
 });

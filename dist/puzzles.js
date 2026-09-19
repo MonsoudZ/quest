@@ -5,7 +5,8 @@
 // renders generically, into a diagram description, and into a verdict. All of it
 // is pure, so every mission can be checked in a test without a browser.
 import {evaluatePuzzle, evaluateNetwork, bitValue, toHex} from './engine.js';
-import {subnet, smallestPrefixFor, allocate, longestPrefixMatch, encapsulate, transfer, timeline} from './net.js';
+import {subnet, smallestPrefixFor, allocate, longestPrefixMatch, encapsulate, transfer, timeline, reachability, translate, congestion} from './net.js';
+import {evaluateArchitecture, estimators, nearestEstimate, errorBudget, catalog} from './systems.js';
 
 const clone = value => Array.isArray(value) ? [...value] : value;
 const percent = value => `${(value * 100).toFixed(1)}%`;
@@ -122,6 +123,77 @@ function hashTable(level, state) {
   return {size, multiplier, buckets, longest, load:level.keys.length / size, collisions:buckets.filter(bucket => bucket.length > 1).length};
 }
 
+
+// A level describes the destinations a deck has to reach and how each one should
+// leave; the model decides what the configuration actually does.
+function deliveries(level, state) {
+  return level.destinations.map(destination => {
+    const gateway = state.dials.gateway === 'none' ? null : state.dials.gateway;
+    let outcome;
+    try {
+      outcome = reachability({host:level.host, prefix:state.dials.prefix, gateway, destination:destination.address});
+    } catch (thrown) {
+      outcome = {delivery:'invalid', reachable:false, reason:thrown.message};
+    }
+    return {...destination, ...outcome, correct:outcome.delivery === destination.expect};
+  });
+}
+
+function natRun(level, state) {
+  const forwards = (level.forwardOptions.find(option => option.id === state.dials.forward)?.rules ?? []);
+  const run = translate({publicAddress:level.publicAddress, flows:level.flows, forwards});
+  const rows = run.flows.map((flow, index) => ({...flow, want:level.flows[index].expect, correct:flow.delivered === level.flows[index].expect}));
+  return {...run, rows, forwards};
+}
+
+function congestionRuns(level, state) {
+  // One dial, because a fixed size means nothing once the sender is discovering
+  // the window for itself: "slow-start" or "fixed-274".
+  const [mode, size] = String(state.dials.sender).split('-').length === 2 && state.dials.sender.startsWith('fixed')
+    ? ['fixed', Number(state.dials.sender.slice(6))]
+    : ['slow-start', 0];
+  const plan = {
+    bytes:level.bytes,
+    mode,
+    fixedWindow:size,
+    initialWindow:level.initialWindow ?? 1
+  };
+  return level.links.map(link => {
+    const result = congestion(link, plan);
+    return {
+      link, result,
+      lateBy:result.seconds - link.target.seconds,
+      onTime:result.seconds <= link.target.seconds,
+      clean:result.wasted <= link.target.wasted
+    };
+  });
+}
+
+function estimateRows(level, state) {
+  return level.questions.map((question, index) => {
+    const estimator = estimators[question.estimator];
+    const truth = estimator.of(level.givens);
+    const answer = nearestEstimate(truth, question.options);
+    return {question, estimator, truth, answer, chosen:state.choices[index], correct:state.choices[index] === answer};
+  });
+}
+
+function budgetRun(level, state) {
+  const report = errorBudget({objective:level.objectiveTarget, windowMinutes:level.windowMinutes, incidents:level.incidents});
+  const minutes = state.dials.remaining;
+  const closest = level.remainingOptions.reduce((best, option) =>
+    Math.abs(option.value - report.remainingMinutes) < Math.abs(best - report.remainingMinutes) ? option.value : best, level.remainingOptions[0].value);
+  return {report, minutes, closest, actionCorrect:state.dials.action === report.verdict, minutesCorrect:minutes === closest};
+}
+
+function incidentDesign(level, state) {
+  return {
+    web:state.dials.web, servers:state.dials.servers, db:state.dials.db, cache:state.dials.cache,
+    replicas:state.dials.replicas, shards:state.dials.shards ?? 1,
+    queue:state.dials.queue === 1, workers:state.dials.workers ?? 0, regions:state.dials.regions ?? 1
+  };
+}
+
 function orderedCorrect(level, state) {
   return level.order.every((id, index) => state.order[index] === id);
 }
@@ -194,6 +266,69 @@ export function evaluate(level, state) {
       if (table.size > level.maxSlots) return {success:false, message:`A ${table.size}-slot table is larger than the ${level.maxSlots} slots this memory bank has.`, table};
       if (table.longest > level.maxChain) return {success:false, message:`The longest chain holds ${table.longest} keys and this lookup budget allows ${level.maxChain}. ${table.collisions} slot${table.collisions === 1 ? '' : 's'} hold more than one key. A table size that shares factors with your keys stacks them together.`, table};
       return {success:true, message:`${level.keys.length} keys in ${table.size} slots, longest chain ${table.longest}, load factor ${table.load.toFixed(2)}. Every lookup is one probe.`, table};
+    }
+    case 'reach': {
+      const rows = deliveries(level, state);
+      const wrong = rows.find(row => !row.correct);
+      if (wrong) {
+        return {success:false, rows, message:wrong.delivery === 'invalid'
+          ? wrong.reason
+          : `${wrong.name} should be reached ${wrong.expect === 'direct' ? 'directly, on this deck' : 'through the gateway'}, and this configuration ${wrong.delivery === 'none' ? 'cannot reach it at all' : wrong.delivery === 'direct' ? 'tries to reach it directly' : 'sends it to the gateway'}. ${wrong.reason}`};
+      }
+      const block = rows[0].block;
+      return {success:true, rows, message:`${level.host}/${state.dials.prefix} puts this deck in ${block.cidr}. Its neighbours are reached directly and everything else leaves through ${state.dials.gateway}. The mask, not the destination, is what decides.`};
+    }
+    case 'nat': {
+      const run = natRun(level, state);
+      const wrong = run.rows.find(row => !row.correct);
+      if (wrong) {
+        return {success:false, run, message:wrong.want
+          ? `${wrong.name} should get through and does not. ${wrong.reason}`
+          : `${wrong.name} should be dropped and is not. Publishing a port exposes it to everyone, not only to the hosts you had in mind.`};
+      }
+      return {success:true, run, message:`${run.table.length} inside hosts share ${level.publicAddress}, told apart by port. Replies find their way home from the table; the only unsolicited traffic that gets in is the port you chose to publish.`};
+    }
+    case 'congestion': {
+      const runs = congestionRuns(level, state);
+      const late = runs.find(entry => !entry.onTime);
+      const dirty = runs.find(entry => !entry.clean);
+      if (late) {
+        return {success:false, runs, message:`On the ${late.link.name} this took ${late.result.seconds} s against a ${late.link.target.seconds} s target, using ${percent(late.result.utilisation)} of the link. One bandwidth-delay product there is ${late.result.bdpPackets} packets.`};
+      }
+      if (dirty) {
+        return {success:false, runs, message:`On the ${dirty.link.name} the deadline is met, but ${percent(dirty.result.wasted)} of transmissions were retransmissions against a ${percent(dirty.link.target.wasted)} limit. A window past what the path holds does not go faster; it just fills a buffer until it overflows.`};
+      }
+      return {success:true, runs, message:`Both links are met: ${runs.map(entry => `${entry.link.name} in ${entry.result.seconds} s at ${percent(entry.result.utilisation)}`).join(', ')}. ${String(state.dials.sender).startsWith('fixed') ? 'One fixed window happened to suit both paths.' : 'Slow start found each path’s capacity without being told it.'}`};
+    }
+    case 'estimate': {
+      const rows = estimateRows(level, state);
+      if (state.choices.includes(-1)) return {success:false, rows, message:'Work out every figure before checking.'};
+      const wrong = rows.findIndex(row => !row.correct);
+      if (wrong >= 0) {
+        const row = rows[wrong];
+        return {success:false, rows, wrong, message:`The ${row.estimator.label} is not right yet. ${row.estimator.explain(level.givens)}`};
+      }
+      return {success:true, rows, message:`Every figure is the right order of magnitude. ${level.quizSuccess ?? ''}`.trim()};
+    }
+    case 'budget': {
+      const run = budgetRun(level, state);
+      if (!run.minutesCorrect) {
+        return {success:false, run, message:`That is not what is left. The objective allows ${run.report.allowedMinutes} minutes of downtime in this window, and the incidents spent ${run.report.spentMinutes}.`};
+      }
+      if (!run.actionCorrect) {
+        const advice = {ship:'there is budget left, so a risky change can go out', 'slow-down':'three quarters of the budget is gone, so the risky change waits and the reliability work goes first', freeze:'the budget is spent, so nothing risky ships until the window rolls over'};
+        return {success:false, run, message:`The arithmetic is right; the decision is not. With ${run.report.remainingMinutes} minutes left of ${run.report.allowedMinutes}, ${advice[run.report.verdict]}.`};
+      }
+      return {success:true, run, message:`${run.report.spentMinutes} minutes spent of ${run.report.allowedMinutes} allowed, ${run.report.remainingMinutes} left. The month achieved ${run.report.achievedText}, and the budget — not the last outage — decides what ships.`};
+    }
+    case 'incident': {
+      const design = incidentDesign(level, state);
+      const result = evaluateArchitecture(design, level.scenario);
+      if (!result.success) return {success:false, result, message:result.message};
+      if (level.maxCost !== undefined && result.cost > level.maxCost) {
+        return {success:false, result, message:`The contract is met, but at ${result.cost} credits against the ${level.maxCost} this repair is allowed. Something here is paid for and not doing anything.`};
+      }
+      return {success:true, result, message:`${result.message} The tier that was saturated is the one that had to change; the rest of the design was never the problem.`};
     }
     case 'quiz': {
       if (state.choices.includes(-1)) return {success:false, message:'Answer every question.'};
@@ -323,6 +458,75 @@ export function view(level, state, result = null) {
         diagram:{type:'bars', caption:`${table.size} slots`, rows:table.buckets.map((bucket, index) => ({
           name:`slot ${index}`, value:bucket.length, detail:bucket.length ? bucket.join(', ') : 'empty', problem:bucket.length > 1
         }))}
+      };
+    }
+    case 'reach': {
+      const rows = deliveries(level, state);
+      const block = rows[0]?.block;
+      const arrow = {direct:'on this deck', gateway:'via the gateway', none:'nowhere', invalid:'—'};
+      return {
+        instructions:`Set the mask and the gateway for ${level.host} so every destination leaves the way the plan says it should.`,
+        legend:[block ? `This deck believes it is ${block.cidr}` : 'Invalid address for this mask', 'A host asks its own mask, never the destination\u2019s'],
+        summary:block ? `${block.cidr} · ${block.firstHost} – ${block.lastHost} · gateway ${state.dials.gateway}` : 'No valid block',
+        diagram:{type:'table', caption:`Where ${level.host} sends each packet`, columns:['Destination', 'Address', 'Should leave', 'Actually leaves'],
+          rows:rows.map(row => [row.name, row.address, arrow[row.expect], arrow[row.delivery]]),
+          problems:rows.map(row => !row.correct)}
+      };
+    }
+    case 'nat': {
+      const run = natRun(level, state);
+      return {
+        instructions:'One public address serves the whole station. Decide which port, if any, is published to the outside.',
+        legend:[`Public address ${level.publicAddress}`, `${run.table.length} translations in the table`, `${run.delivered} of ${level.flows.length} packets delivered`],
+        summary:run.forwards.length ? `Published: ${run.forwards.map(rule => `${rule.publicPort} → ${rule.inside}:${rule.insidePort}`).join(', ')}` : 'Nothing published to the outside',
+        diagram:{type:'table', caption:'Packets through the router', columns:['Packet', 'Direction', 'Seen as', 'Outcome'],
+          rows:run.rows.map(row => [row.name, row.direction === 'out' ? 'outbound' : 'inbound', row.seenAs ?? '—', row.delivered ? 'delivered' : 'dropped']),
+          problems:run.rows.map(row => !row.correct)}
+      };
+    }
+    case 'congestion': {
+      const runs = congestionRuns(level, state);
+      return {
+        instructions:'The same transfer runs over both links. Choose how the sender decides its window.',
+        legend:['cwnd doubles each round trip until something is lost', 'Then it halves and climbs by one', 'A window past the path fills a buffer, not the pipe'],
+        summary:runs.map(entry => `${entry.link.name}: ${entry.result.seconds} s, ${percent(entry.result.utilisation)} of the link, ${percent(entry.result.wasted)} wasted`).join(' · '),
+        diagram:{type:'bars', caption:'Each link against its target', rows:runs.flatMap(entry => [
+          {name:`${entry.link.name} · time`, value:entry.result.seconds, max:entry.link.target.seconds * 1.6, detail:`${entry.result.seconds} s of ${entry.link.target.seconds} s`, problem:!entry.onTime},
+          {name:`${entry.link.name} · wasted`, value:entry.result.wasted, max:Math.max(0.2, entry.link.target.wasted * 3), detail:`${percent(entry.result.wasted)} of ${percent(entry.link.target.wasted)}`, problem:!entry.clean}
+        ])}
+      };
+    }
+    case 'estimate': {
+      const rows = estimateRows(level, state);
+      return {
+        instructions:level.instructions ?? 'Work each figure out from the numbers given, then pick the closest.',
+        legend:[`${state.choices.filter(choice => choice >= 0).length} of ${level.questions.length} answered`, 'An estimate is right when its order of magnitude is'],
+        summary:level.summary ?? '',
+        diagram:{type:'table', caption:'What you were told', columns:['Quantity', 'Value'], rows:level.given.map(entry => [entry.label, entry.text])}
+      };
+    }
+    case 'budget': {
+      const run = budgetRun(level, state);
+      return {
+        instructions:`The objective is ${(level.objectiveTarget * 100).toFixed(3)}% over ${Math.round(level.windowMinutes / 1440)} days. Work out what is left, then decide.`,
+        legend:[`${run.report.allowedMinutes} minutes allowed in the window`, `${level.incidents.length} incidents recorded`],
+        summary:`The window achieved ${run.report.achievedText}`,
+        diagram:{type:'table', caption:'Incident log', columns:['Date', 'What happened', 'Down', 'Counts against'],
+          rows:level.incidents.map(incident => [incident.date, incident.name, `${incident.minutes} min`, `${Math.round((incident.share ?? 1) * 100)}%`])}
+      };
+    }
+    case 'incident': {
+      const result = evaluateArchitecture(incidentDesign(level, state), level.scenario);
+      const target = result.scenario.slo;
+      return {
+        instructions:level.instructions ?? 'Repair the design. Change only what the numbers say is wrong.',
+        legend:[`p99 ${result.latencyMs === null ? 'overloaded' : `${result.latencyMs} ms`} of ${target.p99Ms} ms`, `${result.availabilityText} of ${(target.availability * 100).toFixed(4)}%`, `${result.cost} credits of ${level.maxCost ?? target.budget}`],
+        summary:result.message,
+        diagram:{type:'bars', caption:'Utilisation · arrivals against capacity', rows:[
+          {name:'Edge nodes', value:result.utilisation.app, max:1.5, detail:percent(result.utilisation.app), problem:result.utilisation.app >= 1},
+          {name:'Datastore reads', value:result.utilisation.read, max:1.5, detail:percent(result.utilisation.read), problem:result.utilisation.read >= 1},
+          {name:'Datastore writes', value:result.utilisation.write, max:1.5, detail:percent(result.utilisation.write), problem:result.utilisation.write >= 1}
+        ]}
       };
     }
     case 'quiz':
