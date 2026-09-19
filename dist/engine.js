@@ -5,6 +5,11 @@ import {compile as build, execute, describe, QuestError} from './lang.js';
 
 export {QuestError, describe};
 
+// Three mission kinds share the function console and this evaluator. They differ
+// in what the player is handed: 'algo' a blank function, 'debug' a program that
+// runs but answers wrongly, 'refactor' a program that answers correctly and
+// breaks a shape rule.
+export const algoKinds = new Set(['algo', 'debug', 'refactor']);
 export const directions = [[1,0],[0,1],[-1,0],[0,-1]];
 export const gridCommands = ['move','turnLeft','turnRight','canMove','print'];
 const gridLimits = {operations:4000, callDepth:48, arrayLength:256, cells:2000};
@@ -206,12 +211,77 @@ export function evaluateNetwork(level, selected) {
 
 // --------------------------------------------------- algorithm missions
 
+const isRecord = value => typeof value === 'object' && value !== null && !Array.isArray(value);
 export const sameValue = (a, b) => {
   if (Array.isArray(a) && Array.isArray(b)) return a.length === b.length && a.every((item, i) => sameValue(item, b[i]));
+  // Two records match when they carry the same fields, whatever order they were
+  // written in: a mission asks for the right data, not the right typing order.
+  if (isRecord(a) && isRecord(b)) {
+    const keys = Object.keys(a);
+    return keys.length === Object.keys(b).length && keys.every(key => Object.hasOwn(b, key) && sameValue(a[key], b[key]));
+  }
+  if (Array.isArray(a) !== Array.isArray(b) || isRecord(a) !== isRecord(b)) return false;
   if (typeof a === 'number' && typeof b === 'number') return Number.isInteger(a) && Number.isInteger(b) ? a === b : Math.abs(a - b) < 1e-9;
   return a === b;
 };
-const clone = value => Array.isArray(value) ? value.map(clone) : value;
+const clone = value => Array.isArray(value) ? value.map(clone)
+  : isRecord(value) ? Object.fromEntries(Object.entries(value).map(([key, item]) => [key, clone(item)]))
+  : value;
+
+
+// A refactor mission judges the shape of the answer as well as its values. The
+// rules count nodes in the player's own function, so a correct-but-sprawling
+// program is rejected with the reason rather than with a failing case.
+const loopNodes = ['for', 'while'];
+function shapeReport(ast, level) {
+  const target = [];
+  walk(ast, node => { if (node.type === 'function' && node.name === level.fn) target.push(node); });
+  const body = target[0]?.body;
+  if (!body) return null;
+  const shape = level.shape ?? {};
+
+  let loops = 0;
+  walk(body, node => { if (loopNodes.includes(node.type)) loops++; });
+  if (shape.maxLoops !== undefined && loops > shape.maxLoops) {
+    return shape.maxLoops === 1
+      ? `${level.fn}() answers every case, but it walks the data ${loops} times. This mission asks for one pass: one loop in the whole function.`
+      : `${level.fn}() answers every case, but it contains ${loops} loops and this mission allows ${shape.maxLoops}.`;
+  }
+
+  if (shape.maxLoopDepth !== undefined) {
+    const deepest = (node, depth = 0) => {
+      if (!node || typeof node !== 'object') return depth;
+      if (Array.isArray(node)) return Math.max(depth, ...node.map(item => deepest(item, depth)));
+      const here = loopNodes.includes(node.type) ? depth + 1 : depth;
+      return Math.max(here, ...Object.values(node).filter(value => value && typeof value === 'object').map(value => deepest(value, here)));
+    };
+    const depth = deepest(body);
+    if (depth > shape.maxLoopDepth) {
+      return `${level.fn}() answers every case, but it nests loops ${depth} deep. This mission allows ${shape.maxLoopDepth}, so the work has to be arranged differently.`;
+    }
+  }
+
+  if (shape.forbid) {
+    for (const name of shape.forbid) {
+      if (callSites(body, name)) return `${level.fn}() answers every case, but this mission asks you not to call ${name}().`;
+    }
+  }
+
+  if (shape.requireCalls) {
+    for (const name of shape.requireCalls) {
+      if (!callSites(body, name)) return `${level.fn}() answers every case, but this mission asks it to call ${name}().`;
+    }
+  }
+
+  if (shape.maxStatements !== undefined) {
+    let statements = 0;
+    walk(body, node => { if (['let', 'expression', 'if', 'for', 'while', 'return'].includes(node.type)) statements++; });
+    if (statements > shape.maxStatements) {
+      return `${level.fn}() answers every case in ${statements} statements, and this mission allows ${shape.maxStatements}.`;
+    }
+  }
+  return null;
+}
 
 // Runs a player's function against the mission's cases. `gate` cases also cap
 // the number of interpreter operations, which is how a mission can insist on a
@@ -264,13 +334,15 @@ export function evaluateAlgorithm(level, source) {
 
   const wrong = results.find(result => !result.passed);
   const gated = results.find(result => result.passed && result.overGate);
-  const success = !wrong && !gated;
+  const misshapen = !wrong && !gated && level.shape ? shapeReport(ast, level) : null;
+  const success = !wrong && !gated && !misshapen;
   return {
     success,
     cases:results,
     output:program.output,
     operations:results.reduce((total, result) => total + (result.operations ?? 0), 0),
-    error:success ? null : gated
+    shape:misshapen,
+    error:success ? null : misshapen ? misshapen : gated
       ? `${level.fn}() returns the right answers, but case ${results.indexOf(gated) + 1} used ${gated.operations.toLocaleString('en-US')} steps and this mission allows ${gated.maxOperations.toLocaleString('en-US')}. ${level.gateHint ?? 'A faster algorithm does less work per input.'}`
       : wrong.error
         ? `Case ${results.indexOf(wrong) + 1} stopped with an error: ${wrong.error}`

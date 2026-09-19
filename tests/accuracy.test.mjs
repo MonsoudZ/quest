@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {runInNewContext} from 'node:vm';
-import {simulate, evaluateAlgorithm, evaluateNetwork, directions, sameValue} from '../dist/engine.js';
+import {simulate, evaluateAlgorithm, evaluateNetwork, directions, sameValue, algoKinds} from '../dist/engine.js';
 import {levels} from '../dist/levels.js';
 import {isPuzzle, initialState, solutionState, evaluate} from '../dist/puzzles.js';
 
@@ -74,6 +74,37 @@ const generators = {
   'balance-the-manifest':random => {
     const alphabet = ['(', ')', '[', ']', '{', '}'];
     return [Array.from({length:Math.floor(random() * 10)}, () => alphabet[Math.floor(random() * alphabet.length)]).join('')];
+  },
+  'summarise-the-log':random => [Array.from({length:Math.floor(random() * 9)}, () => Math.floor(random() * 300) - 150)],
+  'the-log-that-lies':random => [Array.from({length:Math.floor(random() * 9)}, () => Math.floor(random() * 300) - 150)],
+  'sweep-the-deck':random => {
+    const rows = Math.floor(random() * 4) + 1;
+    const columns = Math.floor(random() * 4) + 1;
+    return [Array.from({length:rows}, () => Array.from({length:columns}, () => Math.floor(random() * 60) - 30))];
+  },
+  'stop-searching-twice':random => {
+    // Codes drawn from a small alphabet, so repeats turn up often enough to matter.
+    const pool = Math.floor(random() * 6) + 2;
+    return [Array.from({length:Math.floor(random() * 12)}, () => `QZ-${Math.floor(random() * pool)}`)];
+  },
+  'break-it-into-tokens':random => {
+    const operators = ['+', '-', '*'];
+    let text = '';
+    const terms = Math.floor(random() * 4) + 1;
+    for (let term = 0; term < terms; term++) {
+      if (term) text += (random() < 0.4 ? ' ' : '') + operators[Math.floor(random() * 3)] + (random() < 0.4 ? ' ' : '');
+      text += String(Math.floor(random() * 1000));
+    }
+    return [random() < 0.3 ? ` ${text} ` : text];
+  },
+  'work-out-the-answer':random => {
+    const operators = ['+', '-', '*'];
+    const tokens = [{kind:'number', value:Math.floor(random() * 40) - 20}];
+    for (let term = 0, terms = Math.floor(random() * 4); term < terms; term++) {
+      tokens.push({kind:'operator', text:operators[Math.floor(random() * 3)]});
+      tokens.push({kind:'number', value:Math.floor(random() * 40) - 20});
+    }
+    return [tokens];
   }
 };
 
@@ -85,8 +116,10 @@ test('every algorithm solution agrees with the same function run as real JavaScr
     value = (value + Math.imul(value ^ (value >>> 7), 61 | value)) ^ value;
     return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
   };
-  for (const level of levels.filter(item => item.kind === 'algo')) {
-    const reference = runInNewContext(`${level.solution}\n${level.fn};`, {}, {timeout:1000});
+  for (const level of levels.filter(item => algoKinds.has(item.kind))) {
+    const context = {Object:Object.create(Object), console};
+    context.Object.has = Object.hasOwn;
+    const reference = runInNewContext(`${level.solution}\n${level.fn};`, context, {timeout:1000});
     // The shipped cases first.
     for (const testCase of level.cases) {
       assert.equal(sameValue(reference(...structuredClone(testCase.args)), testCase.expect), true, `${level.id}: the published expectation for ${JSON.stringify(testCase.args).slice(0, 60)} disagrees with real JavaScript`);

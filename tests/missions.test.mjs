@@ -1,14 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {levels, chapters} from '../dist/levels.js';
-import {simulate, evaluateAlgorithm} from '../dist/engine.js';
+import {simulate, evaluateAlgorithm, algoKinds} from '../dist/engine.js';
 import {isPuzzle, initialState, solutionState, applyAction, widgets, view, evaluate} from '../dist/puzzles.js';
 
 const solve = level => level.kind === 'code' ? simulate(level, level.solution)
-  : level.kind === 'algo' ? evaluateAlgorithm(level, level.solution)
+  : algoKinds.has(level.kind) ? evaluateAlgorithm(level, level.solution)
   : evaluate(level, solutionState(level));
 const attempt = level => level.kind === 'code' ? simulate(level, level.starter)
-  : level.kind === 'algo' ? evaluateAlgorithm(level, level.starter)
+  : algoKinds.has(level.kind) ? evaluateAlgorithm(level, level.starter)
   : evaluate(level, initialState(level));
 
 test('every published mission is solved by the solution it ships', () => {
@@ -44,7 +44,7 @@ test('every mission carries the teaching material the interface shows', () => {
       assert.deepEqual(level.tiles.some(([x, y]) => x === level.goal[0] && y === level.goal[1]), true, `${level.id} goal is off the deck`);
       assert.ok(level.tiles.every(([x, y]) => x >= 0 && x <= 6 && y >= 0 && y <= 6), `${level.id} has tiles outside the deck`);
     }
-    if (level.kind === 'algo') {
+    if (algoKinds.has(level.kind)) {
       assert.ok(level.cases.length >= 3, `${level.id} needs at least three cases`);
       assert.ok(level.signature.includes(level.fn), `${level.id} signature`);
       assert.ok(level.starter.includes(level.fn), `${level.id} starter should declare the function`);
@@ -134,4 +134,75 @@ test('a puzzle reached through its own widgets ends in the winning state', () =>
   assert.deepEqual(state.values, [1,2,4,7,9]);
   assert.equal(evaluate(level, state).success, true);
   assert.equal(state.swaps > 0, true);
+});
+
+test('a debug mission ships a program that already runs and still answers wrongly', () => {
+  for (const level of levels.filter(item => item.kind === 'debug')) {
+    // It has to compile: the mission is about reading failures, not syntax.
+    const attempted = evaluateAlgorithm(level, level.starter);
+    assert.equal(attempted.success, false, `${level.id} ships a starter that already passes`);
+    assert.ok(attempted.cases.length > 0 || attempted.error, `${level.id} starter did not even reach its cases`);
+    assert.equal(/is not defined here|Expected “|does not understand/.test(attempted.error ?? ''), false, `${level.id} starter fails to compile rather than failing its cases: ${attempted.error}`);
+    assert.equal(evaluateAlgorithm(level, level.solution).success, true, `${level.id} repair does not pass`);
+  }
+});
+
+test('a refactor mission ships a starter that passes every case and is rejected on shape', () => {
+  const refactors = levels.filter(item => item.kind === 'refactor');
+  assert.ok(refactors.length > 0, 'there are no refactor missions to check');
+  for (const level of refactors) {
+    assert.ok(level.shape, `${level.id} has no shape rule, so nothing distinguishes it from an algo mission`);
+    const attempted = evaluateAlgorithm(level, level.starter);
+    assert.equal(attempted.success, false, `${level.id} accepts its own starter`);
+    assert.equal(attempted.cases.every(entry => entry.passed && !entry.overGate), true, `${level.id} starter fails a case; a refactor mission's starter has to be correct`);
+    assert.ok(attempted.shape, `${level.id} rejected the starter for something other than its shape: ${attempted.error}`);
+    const solved = evaluateAlgorithm(level, level.solution);
+    assert.equal(solved.success, true, `${level.id}: ${solved.error}`);
+    assert.equal(solved.shape, null);
+    // The rewrite is the point, so it has to cost visibly less.
+    const slow = attempted.cases.at(-1).operations;
+    const quick = solved.cases.at(-1).operations;
+    assert.ok(quick * 4 < slow, `${level.id}: the rewrite costs ${quick} steps against ${slow}, which is not a visible improvement`);
+  }
+});
+
+test('the writing missions live in Programming and the chapters keep their own subject', () => {
+  const chapterOf = id => levels.find(level => level.id === id)?.chapter;
+  for (const id of ['divide-and-conquer', 'call-yourself', 'balance-the-manifest', 'sweep-the-deck', 'break-it-into-tokens', 'work-out-the-answer']) {
+    assert.equal(chapterOf(id), 'Programming', `${id} should be a Programming mission`);
+  }
+  const science = levels.filter(level => level.chapter === 'Computer science');
+  assert.equal(science.some(level => algoKinds.has(level.kind)), false, 'Computer science is for the ideas, not for writing functions');
+  assert.ok(levels.filter(level => level.chapter === 'Programming').length >= 15);
+  assert.ok(science.length >= 6);
+  // Records, then the missions that need them.
+  const index = id => levels.findIndex(level => level.id === id);
+  assert.ok(index('summarise-the-log') < index('sweep-the-deck'));
+  assert.ok(index('summarise-the-log') < index('stop-searching-twice'));
+  assert.ok(index('break-it-into-tokens') < index('work-out-the-answer'), 'tokens come before what reads them');
+});
+
+test('every polyglot panel is complete, and none of it claims to run', () => {
+  const panels = levels.filter(level => level.polyglot);
+  assert.ok(panels.length >= 3, `only ${panels.length} missions carry a language comparison`);
+  const languages = new Set();
+  for (const level of panels) {
+    const {title, note, samples} = level.polyglot;
+    assert.ok(title.length > 8 && note.length > 20, `${level.id} panel needs a title and a note`);
+    assert.ok(samples.length >= 4, `${level.id} compares only ${samples.length} languages`);
+    const seen = new Set();
+    for (const sample of samples) {
+      assert.ok(sample.language && sample.code && sample.note, `${level.id} has an incomplete sample`);
+      assert.ok(sample.note.length > 20, `${level.id}/${sample.language} needs a note that says what differs`);
+      assert.ok(!seen.has(sample.language), `${level.id} lists ${sample.language} twice`);
+      seen.add(sample.language);
+      languages.add(sample.language);
+    }
+    assert.ok(seen.has('JavaScript'), `${level.id} should show the language the player writes in`);
+    // A sample is a comparison, never the answer the console would accept.
+    assert.equal(samples.some(sample => sample.code === level.solution), false, `${level.id} shows its own solution as a sample`);
+  }
+  for (const language of ['Python', 'Ruby', 'Rust', 'Go']) {
+    assert.ok(languages.has(language), `no mission shows ${language}`);
+  }
 });

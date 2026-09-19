@@ -418,6 +418,28 @@ kbd { padding:2px 5px; border:1px solid var(--line-strong); border-radius:4px; b
 }
 .lesson-reference:hover { border-color:var(--accent-quiet); background:var(--surface-3); }
 .lesson-reference::after { content:'↗'; }
+
+/* Read-only samples of the same idea in other languages. */
+.polyglot { margin-top:var(--s-5); padding-top:var(--s-5); border-top:1px solid var(--line-soft); }
+.polyglot-head h4 { margin:0 0 var(--s-2); font:600 var(--text-base)/1.3 var(--font-display); }
+.polyglot-head p { margin:0 0 var(--s-3); font-size:var(--text-sm) !important; }
+.polyglot-tabs { display:flex; flex-wrap:wrap; gap:var(--s-2); margin-bottom:var(--s-3); }
+.polyglot-tab {
+  padding:var(--s-1) var(--s-3); border:1px solid var(--line); border-radius:999px;
+  background:var(--surface-2); color:var(--text-muted);
+  font:500 var(--text-xs)/1.6 var(--font-mono); letter-spacing:.02em; cursor:pointer;
+  transition:border-color var(--fast), color var(--fast), background var(--fast);
+}
+.polyglot-tab:hover { border-color:var(--accent-quiet); color:var(--text); }
+.polyglot-tab.chosen { border-color:var(--accent); background:var(--accent-wash); color:var(--accent); }
+.polyglot-code {
+  margin:0; padding:var(--s-4); max-width:100%; overflow-x:auto;
+  border:1px solid var(--line); border-radius:var(--r-sm); background:var(--surface-sunken);
+  font:var(--text-sm)/1.65 var(--font-mono); color:var(--text); tab-size:4; white-space:pre;
+}
+.polyglot-code:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+.polyglot-sample-note { margin:var(--s-3) 0 0; font-size:var(--text-sm) !important; }
+.polyglot-caveat { margin:var(--s-2) 0 0; font-size:var(--text-xs) !important; color:var(--text-dim) !important; }
 .help-panel p { margin:var(--s-3) 0; }
 .hint-actions { display:flex; flex-wrap:wrap; gap:var(--s-2); margin-top:var(--s-4); }
 

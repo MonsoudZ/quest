@@ -10,7 +10,10 @@ import {subnet, smallestPrefixFor, allocate, longestPrefixMatch, encapsulate, tr
 const clone = value => Array.isArray(value) ? [...value] : value;
 const percent = value => `${(value * 100).toFixed(1)}%`;
 
-export const isPuzzle = level => level.kind !== 'code' && level.kind !== 'algo';
+import {algoKinds} from './engine.js';
+// Everything that is not a grid program and not a function console is a puzzle:
+// one generic state machine serves them all.
+export const isPuzzle = level => level.kind !== 'code' && !algoKinds.has(level.kind);
 
 export function initialState(level) {
   const state = {};

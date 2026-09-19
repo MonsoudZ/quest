@@ -1,7 +1,7 @@
 # Signal Quest
 
 A game that teaches programming, computer science, networking, and system design by making you
-do each of them. Thirty-one missions across four chapters, plus an architecture lab where you
+do each of them. Thirty-eight missions across four chapters, plus an architecture lab where you
 design a service against a latency, availability, and cost target.
 
 ## Play
@@ -13,14 +13,28 @@ are stored in this browser; if storage is unavailable, play continues for the se
 
 ## What it teaches
 
-**Chapter 1 — Programming** (9 missions). Sequences, debugging, `for` loops, variables,
-conditionals, `while` loops, and functions, taught by driving a repair drone across a deck; then
-arrays and boolean logic, taught by writing a function that is run against test cases.
+**Chapter 1 — Programming** (19 missions). Sequences, debugging, `for` loops, variables,
+conditionals, `while` loops, and functions, taught by driving a repair drone across a deck. Then
+the function console takes over: arrays and boolean logic, records, nested loops over a grid,
+binary search under a step budget a linear scan cannot meet, recursion via Euclid's algorithm, a
+stack used for bracket matching, and a two-mission capstone that tokenises an expression and then
+evaluates it with `*` binding tighter than `+`. Two missions here are not write-it-from-scratch
+missions at all:
 
-**Chapter 2 — Computer science** (11 missions). Binary, bytes and hexadecimal, two's-complement
-signed integers, sorting by adjacent swaps, binary search under a step budget that a linear scan
-cannot meet, recursion via Euclid's algorithm, a stack used for bracket matching, hash tables and
-collisions, growth rates, and shortest paths on unweighted and weighted graphs.
+- a **debug** mission hands you a program that compiles, runs, and is wrong in three separate
+  ways, and asks you to read the failing cases rather than start again;
+- a **refactor** mission hands you a program that passes every case and rejects it anyway,
+  because it walks the data with a loop inside a loop. The console judges the shape of the
+  answer — loop count, loop nesting, calls made — as well as its values.
+
+The chapter closes by reading the same function in JavaScript, Python, Ruby, Go, and Rust. Several
+missions carry a read-only **language panel** showing the same idea in all five, with a note on
+what each language makes you declare. Only the JavaScript subset runs; the rest is for reading.
+
+**Chapter 2 — Computer science** (8 missions). Binary, bytes and hexadecimal, two's-complement
+signed integers, sorting by adjacent swaps, hash tables and collisions, growth rates, and shortest
+paths on unweighted and weighted graphs. The missions that ask you to *write* an algorithm moved
+to Chapter 1; what is left is the ideas, taught through models you manipulate directly.
 
 **Chapter 3 — Networking** (8 missions). Protocol layering and the maximum segment size, CIDR
 addressing, variable-length subnet planning inside a single /24, longest-prefix-match forwarding,
@@ -84,7 +98,7 @@ mission on a 1366×768 screen changed nothing visible at all.
 The colour scheme follows the operating system and can be overridden with the toggle in the
 header, which is then remembered. Text meets WCAG AA contrast in both schemes, icon-only
 controls on small screens keep their labels in the accessibility tree, and everything honours
-`prefers-reduced-motion`. The 31 missions are grouped into four collapsible chapters, each
+`prefers-reduced-motion`. The 38 missions are grouped into four collapsible chapters, each
 carrying its own progress and accent colour; on a phone the rail becomes a drawer over the
 mission it is currently on.
 
@@ -96,18 +110,26 @@ restricted to a whitelist, so `constructor` and `__proto__` are unreachable, and
 depth, array length, and total allocation are all bounded — a program that will not finish is
 stopped with an explanation rather than hanging the page.
 
-Supported: numbers, strings, booleans, arrays, `let`, assignment and compound assignment, `++`
-and `--`, arithmetic, comparison and logical operators, `if`/`else`, `for`, `while`, `break`,
-`continue`, function declarations with parameters, `return`, recursion, array indexing and the
-array members listed in the editor, and the `Math` functions listed in `mathMembers`.
+Supported: numbers, strings, booleans, arrays, records written `{ field: value }`, `let`,
+assignment and compound assignment, `++` and `--`, arithmetic, comparison and logical operators,
+`if`/`else`, `for`, `while`, `break`, `continue`, function declarations with parameters, `return`,
+recursion, array and record indexing, the array and string members listed in the editor, and the
+`Math` and `Object` functions listed in `mathMembers` and `objectMembers`.
 
-Not supported: objects, classes, closures as values, `var`, `const`, `switch`, `try`/`catch`,
-regular expressions, `async`, modules, or any host API beyond the commands a mission provides.
+Records are created with a null prototype, `__proto__`, `constructor` and `prototype` are refused
+when the program is parsed, and field growth is charged against the same allocation budget arrays
+are, so a loop cannot build an unbounded table. Functions, natives and namespaces carry a symbol
+rather than a `kind` field, because a player's record is free to have a field called `kind` — the
+tokens in the capstone missions do.
 
-It is also deliberately stricter than JavaScript in five places, because silence would teach the
-wrong thing: reading past the end of an array, dividing by zero, mixing types under an arithmetic
-operator, assigning past the end of an array, and producing `Infinity` or `NaN` are all reported
-instead of returning `undefined` or `NaN`. `tests/lang.test.mjs` pins both the agreements and
+Not supported: classes, closures as values, `var`, `const`, `switch`, `try`/`catch`, regular
+expressions, `async`, modules, or any host API beyond the commands a mission provides.
+
+It is also deliberately stricter than JavaScript, because silence would teach the wrong thing:
+reading past the end of an array, reading a field a record does not have, dividing by zero, mixing
+types under an arithmetic operator, joining two records with `+`, assigning past the end of an
+array, and producing `Infinity` or `NaN` are all reported instead of returning `undefined` or
+`NaN`. `tests/lang.test.mjs` pins both the agreements and
 these deviations against real JavaScript.
 
 ### The models are teaching models

@@ -1,5 +1,5 @@
 import {levels} from './levels.js';
-import {simulate, evaluateAlgorithm, evaluateNetwork, describe} from './engine.js';
+import {simulate, evaluateAlgorithm, evaluateNetwork, describe, algoKinds} from './engine.js';
 import {isPuzzle, initialState, solutionState, applyAction, widgets, view, evaluate} from './puzzles.js';
 import {mountBuilder} from './builder.js';
 import {mountCity} from './citylab.js';
@@ -55,7 +55,7 @@ function tone(success = true) {
 const slug = text => text.toLowerCase().replace(/[^a-z0-9]+/g, '-');
 const chevron = '<svg class="chapter-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>';
 
-// The rail groups 31 missions into four collapsible chapters, each showing how
+// The rail groups 38 missions into four collapsible chapters, each showing how
 // much of it is finished. The chapter you are in is always open.
 function navigation() {
   const container = $('missions');
@@ -143,14 +143,47 @@ function controls() {
   $('code').readOnly = running;
 }
 
-const runLabel = kind => ({code:'▶ Run program', algo:'▶ Run the tests', network:'▶ Send signal', transport:'▶ Start the transfer', sequence:'▶ Time the exchange', layers:'▶ Send the frame', routing:'▶ Forward the packets'}[kind] ?? '▶ Check answer');
-const panelTitle = kind => ({code:'COMMAND CONSOLE', algo:'FUNCTION CONSOLE'}[kind] ?? 'MISSION CONTROLS');
-const languageTag = kind => ({code:'JavaScript · sandboxed subset', algo:'JavaScript · checked against test cases'}[kind] ?? 'Interactive model · simplified');
-const mapLabel = kind => ({code:'ISOMETRIC VIEW', algo:'TEST CASES'}[kind] ?? 'DATA VISUALISATION');
+const runLabel = kind => ({code:'▶ Run program', algo:'▶ Run the tests', debug:'▶ Run the tests', refactor:'▶ Run the tests', network:'▶ Send signal', transport:'▶ Start the transfer', sequence:'▶ Time the exchange', layers:'▶ Send the frame', routing:'▶ Forward the packets'}[kind] ?? '▶ Check answer');
+const panelTitle = kind => ({code:'COMMAND CONSOLE', algo:'FUNCTION CONSOLE', debug:'REPAIR CONSOLE', refactor:'REWRITE CONSOLE'}[kind] ?? 'MISSION CONTROLS');
+const languageTag = kind => ({code:'JavaScript · sandboxed subset', algo:'JavaScript · checked against test cases', debug:'JavaScript · a program that runs and is wrong', refactor:'JavaScript · judged on shape as well as answers'}[kind] ?? 'Interactive model · simplified');
+const mapLabel = kind => ({code:'ISOMETRIC VIEW', algo:'TEST CASES', debug:'TEST CASES', refactor:'TEST CASES'}[kind] ?? 'DATA VISUALISATION');
+
+const consoleTask = kind => ({debug:'Repair this function', refactor:'Rewrite this function'}[kind] ?? 'Write this function');
 
 function commandReference(item) {
   if (item.kind === 'code') return ['move(n)', 'turnLeft()', 'turnRight()', 'canMove()', 'let', 'for', 'while', 'if / else', 'function'];
-  return [item.signature, 'return', 'let', 'for', 'while', 'if / else', 'values.length', 'values[i]', 'Math.floor()', 'print()'];
+  // A mission may name the pieces it is actually about; otherwise the general set.
+  return [item.signature, ...(item.toolkit ?? ['return', 'let', 'for', 'while', 'if / else', 'values.length', 'values[i]', 'Math.floor()', 'print()'])];
+}
+
+
+// Read-only samples of the same idea in other languages. They never run: the
+// point is that a loop is a loop, and what differs is what each language makes
+// the author declare.
+let polyglotChoice = 0;
+function renderPolyglot(item) {
+  const panel = $('polyglot');
+  const samples = item.polyglot?.samples ?? [];
+  panel.hidden = samples.length === 0;
+  if (!samples.length) return;
+  polyglotChoice = Math.min(polyglotChoice, samples.length - 1);
+  $('polyglot-title').textContent = item.polyglot.title;
+  $('polyglot-note').textContent = item.polyglot.note;
+  const tabs = $('polyglot-tabs');
+  tabs.replaceChildren(...samples.map((sample, index) => {
+    const tab = document.createElement('button');
+    tab.className = `polyglot-tab ${index === polyglotChoice ? 'chosen' : ''}`;
+    tab.type = 'button';
+    tab.role = 'tab';
+    tab.setAttribute('aria-selected', String(index === polyglotChoice));
+    tab.textContent = sample.language;
+    tab.addEventListener('click', () => { polyglotChoice = index; renderPolyglot(item); });
+    return tab;
+  }));
+  const sample = samples[polyglotChoice];
+  $('polyglot-code').textContent = sample.code;
+  $('polyglot-code').setAttribute('aria-label', `${sample.language} sample`);
+  $('polyglot-sample-note').textContent = sample.note;
 }
 
 function loadMission(index) {
@@ -158,7 +191,7 @@ function loadMission(index) {
   running = false;
   current = Math.max(0, Math.min(levels.length - 1, index));
   const item = level();
-  hintIndex = 0; trace = null; traceIndex = 0; visited = []; networkResult = null; algoResult = null;
+  hintIndex = 0; polyglotChoice = 0; trace = null; traceIndex = 0; visited = []; networkResult = null; algoResult = null;
   unit = item.start ? {x:item.start[0], y:item.start[1], dir:item.start[2]} : null;
   scene?.destroy(); scene = null; sceneLevel = null;
   stage?.destroy(); stage = null; stageKind = null;
@@ -172,6 +205,7 @@ function loadMission(index) {
   $('objective').textContent = item.objective;
   $('lesson-title').textContent = item.concept;
   $('lesson').textContent = item.lesson;
+  renderPolyglot(item);
   $('lesson-source').href = item.reference.url;
   $('lesson-source').textContent = item.reference.label;
   $('map-label').textContent = mapLabel(item.kind);
@@ -181,24 +215,28 @@ function loadMission(index) {
   $('result').hidden = true;
   $('step-count').textContent = 'Ready';
 
-  const coding = item.kind === 'code' || item.kind === 'algo';
+  const coding = item.kind === 'code' || algoKinds.has(item.kind);
   $('code-controls').hidden = !coding;
   $('network-controls').hidden = coding;
   $('syntax-note').hidden = !coding;
-  $('syntax-note').textContent = item.kind === 'algo'
-    ? 'This sandbox runs a subset of JavaScript: numbers, strings, booleans, arrays, let, assignment, arithmetic and comparison, if/else, for, while, break, continue, and functions with parameters, return, and recursion. Objects, classes, closures as values, and everything outside Math and the array members listed are not available. It reports mistakes JavaScript would let pass silently, such as reading past the end of an array.'
+  $('syntax-note').textContent = algoKinds.has(item.kind)
+    ? 'This sandbox runs a subset of JavaScript: numbers, strings, booleans, arrays, records written { field: value }, let, assignment, arithmetic and comparison, if/else, for, while, break, continue, and functions with parameters, return, and recursion. Classes, closures as values, and everything outside Math, Object, and the array and string members listed are not available. It reports mistakes JavaScript would let pass silently, such as reading past the end of an array or reading a field a record does not have.'
     : 'This sandbox supports the commands shown plus let, for, while, if/else, and functions. move() takes a whole number of tiles from 0 to 100. The movement commands belong to this game; they are not built-in JavaScript functions.';
   $('editor-title').textContent = panelTitle(item.kind);
   $('language').textContent = languageTag(item.kind);
   $('run').textContent = runLabel(item.kind);
-  document.querySelector('.command-reference').innerHTML = `<strong>${item.kind === 'algo' ? 'Write this function' : 'Available commands'}</strong>${commandReference(item).map(entry => `<code>${entry}</code>`).join('')}`;
+  document.querySelector('.command-reference').innerHTML = `<strong>${algoKinds.has(item.kind) ? consoleTask(item.kind) : 'Available commands'}</strong>${commandReference(item).map(entry => `<code>${entry}</code>`).join('')}`;
   if (coding) {
     $('code').value = typeof drafts[item.id] === 'string' ? drafts[item.id] : (item.starter || '');
     lineNumbers();
   }
 
   $('log').replaceChildren();
-  log(item.kind === 'code' ? 'Awaiting your instructions.' : item.kind === 'algo' ? `Write ${item.signature} and run the tests.` : 'Set up the model, then run it.');
+  log(item.kind === 'code' ? 'Awaiting your instructions.'
+    : item.kind === 'debug' ? `${item.fn}() is already written, and it is wrong. Run the tests and read what fails.`
+    : item.kind === 'refactor' ? `${item.fn}() already passes. Run it, then rewrite it to the shape the mission asks for.`
+    : algoKinds.has(item.kind) ? `Write ${item.signature} and run the tests.`
+    : 'Set up the model, then run it.');
   navigation();
   renderArena();
   controls();
@@ -214,7 +252,7 @@ function renderArena(failed = -1) {
     return;
   }
   scene?.destroy(); scene = null; sceneLevel = null;
-  if (item.kind === 'algo') { stage?.destroy(); stage = null; stageKind = null; renderCases(); return; }
+  if (algoKinds.has(item.kind)) { stage?.destroy(); stage = null; stageKind = null; renderCases(); return; }
   const rendered = view(item, puzzleState);
   document.querySelector('.network-instructions').textContent = rendered.instructions;
   $('legend').innerHTML = rendered.legend.map((entry, position) => `<span${position === 0 ? ' class="legend-unit"' : ''}>${entry}</span>`).join('');
@@ -476,7 +514,7 @@ const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function run() {
   if (running) return;
   const item = level();
-  if (item.kind === 'algo') {
+  if (algoKinds.has(item.kind)) {
     drafts[item.id] = $('code').value;
     persist();
     $('log').replaceChildren();
@@ -546,7 +584,7 @@ $('code').addEventListener('keydown', event => {
   if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) { event.preventDefault(); run(); }
 });
 $('reset').addEventListener('click', () => {
-  if (level().kind === 'code' || level().kind === 'algo') drafts[level().id] = level().starter;
+  if (level().kind === 'code' || algoKinds.has(level().kind)) drafts[level().id] = level().starter;
   loadMission(current);
 });
 $('hint').addEventListener('click', () => {
@@ -560,14 +598,14 @@ $('solution').addEventListener('click', () => {
   running = false;
   controls();
   const item = level();
-  if (item.kind === 'code' || item.kind === 'algo') {
+  if (item.kind === 'code' || algoKinds.has(item.kind)) {
     $('code').value = item.solution;
     trace = null;
     algoResult = null;
     lineNumbers();
     drafts[item.id] = item.solution;
     persist();
-    if (item.kind === 'algo') renderCases();
+    if (algoKinds.has(item.kind)) renderCases();
   } else {
     puzzleState = solutionState(item);
     networkResult = null;
@@ -622,7 +660,7 @@ applyTheme();
 
 for (const name of modes) $(`${name}-mode`).addEventListener('click', () => setMode(name));
 
-const isCoding = () => level().kind === 'code' || level().kind === 'algo';
+const isCoding = () => level().kind === 'code' || algoKinds.has(level().kind);
 registerGameTools({
   read:() => ({
     mode, missionId:level().id, chapter:level().chapter, concept:level().concept,
@@ -649,6 +687,6 @@ registerGameTools({
   run:async () => {
     if (mode !== 'campaign' || !isCoding() || running) throw new Error('Open an idle coding mission first.');
     await run();
-    return {missionId:level().id, success:level().kind === 'algo' ? !!algoResult?.success : !!trace?.success, log:$('log').textContent};
+    return {missionId:level().id, success:algoKinds.has(level().kind) ? !!algoResult?.success : !!trace?.success, log:$('log').textContent};
   }
 });

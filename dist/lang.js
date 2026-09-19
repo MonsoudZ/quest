@@ -16,7 +16,7 @@
 
 const keywords = new Set(['let','const','var','function','return','if','else','for','while','do','break','continue','true','false','null','undefined','new','class','this','typeof','instanceof','in','of','delete','void','switch','case','default','try','catch','finally','throw','yield','await','async','import','export','extends','super','static','debugger','with','enum','eval','arguments']);
 
-export const defaultLimits = {operations:200000, depth:24, callDepth:96, arrayLength:4096, cells:40000, sourceLength:12000};
+export const defaultLimits = {operations:200000, depth:24, callDepth:96, arrayLength:4096, recordFields:512, cells:40000, sourceLength:12000};
 
 export class QuestError extends Error {
   constructor(message, line=null) {
@@ -59,6 +59,11 @@ const assignOps = new Set(['=','+=','-=','*=','/=','%=']);
 // Records are made with a null prototype, and these names are refused outright
 // so no program can even ask for them.
 const forbidden = new Set(['__proto__', 'constructor', 'prototype']);
+
+// Functions, natives and namespaces are tagged with a symbol rather than a
+// `kind` field, because a player's record is free to have a field called kind —
+// tokens in the capstone missions do — and the two must never be confused.
+const internal = Symbol('quest.internal');
 const binaryLevels = [
   ['||'], ['&&'], ['===','!==','==','!='], ['<','>','<=','>='], ['+','-'], ['*','/','%']
 ];
@@ -390,14 +395,14 @@ const mathMembers = {
   floor:Math.floor, ceil:Math.ceil, round:Math.round, abs:Math.abs, sqrt:Math.sqrt,
   min:Math.min, max:Math.max, pow:Math.pow, sign:Math.sign, trunc:Math.trunc, log2:Math.log2
 };
-const mathValue = {kind:'namespace', name:'Math', members:mathMembers};
+const mathValue = {[internal]:'namespace', name:'Math', members:mathMembers};
 const objectMembers = {
   keys:value => Object.keys(assertRecord(value, 'Object.keys')),
   values:value => Object.values(assertRecord(value, 'Object.values')),
   has:(value, key) => Object.hasOwn(assertRecord(value, 'Object.has'), String(key))
 };
-const objectValue = {kind:'namespace', name:'Object', members:objectMembers};
-export const isRecord = value => typeof value === 'object' && value !== null && !Array.isArray(value) && !value.kind;
+const objectValue = {[internal]:'namespace', name:'Object', members:objectMembers};
+export const isRecord = value => typeof value === 'object' && value !== null && !Array.isArray(value) && !value[internal];
 function assertRecord(value, where) {
   if (!isRecord(value)) throw new QuestError(`${where}() needs a record, not ${describe(value)}.`);
   return value;
@@ -408,7 +413,7 @@ const stringMethods = new Set(['charAt','indexOf','includes','slice','toUpperCas
 
 export function describe(value) {
   if (Array.isArray(value)) return `[${value.map(describe).join(', ')}]`;
-  if (value && typeof value === 'object' && !value.kind) return `{${Object.entries(value).map(([key, item]) => `${key}: ${describe(item)}`).join(', ')}}`;
+  if (value && typeof value === 'object' && !value[internal]) return `{${Object.entries(value).map(([key, item]) => `${key}: ${describe(item)}`).join(', ')}}`;
   if (typeof value === 'string') return JSON.stringify(value);
   if (value === undefined) return 'undefined';
   if (typeof value === 'number' && !Number.isInteger(value)) return String(Number(value.toFixed(6)));
@@ -423,10 +428,10 @@ export function execute(ast, options = {}) {
 
   const scope = parent => ({parent, values:new Map()});
   const global = scope(null);
-  for (const [name, fn] of Object.entries(natives)) global.values.set(name, {kind:'native', name, fn});
+  for (const [name, fn] of Object.entries(natives)) global.values.set(name, {[internal]:'native', name, fn});
   global.values.set('Math', mathValue);
   global.values.set('Object', objectValue);
-  if (!global.values.has('print')) global.values.set('print', {kind:'native', name:'print', fn:args => {
+  if (!global.values.has('print')) global.values.set('print', {[internal]:'native', name:'print', fn:args => {
     if (state.output.length < 200) state.output.push(args.map(describe).join(' '));
     return undefined;
   }});
@@ -444,7 +449,7 @@ export function execute(ast, options = {}) {
   function assign(name, value, env, line) {
     for (let cursor = env; cursor; cursor = cursor.parent) {
       if (cursor.values.has(name)) {
-        if (cursor.values.get(name)?.kind === 'native' || cursor.values.get(name)?.kind === 'namespace') fail(`“${name}” belongs to the mission and cannot be reassigned.`, line);
+        if (cursor.values.get(name)?.[internal] === 'native' || cursor.values.get(name)?.[internal] === 'namespace') fail(`“${name}” belongs to the mission and cannot be reassigned.`, line);
         cursor.values.set(name, value);
         return value;
       }
@@ -454,7 +459,7 @@ export function execute(ast, options = {}) {
   function hoist(body, env) {
     for (const node of body) {
       if (node.type === 'let') env.values.set(node.name, uninitialized);
-      else if (node.type === 'function') env.values.set(node.name, {kind:'function', declaration:node, env});
+      else if (node.type === 'function') env.values.set(node.name, {[internal]:'function', declaration:node, env});
     }
   }
   const guard = (value, line) => {
@@ -470,6 +475,15 @@ export function execute(ast, options = {}) {
     state.cells += 1;
     if (state.cells > limits.cells) fail('Your program allocated too much data. Reuse an array instead of building new ones in a loop.');
     return array;
+  };
+  // A record grows one field at a time, so growth is charged the same way an
+  // array is: a program cannot build an unbounded table out of a loop.
+  const grow = (record, name, line) => {
+    if (Object.hasOwn(record, name)) return;
+    const fields = Object.keys(record).length;
+    if (fields >= limits.recordFields) fail(`Records in this sandbox hold at most ${limits.recordFields.toLocaleString('en-US')} fields.`, line);
+    state.cells += 1;
+    if (state.cells > limits.cells) fail('Your program allocated too much data. Reuse an array instead of building new ones in a loop.', line);
   };
 
   function runBody(body, env) {
@@ -538,12 +552,12 @@ export function execute(ast, options = {}) {
   function member(object, name, line) {
     if (Array.isArray(object)) {
       if (name === 'length') return object.length;
-      if (arrayMethods.has(name)) return {kind:'method', name, target:object};
+      if (arrayMethods.has(name)) return {[internal]:'method', name, target:object};
       fail(`Arrays in this sandbox support length, ${[...arrayMethods].join(', ')}. “${name}” is not available.`, line);
     }
     if (typeof object === 'string') {
       if (name === 'length') return object.length;
-      if (stringMethods.has(name)) return {kind:'method', name, target:object};
+      if (stringMethods.has(name)) return {[internal]:'method', name, target:object};
       fail(`Strings in this sandbox support length, ${[...stringMethods].join(', ')}. “${name}” is not available.`, line);
     }
     if (isRecord(object)) {
@@ -551,8 +565,8 @@ export function execute(ast, options = {}) {
       if (!Object.hasOwn(object, name)) fail(`This record has no field called “${name}”. It has ${Object.keys(object).length ? Object.keys(object).join(', ') : 'no fields'}.`, line);
       return object[name];
     }
-    if (object?.kind === 'namespace') {
-      if (Object.hasOwn(object.members, name)) return {kind:'native', name:`${object.name}.${name}`, fn:args => object.members[name](...args)};
+    if (object?.[internal] === 'namespace') {
+      if (Object.hasOwn(object.members, name)) return {[internal]:'native', name:`${object.name}.${name}`, fn:args => object.members[name](...args)};
       fail(`${object.name}.${name} is not available. This sandbox provides ${Object.keys(object.members).join(', ')}.`, line);
     }
     fail(`Only records, arrays, strings, Math and Object have members here. ${describe(object)} does not.`, line);
@@ -583,11 +597,11 @@ export function execute(ast, options = {}) {
   }
 
   function invoke(value, args, node, env) {
-    if (value?.kind === 'native') {
+    if (value?.[internal] === 'native') {
       return guard(value.fn(args, {line:node.line, loopDepth:state.loopDepth, whileDepth:state.whileDepth, conditionDepth:state.conditionDepth, callDepth:state.callDepth, argNodes:node.args, env}), node.line);
     }
-    if (value?.kind === 'method') return guard(callMethod(value, args, node.line), node.line);
-    if (value?.kind !== 'function') fail(`${describe(value)} is not a function, so it cannot be called.`, node.line);
+    if (value?.[internal] === 'method') return guard(callMethod(value, args, node.line), node.line);
+    if (value?.[internal] !== 'function') fail(`${describe(value)} is not a function, so it cannot be called.`, node.line);
     const {declaration} = value;
     if (args.length > declaration.params.length) fail(`${declaration.name}() takes ${declaration.params.length} argument${declaration.params.length === 1 ? '' : 's'} but received ${args.length}.`, node.line);
     if (++state.callDepth > limits.callDepth) {
@@ -685,6 +699,7 @@ export function execute(ast, options = {}) {
           if (node.operator !== '=' && !Object.hasOwn(host, node.target.name)) fail(`This record has no field called “${node.target.name}” to change.`, node.line);
           let next = evaluate(node.value, env);
           if (node.operator !== '=') next = arithmetic(node.operator[0], current, next, node.line);
+          grow(host, node.target.name, node.line);
           host[node.target.name] = guard(next, node.line);
           return next;
         }
@@ -694,7 +709,7 @@ export function execute(ast, options = {}) {
         if (node.target.type === 'name') return assign(node.target.name, value, env, node.line);
         const target = slot(node.target, env);
         const {object, property} = target;
-        if (target.record) { object[property] = guard(value, node.line); return value; }
+        if (target.record) { grow(object, property, node.line); object[property] = guard(value, node.line); return value; }
         if (typeof object === 'string') fail('Strings cannot be changed in place. Build a new string instead.', node.line);
         if (property < 0 || property > object.length) fail(`Position ${property} is outside ${describe(object)}. Assign inside the array, or append with push().`, node.line);
         object[property] = value;
@@ -735,11 +750,11 @@ export function execute(ast, options = {}) {
     operations: state.operations,
     output: state.output,
     returned: signal?.type === 'return' ? signal.value : undefined,
-    has: name => global.values.get(name)?.kind === 'function',
-    functionNames: () => [...global.values].filter(([, value]) => value?.kind === 'function').map(([name]) => name),
+    has: name => global.values.get(name)?.[internal] === 'function',
+    functionNames: () => [...global.values].filter(([, value]) => value?.[internal] === 'function').map(([name]) => name),
     call(name, args = []) {
       const target = global.values.get(name);
-      if (target?.kind !== 'function') fail(`Your program does not declare a function named ${name}().`);
+      if (target?.[internal] !== 'function') fail(`Your program does not declare a function named ${name}().`);
       state.operations = 0;
       state.cells = 0;
       const result = invoke(target, args, {line:target.declaration.line, args:[]}, global);

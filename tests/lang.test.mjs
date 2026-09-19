@@ -150,6 +150,8 @@ test('runaway programs stop within their operation, depth, and allocation budget
   assert.throws(() => sandbox('for (let i = 0; i < 100; i++) { for (let j = 0; j < 100000; j++) { let n = j; } }'), /ran too long/);
   assert.throws(() => sandbox('function forever(n) { return forever(n + 1); } print(forever(0));'), /Too many nested calls/);
   assert.throws(() => sandbox('let values = []; for (let i = 0; i < 5000; i++) { values.push(i); } print(values.length);'), /at most 4,096 entries/);
+  assert.throws(() => sandbox('let seen = {}; for (let i = 0; i < 600; i++) { seen["k" + i] = i; } print(seen);'), /at most 512 fields/);
+  assert.doesNotThrow(() => sandbox('let seen = {}; for (let i = 0; i < 400; i++) { seen["k" + i] = i; } print(Object.keys(seen).length);'));
   assert.throws(() => execute(compile('while (true) { let n = 1; }'), {limits:{operations:50}}), /more than 50 steps/);
   assert.throws(() => sandbox('function deep(n) { if (n === 0) { return 0; } return deep(n - 1); } print(deep(200));'), /base case/);
   assert.equal(execute(compile('function deep(n) { if (n === 0) { return 0; } return deep(n - 1); } print(deep(50));')).output[0], '0');

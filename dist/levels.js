@@ -5,6 +5,10 @@ const row = (x, y, n) => Array.from({length:n}, (_, i) => [x + i, y]);
 const column = (x, y, n) => Array.from({length:n}, (_, i) => [x, y + i]);
 const ramp = (n, step) => Array.from({length:n}, (_, i) => i * step);
 
+const crateCodes = Array.from({length:120}, (_, i) => `QZ-${i}`);
+const numberToken = value => ({kind:'number', value});
+const operatorToken = text => ({kind:'operator', text});
+
 const refs = {
   basics:{label:'Read more: Harvard CS50 — algorithms & binary', url:'https://cs50.harvard.edu/x/notes/0/'},
   variables:{label:'Reference: MDN — let and block scope', url:'https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/let'},
@@ -31,7 +35,13 @@ const refs = {
   slo:{label:'Reference: Google SRE — service level objectives', url:'https://sre.google/sre-book/service-level-objectives/'},
   risk:{label:'Reference: Google SRE — embracing risk', url:'https://sre.google/sre-book/embracing-risk/'},
   queueing:{label:'Reference: Little’s law', url:'https://en.wikipedia.org/wiki/Little%27s_law'},
-  cap:{label:'Reference: the CAP theorem', url:'https://en.wikipedia.org/wiki/CAP_theorem'}
+  cap:{label:'Reference: the CAP theorem', url:'https://en.wikipedia.org/wiki/CAP_theorem'},
+  records:{label:'Reference: MDN — working with objects', url:'https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Working_with_objects'},
+  offByOne:{label:'Reference: the off-by-one error', url:'https://en.wikipedia.org/wiki/Off-by-one_error'},
+  nested:{label:'Reference: MDN — indexing nested arrays', url:'https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Indexed_collections'},
+  lexing:{label:'Reference: lexical analysis', url:'https://en.wikipedia.org/wiki/Lexical_analysis'},
+  precedence:{label:'Reference: MDN — operator precedence', url:'https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Operator_Precedence'},
+  syntax:{label:'Reference: comparison of programming languages (syntax)', url:'https://en.wikipedia.org/wiki/Comparison_of_programming_languages_(syntax)'}
 };
 
 const routingTable = [
@@ -161,6 +171,251 @@ export const levels = [
     takeaway:'Boundary values are where conditions go wrong. Writing the test cases at the limits is how you find an off-by-one comparison.', reference:refs.operators
   },
 
+  {
+    id:'summarise-the-log', kind:'algo', chapter:'Programming', concept:'Records', name:'Put a name on it', location:'Telemetry archive',
+    objective:'Write summarise(readings) so it returns one record holding the count, the total, and the highest reading.',
+    intro:'Three separate numbers travelling as three separate values get mixed up. Send them back as one record, with each number under its own name.',
+    lesson:'A record groups values under names: { count: 3, total: 15, highest: 9 }. Read a field with report.total, and set one the same way. Unlike an array, the order of the fields does not matter, because you reach them by name rather than by position. An empty log is still a real answer: zero readings, zero total, and a highest of zero. Watch the highest on a log of negative numbers — starting it at zero would report a peak that never happened, so seed it from the first reading instead.',
+    toolkit:['return', 'let', 'for', '{ field: value }', 'report.total', 'report.total += n', 'readings.length', 'print()'],
+    signature:'function summarise(readings)', fn:'summarise',
+    cases:[
+      {args:[[4,9,2]], expect:{count:3, total:15, highest:9}},
+      {args:[[7]], expect:{count:1, total:7, highest:7}},
+      {args:[[]], expect:{count:0, total:0, highest:0}, note:'an empty log'},
+      {args:[[-5,-2,-9]], expect:{count:3, total:-16, highest:-2}, note:'every reading is negative'},
+      {args:[[3,3,3,3]], expect:{count:4, total:12, highest:3}}
+    ],
+    starter:'function summarise(readings) {\n  let report = {count: 0, total: 0, highest: 0};\n  // Fill the record in as you walk the readings.\n  return report;\n}\n',
+    solution:'function summarise(readings) {\n  let report = {count: readings.length, total: 0, highest: 0};\n  for (let i = 0; i < readings.length; i++) {\n    report.total += readings[i];\n    if (i === 0 || readings[i] > report.highest) {\n      report.highest = readings[i];\n    }\n  }\n  return report;\n}',
+    polyglot:{
+      title:'A record in five languages',
+      note:'Every one of these groups values under names. What changes is how much the language insists you say in advance.',
+      samples:[
+        {language:'JavaScript', code:'let report = {count: 3, total: 15, highest: 9};\nreport.total += 4;', note:'An object literal. Fields can be added at any time.'},
+        {language:'Python', code:'report = {"count": 3, "total": 15, "highest": 9}\nreport["total"] += 4', note:'A dict. Keys are values too, so they are written as strings.'},
+        {language:'Ruby', code:'report = {count: 3, total: 15, highest: 9}\nreport[:total] += 4', note:'A hash with symbol keys — :total is a name, cheaper than a string.'},
+        {language:'Go', code:'type Report struct {\n\tCount, Total, Highest int\n}\nreport := Report{Count: 3, Total: 15, Highest: 9}\nreport.Total += 4', note:'A struct: the fields and their types are fixed when the type is declared.'},
+        {language:'Rust', code:'struct Report { count: u32, total: i64, highest: i64 }\nlet mut report = Report { count: 3, total: 15, highest: 9 };\nreport.total += 4;', note:'Also a struct, and `mut` is required before anything can be changed.'}
+      ]
+    },
+    hints:['Set count from readings.length, then add each reading to report.total inside the loop.','The highest has to start from a real reading, not from zero: use if (i === 0 || readings[i] > report.highest).'],
+    takeaway:'A record is how a function returns more than one thing without the caller having to remember an order. Every field you name is a decision the caller no longer has to guess at.', reference:refs.records
+  },
+  {
+    id:'the-log-that-lies', kind:'debug', chapter:'Programming', concept:'Reading a failure', name:'The log that lies', location:'Diagnostics bay',
+    objective:'average(readings) is already written, and it is wrong. Read the failures and repair it.',
+    intro:'This console hands you a program that already compiles. It is still wrong. The test cases below tell you exactly how — your job is to read them rather than to rewrite from scratch.',
+    lesson:'Three separate faults hide in four lines. Starting the counter at 1 skips the first reading. Testing i <= readings.length walks one step past the end, and this sandbox reports that instead of quietly handing back undefined the way JavaScript would. Dividing by a length of zero is the third: an empty log has no average, so the function has to decide what to return before it divides. Fix one fault at a time and re-run; the case list tells you which ones are left.',
+    signature:'function average(readings)', fn:'average',
+    cases:[
+      {args:[[2,4,6]], expect:4},
+      {args:[[10]], expect:10},
+      {args:[[]], expect:0, note:'an empty log averages to 0 here'},
+      {args:[[1,2]], expect:1.5, note:'the answer need not be whole'},
+      {args:[[-4,4,-4,4]], expect:0}
+    ],
+    starter:'function average(readings) {\n  let sum = 0;\n  for (let i = 1; i <= readings.length; i++) {\n    sum += readings[i];\n  }\n  return sum / readings.length;\n}\n',
+    solution:'function average(readings) {\n  if (readings.length === 0) {\n    return 0;\n  }\n  let sum = 0;\n  for (let i = 0; i < readings.length; i++) {\n    sum += readings[i];\n  }\n  return sum / readings.length;\n}',
+    hints:['Array positions run from 0 to length − 1. Both ends of this loop are one out.','The empty case cannot be fixed inside the loop, because the loop never runs. Decide what to return before dividing.'],
+    takeaway:'A failing case is a description of the bug, not an accusation. Off-by-one errors and the empty input are the two mistakes that survive the longest, because a small hand-run rarely covers either.', reference:refs.offByOne
+  },
+  {
+    id:'sweep-the-deck', kind:'algo', chapter:'Programming', concept:'Nested loops', name:'Sweep the whole deck', location:'Thermal grid',
+    objective:'Write hottest(deck) so it returns a record naming the row, column, and value of the warmest cell.',
+    intro:'The thermal map arrives as an array of rows, and each row is an array of readings. Finding the hottest cell means visiting every one of them.',
+    lesson:'An array of arrays is a grid: deck[r] is a row and deck[r][c] is a cell in it. A loop inside a loop visits every cell — the outer one over rows, the inner one over the columns of that row. The work is rows × columns, which is why a grid twice as wide and twice as tall takes four times as long. Two readings can tie, so decide the rule up front: comparing with > keeps the first one found, and >= would keep the last.',
+    toolkit:['return', 'let', 'for', 'deck.length', 'deck[r].length', 'deck[r][c]', '{ row: r, column: c, value: v }', 'print()'],
+    signature:'function hottest(deck)', fn:'hottest',
+    cases:[
+      {args:[[[3,8,1],[9,2,7],[4,6,5]]], expect:{row:1, column:0, value:9}},
+      {args:[[[1,2],[3,4]]], expect:{row:1, column:1, value:4}},
+      {args:[[[5]]], expect:{row:0, column:0, value:5}, note:'one cell'},
+      {args:[[[2,2],[2,2]]], expect:{row:0, column:0, value:2}, note:'a tie keeps the first'},
+      {args:[[[-9,-3],[-7,-8]]], expect:{row:0, column:1, value:-3}, note:'all below zero'}
+    ],
+    starter:'function hottest(deck) {\n  let best = {row: 0, column: 0, value: deck[0][0]};\n  // Visit every cell of every row.\n  return best;\n}\n',
+    solution:'function hottest(deck) {\n  let best = {row: 0, column: 0, value: deck[0][0]};\n  for (let r = 0; r < deck.length; r++) {\n    for (let c = 0; c < deck[r].length; c++) {\n      if (deck[r][c] > best.value) {\n        best = {row: r, column: c, value: deck[r][c]};\n      }\n    }\n  }\n  return best;\n}',
+    hints:['The outer loop runs to deck.length; the inner one to deck[r].length, because rows need not all be the same width.','When a cell beats the best so far, store all three facts at once: best = {row: r, column: c, value: deck[r][c]};'],
+    takeaway:'Nested loops multiply. One loop over n is n steps; a loop inside a loop is n × m, and that product is what you are agreeing to every time you write one.', reference:refs.nested
+  },
+
+  {
+    id:'divide-and-conquer', kind:'algo', chapter:'Programming', concept:'Binary search', name:'Halve the problem', location:'Star catalogue',
+    objective:'Write find(sorted, target) so it returns the position of target, or −1, without scanning every entry.',
+    intro:'The catalogue is already sorted. A scan from the start would work, but the last two cases allow only 800 interpreter steps each, and a scan of 1,024 entries needs thousands.',
+    lesson:'Binary search compares the middle entry with the target. If the middle is too small, the answer cannot be to its left, so half the remaining range disappears; if it is too large, the other half goes. Each comparison halves what is left, so 1,024 entries take about 10 comparisons and a million take about 20. It only works because the input is sorted.',
+    signature:'function find(sorted, target)', fn:'find',
+    cases:[
+      {args:[[1,3,5,7,9],7], expect:3},
+      {args:[[1,3,5,7,9],1], expect:0},
+      {args:[[1,3,5,7,9],9], expect:4},
+      {args:[[1,3,5,7,9],4], expect:-1, note:'not present'},
+      {args:[[],5], expect:-1},
+      {args:[ramp(1024,3),1533], expect:511, note:'1,024 entries, at most 800 steps', maxOperations:800},
+      {args:[ramp(1024,3),3070], expect:-1, note:'missing, at most 800 steps', maxOperations:800}
+    ],
+    gateHint:'Halving the range each time turns thousands of comparisons into about ten.',
+    starter:'function find(sorted, target) {\n  let low = 0;\n  let high = sorted.length - 1;\n  while (low <= high) {\n    let middle = Math.floor((low + high) / 2);\n    // Compare sorted[middle] with target and discard half the range.\n  }\n  return -1;\n}\n',
+    solution:'function find(sorted, target) {\n  let low = 0;\n  let high = sorted.length - 1;\n  while (low <= high) {\n    let middle = Math.floor((low + high) / 2);\n    if (sorted[middle] === target) {\n      return middle;\n    }\n    if (sorted[middle] < target) {\n      low = middle + 1;\n    } else {\n      high = middle - 1;\n    }\n  }\n  return -1;\n}',
+    hints:['Three cases: the middle entry is the target, it is too small, or it is too large. Move low or high past the middle so the range always shrinks.','If sorted[middle] < target then low = middle + 1, otherwise high = middle - 1. Forgetting the + 1 or − 1 makes the loop run forever.'],
+    takeaway:'Logarithmic search does about 10 comparisons where a linear scan does 1,024. That gap is what algorithmic complexity measures, and it grows as the input does.', reference:refs.search
+  },
+  {
+    id:'call-yourself', kind:'algo', chapter:'Programming', concept:'Recursion', name:'Call yourself', location:'Signal analyser',
+    objective:'Write a recursive gcd(a, b) that returns the greatest common divisor.',
+    intro:'Two antennas repeat their patterns every a and b samples. The combined pattern repeats every gcd(a, b) samples. Euclid worked out how to find it without trying every divisor.',
+    lesson:'A recursive function calls itself on a smaller version of the same problem and has a base case that stops. Euclid’s insight: any number dividing both a and b also divides a % b, so gcd(a, b) = gcd(b, a % b), and when b reaches 0 the answer is a. Each step shrinks the numbers fast, so even nine-digit inputs finish in a few dozen steps. Without a base case, the calls never stop, and this sandbox reports it instead of crashing the page.',
+    signature:'function gcd(a, b)', fn:'gcd', requireRecursion:true,
+    cases:[
+      {args:[1071,462], expect:21},
+      {args:[270,192], expect:6},
+      {args:[13,13], expect:13},
+      {args:[17,5], expect:1, note:'coprime'},
+      {args:[36,0], expect:36, note:'the base case'},
+      {args:[1234567890,987654321], expect:9, note:'nine digits, at most 400 steps', maxOperations:400}
+    ],
+    gateHint:'Trying every divisor up to the smaller number is hundreds of millions of steps. Euclid’s rule needs a few dozen.',
+    starter:'function gcd(a, b) {\n  // Base case: when b is 0, the answer is a.\n  // Otherwise call gcd again with smaller numbers.\n  return a;\n}\n',
+    solution:'function gcd(a, b) {\n  if (b === 0) {\n    return a;\n  }\n  return gcd(b, a % b);\n}',
+    hints:['The base case is b === 0, and then the answer is a. Everything else reduces to gcd(b, a % b).','Two lines: if (b === 0) { return a; } then return gcd(b, a % b);. Notice the arguments swap.'],
+    takeaway:'Recursion describes a problem in terms of a smaller copy of itself. The base case is not optional: it is the only thing that ends the calls.', reference:refs.recursion
+  },
+  {
+    id:'balance-the-manifest', kind:'algo', chapter:'Programming', concept:'Stacks', name:'Balance the manifest', location:'Cargo manifest',
+    objective:'Write balanced(text) so it returns true when every bracket closes in the right order.',
+    intro:'Cargo manifests nest: crates inside pallets inside holds. A closing bracket has to match the most recent unclosed opening bracket, which is exactly what a stack remembers.',
+    lesson:'A stack is last in, first out. push adds to the end, pop removes from the end, and an array gives you both. Push every opening bracket; on a closing bracket, pop the most recent opening one and check that they match. Two failure modes are easy to miss: a closing bracket when the stack is empty, and leftovers on the stack when the text ends.',
+    signature:'function balanced(text)', fn:'balanced',
+    cases:[
+      {args:['()'], expect:true},
+      {args:['([]{})'], expect:true},
+      {args:[''], expect:true, note:'nothing is unbalanced'},
+      {args:['(]'], expect:false, note:'mismatched pair'},
+      {args:['(()'], expect:false, note:'left open'},
+      {args:[')('], expect:false, note:'closed before opened'},
+      {args:['{[()()]}[]'], expect:true},
+      {args:['{[(])}'], expect:false, note:'crossed pairs'}
+    ],
+    starter:'function balanced(text) {\n  let stack = [];\n  for (let i = 0; i < text.length; i++) {\n    let character = text[i];\n    // Push openings; on a closing bracket, pop and compare.\n  }\n  return stack.length === 0;\n}\n',
+    solution:'function balanced(text) {\n  let stack = [];\n  for (let i = 0; i < text.length; i++) {\n    let character = text[i];\n    if (character === "(" || character === "[" || character === "{") {\n      stack.push(character);\n    } else {\n      if (stack.length === 0) {\n        return false;\n      }\n      let open = stack.pop();\n      if (character === ")" && open !== "(") {\n        return false;\n      }\n      if (character === "]" && open !== "[") {\n        return false;\n      }\n      if (character === "}" && open !== "{") {\n        return false;\n      }\n    }\n  }\n  return stack.length === 0;\n}',
+    hints:['Push "(", "[" and "{". On any other character, the stack must not be empty, and the popped bracket must be the matching opening one.','Return false as soon as a pair does not match or the stack is empty. At the end, the stack has to be empty too.'],
+    takeaway:'A stack turns “the most recent unclosed thing” into one operation. Parsers, undo histories, and the call stack behind your own function calls all work this way.', reference:refs.stack
+  },
+
+  {
+    id:'stop-searching-twice', kind:'refactor', chapter:'Programming', concept:'Lookup tables', name:'Stop searching twice', location:'Cargo registry',
+    objective:'duplicate(codes) already answers every case. Rewrite it without a loop inside a loop.',
+    intro:'The registry checker works. It also compares every crate code against every other one, and the manifest is getting longer. This console accepts the answer only when the shape is right as well.',
+    lesson:'Comparing every pair is n × n / 2 comparisons: ten crates cost 45, and a hundred cost about 5,000. A record removes the inner loop. Remember each code you have seen as a field, and the next code is either already a field or it is not — one step, not a scan. Object.has(record, name) asks the question without reading a field that may not exist. This is the whole idea behind a hash table, and the run counts in the case list show what it buys.',
+    toolkit:['return', 'let', 'for', '{ }', 'seen[code] = true', 'Object.has(seen, code)', 'codes.length', 'print()'],
+    signature:'function duplicate(codes)', fn:'duplicate',
+    shape:{maxLoopDepth:1},
+    cases:[
+      {args:[['QZ-1','QZ-2','QZ-3']], expect:false},
+      {args:[['QZ-1','QZ-2','QZ-1']], expect:true},
+      {args:[[]], expect:false, note:'nothing repeats in an empty manifest'},
+      {args:[['QZ-9']], expect:false},
+      {args:[['A','B','C','D','B']], expect:true},
+      {args:[crateCodes], expect:false, note:'120 codes, all different'},
+      {args:[[...crateCodes, 'QZ-7']], expect:true, note:'120 codes and one repeat'}
+    ],
+    starter:'function duplicate(codes) {\n  for (let i = 0; i < codes.length; i++) {\n    for (let j = i + 1; j < codes.length; j++) {\n      if (codes[i] === codes[j]) {\n        return true;\n      }\n    }\n  }\n  return false;\n}\n',
+    solution:'function duplicate(codes) {\n  let seen = {};\n  for (let i = 0; i < codes.length; i++) {\n    if (Object.has(seen, codes[i])) {\n      return true;\n    }\n    seen[codes[i]] = true;\n  }\n  return false;\n}',
+    polyglot:{
+      title:'“Have I seen this already?” in five languages',
+      note:'Each of these is a set: a container whose only job is to answer that question in one step.',
+      samples:[
+        {language:'JavaScript', code:'let seen = {};\nif (Object.has(seen, code)) { return true; }\nseen[code] = true;', note:'A record used as a set. Real JavaScript also has a Set type.'},
+        {language:'Python', code:'seen = set()\nif code in seen:\n    return True\nseen.add(code)', note:'`in` on a set is one step; `in` on a list would be a scan.'},
+        {language:'Ruby', code:'seen = Set.new\nreturn true if seen.include?(code)\nseen << code', note:'Set comes from the standard library: require "set".'},
+        {language:'Go', code:'seen := map[string]bool{}\nif seen[code] {\n\treturn true\n}\nseen[code] = true', note:'A map to bool is the idiomatic Go set; a missing key reads as false.'},
+        {language:'Rust', code:'let mut seen = HashSet::new();\nif !seen.insert(code) {\n    return true;\n}', note:'insert returns false when the value was already there, so one call does both.'}
+      ]
+    },
+    hints:['Keep a record of the codes already seen, and check it before adding the next one.','Object.has(seen, codes[i]) is the test; seen[codes[i]] = true; is how a code gets remembered.'],
+    takeaway:'Trading memory for time is the oldest move in the book. A pass that remembers what it has seen turns a quadratic search into a linear one, which is exactly what a hash table does for you.', reference:refs.hash
+  },
+  {
+    id:'break-it-into-tokens', kind:'algo', chapter:'Programming', concept:'Tokenising', name:'Break it into tokens', location:'Command parser',
+    objective:'Write tokenise(source) so it turns an expression such as "12 + 345" into a list of token records.',
+    intro:'The station accepts typed commands, and the first thing any language does with typed text is cut it into pieces. Numbers and operators — nothing else, for now.',
+    lesson:'A tokeniser walks the text once with an index it moves itself, which is why this is a while loop rather than a for loop: a number consumes several characters at a time. Three cases cover everything here. A space is skipped. A digit begins a number, and the inner loop keeps taking digits while they last, so "345" becomes one token rather than three. Anything else is a one-character operator. "0123456789".indexOf(character) is how you ask whether a character is a digit: it answers −1 when it is not. Each token is a record — {kind: "number", text: "345"} — and the text stays text, because turning it into a number is the next stage’s job.',
+    toolkit:['return', 'let', 'while', 'source[i]', 'source.length', '"0123456789".indexOf(c)', 'tokens.push({ })', 'print()'],
+    signature:'function tokenise(source)', fn:'tokenise',
+    cases:[
+      {args:['1+2'], expect:[{kind:'number', text:'1'},{kind:'operator', text:'+'},{kind:'number', text:'2'}]},
+      {args:['12 + 345'], expect:[{kind:'number', text:'12'},{kind:'operator', text:'+'},{kind:'number', text:'345'}], note:'spaces are separators, not tokens'},
+      {args:['  7  '], expect:[{kind:'number', text:'7'}]},
+      {args:[''], expect:[], note:'nothing in, nothing out'},
+      {args:['2*3+4'], expect:[{kind:'number', text:'2'},{kind:'operator', text:'*'},{kind:'number', text:'3'},{kind:'operator', text:'+'},{kind:'number', text:'4'}]},
+      {args:['10*20*30'], expect:[{kind:'number', text:'10'},{kind:'operator', text:'*'},{kind:'number', text:'20'},{kind:'operator', text:'*'},{kind:'number', text:'30'}], note:'multi-digit numbers stay whole'}
+    ],
+    starter:'function tokenise(source) {\n  let tokens = [];\n  let i = 0;\n  while (i < source.length) {\n    let character = source[i];\n    // A space: skip it. A digit: take the whole number. Anything else: one operator.\n    i++;\n  }\n  return tokens;\n}\n',
+    solution:'function tokenise(source) {\n  let tokens = [];\n  let i = 0;\n  while (i < source.length) {\n    let character = source[i];\n    if (character === " ") {\n      i++;\n    } else if ("0123456789".indexOf(character) >= 0) {\n      let digits = "";\n      while (i < source.length && "0123456789".indexOf(source[i]) >= 0) {\n        digits = digits + source[i];\n        i++;\n      }\n      tokens.push({kind: "number", text: digits});\n    } else {\n      tokens.push({kind: "operator", text: character});\n      i++;\n    }\n  }\n  return tokens;\n}',
+    polyglot:{
+      title:'“Is this character a digit?” in five languages',
+      note:'Reading one character out of a string is where languages stop agreeing. What a string is made of turns out not to be obvious.',
+      samples:[
+        {language:'JavaScript', code:'let character = source[i];\nif ("0123456789".indexOf(character) >= 0) {\n  // a digit\n}', note:'Indexing a string gives a one-character string, not a number. There is no character type.'},
+        {language:'Python', code:'character = source[i]\nif character.isdigit():\n    # a digit', note:'Also a one-character string, and the check is a method on it.'},
+        {language:'Ruby', code:'character = source[i]\nif character.match?(/[0-9]/)\n  # a digit\nend', note:'Ruby reaches for a pattern where the others reach for a lookup.'},
+        {language:'Go', code:'c := source[i]\nif c >= \'0\' && c <= \'9\' {\n\t// a digit\n}', note:'Indexing a Go string gives a byte, so the check is arithmetic on its value.'},
+        {language:'Rust', code:'let c = source.as_bytes()[i] as char;\nif c.is_ascii_digit() {\n    // a digit\n}', note:'Rust strings are UTF-8, so it will not let you index by character position without saying what you mean.'}
+      ]
+    },
+    hints:['Move i yourself. A space advances it by one; an operator pushes a token and advances it by one; a digit runs an inner while loop that takes every digit in a row.','"0123456789".indexOf(character) >= 0 is true exactly when the character is a digit. Build the number’s text by joining characters, and push it only once the digits run out.'],
+    takeaway:'This is the first stage of every compiler and interpreter there is, including the one running your program right now. Text becomes tokens; tokens become a structure; the structure becomes an answer.', reference:refs.lexing
+  },
+  {
+    id:'work-out-the-answer', kind:'algo', chapter:'Programming', concept:'Precedence', name:'Work out the answer', location:'Command parser',
+    objective:'Write evaluate(tokens) so it computes the value of a token list, with × binding tighter than + and −.',
+    intro:'The tokens arrive already cut up, and their numbers already converted. What is left is the part everyone gets wrong first: 2 + 3 × 4 is 14, not 20.',
+    lesson:'Precedence means some operators claim their neighbours before others do. Two passes are enough for these three. The first walks the tokens and folds every × into the value on its left, leaving a list of values with only + and − between them. The second runs that list left to right, because + and − at the same precedence are settled in the order they were written: 5 − 2 + 1 is 4, not 2. The tokens alternate — value, operator, value, operator, value — so the walk moves two at a time, and a single number with no operator at all is already the answer.',
+    toolkit:['return', 'let', 'while', 'tokens[i].kind', 'tokens[i].text', 'tokens[i].value', 'values.push(v)', 'print()'],
+    signature:'function evaluate(tokens)', fn:'evaluate',
+    cases:[
+      {args:[[numberToken(2),operatorToken('+'),numberToken(3)]], expect:5},
+      {args:[[numberToken(2),operatorToken('+'),numberToken(3),operatorToken('*'),numberToken(4)]], expect:14, note:'× binds tighter than +'},
+      {args:[[numberToken(2),operatorToken('*'),numberToken(3),operatorToken('+'),numberToken(4)]], expect:10},
+      {args:[[numberToken(7)]], expect:7, note:'one number, no operators'},
+      {args:[[numberToken(2),operatorToken('*'),numberToken(3),operatorToken('*'),numberToken(4)]], expect:24},
+      {args:[[numberToken(1),operatorToken('+'),numberToken(2),operatorToken('+'),numberToken(3),operatorToken('*'),numberToken(10)]], expect:33},
+      {args:[[numberToken(5),operatorToken('-'),numberToken(2),operatorToken('+'),numberToken(1)]], expect:4, note:'+ and − run left to right'}
+    ],
+    starter:'function evaluate(tokens) {\n  // Pass one: fold every × into the value on its left.\n  // Pass two: add and subtract what is left, left to right.\n  return 0;\n}\n',
+    solution:'function evaluate(tokens) {\n  let folded = [tokens[0].value];\n  let signs = [];\n  let i = 1;\n  while (i < tokens.length) {\n    let sign = tokens[i].text;\n    let value = tokens[i + 1].value;\n    if (sign === "*") {\n      folded[folded.length - 1] = folded[folded.length - 1] * value;\n    } else {\n      signs.push(sign);\n      folded.push(value);\n    }\n    i += 2;\n  }\n  let total = folded[0];\n  for (let j = 0; j < signs.length; j++) {\n    if (signs[j] === "+") {\n      total += folded[j + 1];\n    } else {\n      total -= folded[j + 1];\n    }\n  }\n  return total;\n}',
+    hints:['Keep two lists: the values after every × has been folded away, and the + and − signs between them. Start folded with tokens[0].value and step i by 2.','On a ×, multiply into the last value of folded instead of pushing a new one. Then walk signs once, adding or subtracting folded[j + 1].'],
+    takeaway:'You have now written both halves of an interpreter: text to tokens, tokens to a value. Precedence is not a property of arithmetic — it is a rule the language chooses, and the evaluator is where that choice lives.', reference:refs.precedence
+  },
+  {
+    id:'same-idea-five-ways', kind:'quiz', chapter:'Programming', concept:'Reading other languages', name:'Same idea, five ways', location:'Translation desk',
+    objective:'Read the same function written in five languages and answer what each one is telling you.',
+    intro:'Nothing in this chapter was really about JavaScript. Here is the total() you wrote in the language you know, and in four you may not — read them, and see how little is actually new.',
+    lesson:'Every one of these declares a function, walks a sequence, accumulates into a variable and returns it. What differs is what the language insists you say. Python and Ruby say almost nothing and decide types as they run. Go says the type of every value and returns early on errors. Rust says the type and also who owns each value, so &[i64] means “borrow this slice, do not take it”. Syntax is the smallest difference between languages; how they handle types, memory and failure is the real one.',
+    instructions:'Read the panel below, then answer. Each question is about what the code says, not about which language is better.',
+    polyglot:{
+      title:'total(values) in five languages',
+      note:'The same loop five times. The differences are in what each language makes you declare.',
+      samples:[
+        {language:'JavaScript', code:'function total(values) {\n  let sum = 0;\n  for (let i = 0; i < values.length; i++) {\n    sum += values[i];\n  }\n  return sum;\n}', note:'No types written down. let is block-scoped and the loop index is managed by hand.'},
+        {language:'Python', code:'def total(values):\n    sum = 0\n    for value in values:\n        sum += value\n    return sum', note:'Blocks are indentation, not braces. The loop walks the values themselves — no index at all.'},
+        {language:'Ruby', code:'def total(values)\n  values.sum\nend', note:'The last expression is the return value. Ruby prefers the collection method over the loop.'},
+        {language:'Go', code:'func total(values []int64) int64 {\n\tvar sum int64 = 0\n\tfor _, value := range values {\n\t\tsum += value\n\t}\n\treturn sum\n}', note:'Types are written down and checked before it runs. _ discards the index you did not want.'},
+        {language:'Rust', code:'fn total(values: &[i64]) -> i64 {\n    let mut sum = 0;\n    for value in values {\n        sum += value;\n    }\n    sum\n}', note:'&[i64] borrows the slice rather than taking it, and mut marks the one variable that changes.'}
+      ]
+    },
+    questions:[
+      {prompt:'In the Python version, what does for value in values give you on each turn?', options:[{label:'the position of the next entry'},{label:'the next entry itself'},{label:'a copy of the whole list'},{label:'nothing until the loop ends'}], answer:1, why:'Python’s for walks the values directly. Getting positions instead needs enumerate(values) or range(len(values)).'},
+      {prompt:'The Rust signature says values: &[i64]. What is the & doing?', options:[{label:'making the values changeable'},{label:'borrowing the data instead of taking ownership of it'},{label:'marking the parameter as optional'},{label:'copying the list into the function'}], answer:1, why:'& is a borrow: the caller keeps ownership and the function only reads. Without it the value would be moved into the function and the caller could not use it again.'},
+      {prompt:'Go writes []int64 and int64 in the signature. What does that buy?', options:[{label:'faster loops at run time'},{label:'errors caught before the program runs'},{label:'shorter code'},{label:'automatic memory management'}], answer:1, why:'Declared types are checked at compile time, so a mismatched call fails to build rather than failing in production.'},
+      {prompt:'Ruby’s version has no return. What does it give back?', options:[{label:'nothing'},{label:'the value of its last expression'},{label:'the array it was given'},{label:'an error'}], answer:1, why:'In Ruby, and in Rust’s final line too, the last expression is the result. The explicit return is for leaving early.'},
+      {prompt:'Which difference between these five would survive rewriting them all in the same brace style?', options:[{label:'where the semicolons go'},{label:'whether types are checked before the program runs'},{label:'the name of the loop variable'},{label:'the indentation'}], answer:1, why:'Braces, semicolons and indentation are surface. Static versus dynamic typing changes when your mistakes are found, which is a real difference.'}
+    ],
+    quizSuccess:'Same loop, five languages. The syntax is the part you can look up.',
+    solution:[1,1,1,1,1],
+    hints:['Read each note under the sample before answering: each one points at exactly what its language is making the author declare.','Four of the five answers are the second option, which is a coincidence — check each one against the code rather than the pattern.'],
+    takeaway:'Learning a second language is mostly learning what it insists on: types before it runs, ownership of memory, or nothing at all until something breaks. The loop is the same everywhere.', reference:refs.syntax
+  },
   // ------------------------------------------- chapter 2: computer science
   {
     id:'speak-in-bits', kind:'bits', chapter:'Computer science', concept:'Binary numbers', name:'Speak in bits', location:'Memory bank',
@@ -199,68 +454,6 @@ export const levels = [
     values:[7,2,9,4,1],
     hints:['Try moving the largest value right by swapping it past smaller neighbours.','The final order is 1, 2, 4, 7, 9. Move 9 to the end, then work on the earlier entries.'], solution:[1,2,4,7,9],
     takeaway:'You sorted an array with adjacent swaps. Following a systematic left-to-right pass repeatedly gives bubble sort, which has quadratic worst-case time. Arbitrary swaps need not follow that algorithm.', reference:refs.sort
-  },
-  {
-    id:'divide-and-conquer', kind:'algo', chapter:'Computer science', concept:'Binary search', name:'Halve the problem', location:'Star catalogue',
-    objective:'Write find(sorted, target) so it returns the position of target, or −1, without scanning every entry.',
-    intro:'The catalogue is already sorted. A scan from the start would work, but the last two cases allow only 800 interpreter steps each, and a scan of 1,024 entries needs thousands.',
-    lesson:'Binary search compares the middle entry with the target. If the middle is too small, the answer cannot be to its left, so half the remaining range disappears; if it is too large, the other half goes. Each comparison halves what is left, so 1,024 entries take about 10 comparisons and a million take about 20. It only works because the input is sorted.',
-    signature:'function find(sorted, target)', fn:'find',
-    cases:[
-      {args:[[1,3,5,7,9],7], expect:3},
-      {args:[[1,3,5,7,9],1], expect:0},
-      {args:[[1,3,5,7,9],9], expect:4},
-      {args:[[1,3,5,7,9],4], expect:-1, note:'not present'},
-      {args:[[],5], expect:-1},
-      {args:[ramp(1024,3),1533], expect:511, note:'1,024 entries, at most 800 steps', maxOperations:800},
-      {args:[ramp(1024,3),3070], expect:-1, note:'missing, at most 800 steps', maxOperations:800}
-    ],
-    gateHint:'Halving the range each time turns thousands of comparisons into about ten.',
-    starter:'function find(sorted, target) {\n  let low = 0;\n  let high = sorted.length - 1;\n  while (low <= high) {\n    let middle = Math.floor((low + high) / 2);\n    // Compare sorted[middle] with target and discard half the range.\n  }\n  return -1;\n}\n',
-    solution:'function find(sorted, target) {\n  let low = 0;\n  let high = sorted.length - 1;\n  while (low <= high) {\n    let middle = Math.floor((low + high) / 2);\n    if (sorted[middle] === target) {\n      return middle;\n    }\n    if (sorted[middle] < target) {\n      low = middle + 1;\n    } else {\n      high = middle - 1;\n    }\n  }\n  return -1;\n}',
-    hints:['Three cases: the middle entry is the target, it is too small, or it is too large. Move low or high past the middle so the range always shrinks.','If sorted[middle] < target then low = middle + 1, otherwise high = middle - 1. Forgetting the + 1 or − 1 makes the loop run forever.'],
-    takeaway:'Logarithmic search does about 10 comparisons where a linear scan does 1,024. That gap is what algorithmic complexity measures, and it grows as the input does.', reference:refs.search
-  },
-  {
-    id:'call-yourself', kind:'algo', chapter:'Computer science', concept:'Recursion', name:'Call yourself', location:'Signal analyser',
-    objective:'Write a recursive gcd(a, b) that returns the greatest common divisor.',
-    intro:'Two antennas repeat their patterns every a and b samples. The combined pattern repeats every gcd(a, b) samples. Euclid worked out how to find it without trying every divisor.',
-    lesson:'A recursive function calls itself on a smaller version of the same problem and has a base case that stops. Euclid’s insight: any number dividing both a and b also divides a % b, so gcd(a, b) = gcd(b, a % b), and when b reaches 0 the answer is a. Each step shrinks the numbers fast, so even nine-digit inputs finish in a few dozen steps. Without a base case, the calls never stop, and this sandbox reports it instead of crashing the page.',
-    signature:'function gcd(a, b)', fn:'gcd', requireRecursion:true,
-    cases:[
-      {args:[1071,462], expect:21},
-      {args:[270,192], expect:6},
-      {args:[13,13], expect:13},
-      {args:[17,5], expect:1, note:'coprime'},
-      {args:[36,0], expect:36, note:'the base case'},
-      {args:[1234567890,987654321], expect:9, note:'nine digits, at most 400 steps', maxOperations:400}
-    ],
-    gateHint:'Trying every divisor up to the smaller number is hundreds of millions of steps. Euclid’s rule needs a few dozen.',
-    starter:'function gcd(a, b) {\n  // Base case: when b is 0, the answer is a.\n  // Otherwise call gcd again with smaller numbers.\n  return a;\n}\n',
-    solution:'function gcd(a, b) {\n  if (b === 0) {\n    return a;\n  }\n  return gcd(b, a % b);\n}',
-    hints:['The base case is b === 0, and then the answer is a. Everything else reduces to gcd(b, a % b).','Two lines: if (b === 0) { return a; } then return gcd(b, a % b);. Notice the arguments swap.'],
-    takeaway:'Recursion describes a problem in terms of a smaller copy of itself. The base case is not optional: it is the only thing that ends the calls.', reference:refs.recursion
-  },
-  {
-    id:'balance-the-manifest', kind:'algo', chapter:'Computer science', concept:'Stacks', name:'Balance the manifest', location:'Cargo manifest',
-    objective:'Write balanced(text) so it returns true when every bracket closes in the right order.',
-    intro:'Cargo manifests nest: crates inside pallets inside holds. A closing bracket has to match the most recent unclosed opening bracket, which is exactly what a stack remembers.',
-    lesson:'A stack is last in, first out. push adds to the end, pop removes from the end, and an array gives you both. Push every opening bracket; on a closing bracket, pop the most recent opening one and check that they match. Two failure modes are easy to miss: a closing bracket when the stack is empty, and leftovers on the stack when the text ends.',
-    signature:'function balanced(text)', fn:'balanced',
-    cases:[
-      {args:['()'], expect:true},
-      {args:['([]{})'], expect:true},
-      {args:[''], expect:true, note:'nothing is unbalanced'},
-      {args:['(]'], expect:false, note:'mismatched pair'},
-      {args:['(()'], expect:false, note:'left open'},
-      {args:[')('], expect:false, note:'closed before opened'},
-      {args:['{[()()]}[]'], expect:true},
-      {args:['{[(])}'], expect:false, note:'crossed pairs'}
-    ],
-    starter:'function balanced(text) {\n  let stack = [];\n  for (let i = 0; i < text.length; i++) {\n    let character = text[i];\n    // Push openings; on a closing bracket, pop and compare.\n  }\n  return stack.length === 0;\n}\n',
-    solution:'function balanced(text) {\n  let stack = [];\n  for (let i = 0; i < text.length; i++) {\n    let character = text[i];\n    if (character === "(" || character === "[" || character === "{") {\n      stack.push(character);\n    } else {\n      if (stack.length === 0) {\n        return false;\n      }\n      let open = stack.pop();\n      if (character === ")" && open !== "(") {\n        return false;\n      }\n      if (character === "]" && open !== "[") {\n        return false;\n      }\n      if (character === "}" && open !== "{") {\n        return false;\n      }\n    }\n  }\n  return stack.length === 0;\n}',
-    hints:['Push "(", "[" and "{". On any other character, the stack must not be empty, and the popped bracket must be the matching opening one.','Return false as soon as a pair does not match or the stack is empty. At the end, the stack has to be empty too.'],
-    takeaway:'A stack turns “the most recent unclosed thing” into one operation. Parsers, undo histories, and the call stack behind your own function calls all work this way.', reference:refs.stack
   },
   {
     id:'hash-it-out', kind:'hash', chapter:'Computer science', concept:'Hash tables', name:'Somewhere to put it', location:'Index memory',
