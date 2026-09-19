@@ -140,7 +140,7 @@ footer {
   color:var(--chapter); font-size:var(--text-xs); white-space:nowrap;
 }
 .intro { max-width:74ch; margin:var(--s-4) 0 var(--s-6); color:var(--text-muted); font-size:var(--text-md); line-height:1.7; }
-.play-layout { display:grid; grid-template-columns:minmax(0,1.1fr) minmax(0,1fr); gap:var(--s-4); align-items:stretch; }
+.play-layout { display:grid; grid-template-columns:minmax(0,1.1fr) minmax(0,1fr); gap:var(--s-4); align-items:start; }
 
 .arena-panel, .console-panel {
   display:flex; flex-direction:column; min-width:0;
@@ -200,7 +200,7 @@ footer {
 
 /* ------------------------------------------------------------- console */
 .editor-wrap {
-  position:relative; display:flex; min-height:280px;
+  position:relative; display:flex; min-height:190px;
   background:var(--code-bg);
   border-bottom:1px solid var(--line);
   transition:box-shadow var(--fast);
@@ -212,7 +212,7 @@ footer {
   color:#6383a3; font:var(--text-sm)/1.75 var(--font-mono);
 }
 #code {
-  flex:1; min-width:0; width:100%; resize:vertical; min-height:280px;
+  flex:1; min-width:0; width:100%; resize:vertical; min-height:190px;
   padding:var(--s-5) var(--s-4) var(--s-4) 0;
   border:0; outline:0; background:transparent; color:#cfe8ff;
   font:var(--text-sm)/1.75 var(--font-mono); tab-size:2; white-space:pre; overflow:auto;
