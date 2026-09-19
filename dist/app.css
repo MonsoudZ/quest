@@ -49,11 +49,13 @@
 .icon-button svg { width:16px; height:16px; }
 
 .game-modes {
+  overflow:hidden;
   display:flex; align-items:center; gap:var(--s-3);
   padding:var(--s-3) clamp(var(--s-4), 3vw, var(--s-7));
   border-bottom:1px solid var(--line);
 }
-.mode-switch { display:flex; gap:var(--s-1); padding:var(--s-1); border:1px solid var(--line); border-radius:var(--r-pill); background:var(--surface-1); }
+.mode-switch { display:flex; gap:var(--s-1); min-width:0; max-width:100%; padding:var(--s-1); border:1px solid var(--line); border-radius:var(--r-pill); background:var(--surface-1); overflow-x:auto; scrollbar-width:none; }
+.mode-switch::-webkit-scrollbar { display:none; }
 .mode-button {
   padding:var(--s-2) var(--s-4); border-radius:var(--r-pill);
   color:var(--text-muted); font-size:var(--text-sm); white-space:nowrap;
@@ -479,6 +481,10 @@ kbd { padding:2px 5px; border:1px solid var(--line-strong); border-radius:4px; b
 .builder-test p { font-size:var(--text-base); color:var(--text-muted); }
 .builder-workspace .learning-row { margin-top:var(--s-6); }
 
+/* A grid item defaults to min-width:auto, which lets a wide table push the
+   whole page sideways instead of scrolling inside its own panel. */
+.play-layout > *, .learning-row > *, .lab-detail > *, .builder-floor > *, .city-layout > *, .builder-metrics > * { min-width:0; }
+
 /* ----------------------------------------------------------- responsive */
 @media (max-width:1250px) {
   .shell { grid-template-columns:240px minmax(0,1fr); }
@@ -518,6 +524,8 @@ kbd { padding:2px 5px; border:1px solid var(--line-strong); border-radius:4px; b
 }
 @media (max-width:640px) {
   .topbar { gap:var(--s-2); padding:var(--s-2) var(--s-3); min-height:58px; }
+  /* The link keeps its aria-label, so the mark alone still names the page. */
+  .brand > span { display:none; }
   .brand-mark { width:36px; height:36px; font-size:22px; }
   .brand > span { font-size:var(--text-base); white-space:nowrap; }
   .icon-button { height:36px; padding:0 var(--s-2); }
@@ -545,4 +553,89 @@ kbd { padding:2px 5px; border:1px solid var(--line-strong); border-radius:4px; b
   footer { flex-direction:column; gap:var(--s-2); }
   .game-scene { min-height:280px; }
   .sort-chart { gap:var(--s-2); }
+}
+
+/* ------------------------------------------------------------ Signal City */
+.city-layout { display:grid; grid-template-columns:minmax(0,1.55fr) minmax(320px,1fr); gap:var(--s-4); margin-top:var(--s-4); }
+.city-stage { display:flex; flex-direction:column; gap:var(--s-3); }
+.city-toolbar { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:var(--s-3); }
+.city-toolbar .segmented { background:var(--surface-sunken); }
+.city-toolbar .component-option { flex-direction:column; align-items:flex-start; gap:2px; padding:var(--s-2) var(--s-3); }
+.city-toolbar .component-option span:last-child { font:var(--text-2xs)/1.3 var(--font-mono); color:var(--text-dim); }
+.city-toolbar .component-option.chosen span:last-child { color:inherit; }
+.city-canvas { border:1px solid var(--line); border-radius:var(--r-sm); background:var(--viewport); overflow:hidden; }
+.city-map { display:block; width:100%; height:auto; max-height:min(54vh, 520px); }
+.city-grid { pointer-events:none; }
+.city-dot { fill:var(--text-dim); opacity:.35; }
+
+.city-cable line { stroke:var(--line-strong); stroke-linecap:round; transition:stroke var(--base), stroke-width var(--base); }
+.city-cable.tech-fibre line { stroke-width:6; }
+.city-cable.tech-copper line { stroke-width:4; }
+.city-cable.tech-microwave line { stroke-width:2.5; stroke-dasharray:9 7; }
+.city-cable.load-cool line { stroke:var(--success); }
+.city-cable.load-warm line { stroke:var(--warn); }
+.city-cable.load-hot line { stroke:var(--danger); }
+.city-cable text { fill:var(--text-muted); font:500 12px var(--font-mono); paint-order:stroke; stroke:var(--viewport); stroke-width:5px; stroke-linejoin:round; }
+.city-cable-hit { stroke:transparent !important; stroke-width:22 !important; cursor:pointer; stroke-dasharray:none !important; }
+.city-cable:hover line:first-child { stroke:var(--accent); }
+
+.city-district { --kind:var(--line-strong); }
+.city-district.kind-homes { --kind:#7cc5f5; }
+.city-district.kind-science { --kind:#b6a8ff; }
+.city-district.kind-industry { --kind:#ffc978; }
+.city-district.kind-transport { --kind:#6ce3b4; }
+.city-district.kind-medical { --kind:#ff9d81; }
+.city-district.kind-commerce { --kind:#ffe08a; }
+.city-district.kind-relay { --kind:var(--text-dim); }
+.city-district.kind-uplink { --kind:var(--accent); }
+.city-district rect {
+  fill:var(--surface-2); stroke:color-mix(in srgb, var(--kind) 60%, var(--line-strong)); stroke-width:1.5;
+  transition:fill var(--fast), stroke var(--fast);
+}
+.city-district .city-demand { fill:color-mix(in srgb, var(--kind) 65%, var(--text-dim)); }
+.city-district { cursor:pointer; }
+.city-district:hover rect { stroke:var(--accent); }
+.city-district:focus-visible { outline:none; }
+.city-district:focus-visible rect { stroke:var(--accent); stroke-width:3; }
+.city-district.selected rect { fill:var(--accent-wash); stroke:var(--accent); stroke-width:2.5; }
+.city-district.kind-uplink rect { fill:color-mix(in srgb, var(--accent) 22%, var(--surface-2)); stroke:var(--accent); }
+.city-district.kind-relay rect { stroke-dasharray:6 5; }
+.city-district.starved rect { stroke:var(--warn); }
+.city-district.offline rect { stroke:var(--danger); stroke-dasharray:5 4; }
+.city-name { fill:var(--text); font:500 13px var(--font-display); }
+.city-demand { fill:var(--text-dim); font:11px var(--font-mono); }
+.city-district.kind-uplink .city-demand { fill:var(--accent); }
+.table-scroll { max-width:100%; overflow-x:auto; }
+
+.city-build { display:flex; flex-direction:column; gap:var(--s-3); }
+.city-links { display:flex; flex-direction:column; gap:var(--s-2); max-height:270px; overflow:auto; }
+.link-row {
+  display:flex; align-items:center; justify-content:space-between; gap:var(--s-3);
+  padding:var(--s-2) var(--s-3); border:1px solid var(--line); border-left-width:3px; border-radius:var(--r-sm);
+  background:var(--surface-2); font-size:var(--text-sm);
+}
+.link-row.load-cool { border-left-color:var(--success); }
+.link-row.load-warm { border-left-color:var(--warn); }
+.link-row.load-hot { border-left-color:var(--danger); }
+.link-route { display:flex; flex-direction:column; gap:2px; }
+.link-route small { color:var(--text-dim); font:var(--text-2xs)/1.4 var(--font-mono); }
+.city-add { display:grid; grid-template-columns:1fr 1fr auto; gap:var(--s-2); }
+.city-add select {
+  padding:var(--s-2) var(--s-3); border:1px solid var(--line-strong); border-radius:var(--r-sm);
+  background:var(--surface-2); color:var(--text); font-size:var(--text-sm); min-width:0;
+}
+.city-metrics { grid-template-columns:1fr 1fr; margin-top:0; }
+.city-metrics > div { padding:var(--s-4); }
+.city-metrics strong { font-size:var(--text-xl); }
+.city-build .builder-test { margin-top:0; }
+
+@media (max-width:1250px) {
+  .city-layout { grid-template-columns:1fr; }
+  .city-metrics { grid-template-columns:1fr 1fr; }
+}
+@media (max-width:640px) {
+  .city-add { grid-template-columns:1fr; }
+  .city-toolbar .segmented { width:100%; }
+  .city-toolbar .component-option { flex:1; }
+  .city-metrics { grid-template-columns:1fr; }
 }

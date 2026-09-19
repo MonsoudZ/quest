@@ -9,7 +9,7 @@ import {fileURLToPath} from 'node:url';
 const dist = resolve(dirname(fileURLToPath(import.meta.url)), '../dist');
 const read = name => readFileSync(resolve(dist, name), 'utf8');
 const html = read('index.html');
-const scripts = ['game.js', 'builder.js', 'scene.js', 'webmcp.js', 'puzzles.js'].map(read).join('\n');
+const scripts = ['game.js', 'builder.js', 'citylab.js', 'scene.js', 'webmcp.js', 'puzzles.js'].map(read).join('\n');
 const styles = ['theme.css', 'app.css'].map(read).join('\n');
 
 test('every local file the page links to exists', () => {
@@ -59,10 +59,12 @@ test('every class the interface renders has a style rule', () => {
   const styled = new Set([...styles.matchAll(/\.([a-zA-Z][\w-]*)/g)].map(match => match[1]));
   const missing = [...classes].filter(name => !styled.has(name));
   assert.deepEqual(missing, [], `these classes are rendered but never styled: ${missing.join(', ')}`);
-  assert.deepEqual([...prefixes].sort(), ['diagram-', 'widget-'], 'a new interpolated class name needs its concrete forms listed below');
+  assert.deepEqual([...prefixes].sort(), ['diagram-', 'kind-', 'load-', 'tech-', 'widget-'], 'a new interpolated class name needs its concrete forms listed below');
   // Every diagram kind needs its own rule. Widget kinds mostly share the base
   // row, so only the ones that differ are required to have one.
-  for (const concrete of ['diagram-bits', 'diagram-sort', 'diagram-stack', 'diagram-table', 'diagram-bars', 'diagram-timeline', 'diagram-cards', 'diagram-cases', 'widget-row', 'widget-choice']) {
+  for (const concrete of ['diagram-bits', 'diagram-sort', 'diagram-stack', 'diagram-table', 'diagram-bars', 'diagram-timeline', 'diagram-cards', 'diagram-cases', 'widget-row', 'widget-choice',
+    'tech-fibre', 'tech-copper', 'tech-microwave', 'load-cool', 'load-warm', 'load-hot',
+    'kind-uplink', 'kind-relay', 'kind-homes', 'kind-science', 'kind-industry', 'kind-transport', 'kind-medical', 'kind-commerce']) {
     assert.ok(styled.has(concrete), `${concrete} has no style rule`);
   }
   assert.ok(classes.size > 60, `only ${classes.size} classes were found, so the scan is not working`);

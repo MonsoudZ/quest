@@ -31,6 +31,23 @@ under loss, DNS resolution and caching, and the round trips before an HTTPS resp
 latency, fan-out, redundancy arithmetic, and the trades behind eventual consistency, idempotency,
 and cache invalidation. The architecture lab then gives you five contracts to design for.
 
+### The two build modes
+
+The missions teach a concept each; the build modes are where you apply them at scale, against
+contracts that have to be met all at once.
+
+**Signal City** (networking). Lay cable between districts and the model tells you what the city
+gets: which route each district's traffic takes, how loaded every cable is, how much of the
+demand actually arrives, what the round trip looks like once queues build, and who loses the
+uplink when a single cable is cut. Five contracts move from "connect everything within budget"
+to "survive any one cut without losing more than 40% of the traffic". Copper is cheap and short,
+fibre is fast and expensive, microwave reaches anywhere and carries almost nothing — the design
+is choosing which span gets which.
+
+**Architecture lab** (system design). Choose an edge tier, a datastore, replicas, shards, a
+cache, an async queue, and a second region, against a 99th-percentile latency target, an
+availability target, and a budget.
+
 ## Project
 
 A dependency-free static application. The deployable files are in `dist/`; `server.mjs` is only
@@ -41,10 +58,11 @@ the local development server, and the host serves `dist/` in production.
 | `dist/lang.js` | The teaching language: tokenizer, parser, static checker, interpreter |
 | `dist/engine.js` | Mission evaluators: the grid simulation, data puzzles, graphs, algorithm tests |
 | `dist/net.js` | Networking models: addressing, routing, encapsulation, transport |
+| `dist/city.js` | Signal City: topology, routing, fair bandwidth sharing, failure analysis |
 | `dist/systems.js` | The system-design model behind the architecture lab |
 | `dist/puzzles.js` | One state/widget/diagram/verdict interface for every non-coding mission |
 | `dist/levels.js` | Mission content, including the solution each mission's tests check |
-| `dist/game.js`, `dist/builder.js`, `dist/scene.js` | Interface and isometric renderer |
+| `dist/game.js`, `dist/builder.js`, `dist/citylab.js`, `dist/scene.js` | Interface, city map, and isometric renderer |
 | `dist/theme.css` | Design tokens, base elements, and the light and dark colour schemes |
 | `dist/app.css` | Components, composed only from those tokens |
 
@@ -103,13 +121,18 @@ and so does this list:
   systems add bursty arrivals, correlated failures, coordination, and cold starts.
 - **Graph missions.** Link weights are fixed delays. Real packet delay also depends on
   transmission, processing, and queueing.
+- **Signal City.** Routing is shortest-path on an OSPF-style metric (a reference bandwidth over
+  the link's capacity), with no load balancing across equal-cost paths. Bandwidth is shared
+  max-min fairly rather than by TCP's actual dynamics, queueing delay uses the same M/M/1 factor,
+  and demand is steady rather than bursty. Cutting a cable reroutes instantly, with no
+  convergence time.
 
 Addressing, prefix matching, header arithmetic, and the binary encodings follow the real rules,
 and the tests check them against independent implementations.
 
 ## Validation
 
-Run `npm test` and `npm run check`. 72 tests across seven files:
+Run `npm test` and `npm run check`. 83 tests across eight files:
 
 - `tests/lang.test.mjs` — 30 programs run in both the interpreter and real JavaScript via
   `node:vm` and compared, plus the refusals, the deliberate deviations, and the bounds.
@@ -123,6 +146,10 @@ Run `npm test` and `npm run check`. 72 tests across seven files:
   against a simulated M/M/1 queue.
 - `tests/missions.test.mjs` — every mission's shipped solution wins, no mission starts solved,
   every mission carries its teaching material, and the concept requirements hold.
+- `tests/city.test.mjs` — the city's routing checked against an enumeration of every simple
+  path, max-min fair sharing against a hand-computed allocation, cut analysis against an
+  independent reachability search, and a check that each contract fails when the technique it
+  teaches is removed.
 - `tests/page.test.mjs` — the checks a no-build static page otherwise lacks: every file the
   page links to exists, every id the interface looks up is in the markup, every class it
   renders has a style rule, every custom property it uses is defined, and the accessibility
@@ -132,10 +159,11 @@ Run `npm test` and `npm run check`. 72 tests across seven files:
   against path enumeration, and every puzzle's whole option space enumerated to prove it is
   winnable, not winnable by accident, and solved by the answer it ships.
 
-A browser pass through all 31 missions and all 5 lab contracts was run with Playwright against
-the development server: every mission completes from its own "show a solution" button, every
-contract is met, and the page reports no script errors. The layout was checked at desktop and
-390px widths in both colour schemes, with no horizontal overflow at either size.
+A browser pass was run with Playwright against the development server: all 31 missions complete
+from their own "show a solution" button, all 5 architecture contracts and all 5 city contracts
+are met, a city built by clicking the map passes its contract and fails again when cables are
+removed, and the page reports no script errors. The layout was swept from 320px to 1920px in
+both colour schemes across all three modes, with no horizontal overflow anywhere.
 
 Optional WebMCP tools feature-detect `document.modelContext`. Registration and the tool actions
 have not been exercised in a browser that supports it; normal play does not require it.
@@ -143,5 +171,6 @@ have not been exercised in a browser that supports it; normal play does not requ
 ## Next chapters
 
 Possible extensions: sorting and graph algorithms written as code rather than as puzzles, a
-concurrency chapter, congestion control on top of the transport model, and a storage chapter
-covering durability, replication lag, and consensus.
+concurrency chapter, congestion control on top of the transport model, a storage chapter covering
+durability, replication lag, and consensus, and a Signal City that grows over several contracts
+rather than resetting between them.

@@ -2,6 +2,7 @@ import {levels} from './levels.js';
 import {simulate, evaluateAlgorithm, evaluateNetwork, describe} from './engine.js';
 import {isPuzzle, initialState, solutionState, applyAction, widgets, view, evaluate} from './puzzles.js';
 import {mountBuilder} from './builder.js';
+import {mountCity} from './citylab.js';
 import {registerGameTools} from './webmcp.js';
 import {createScene} from './scene.js';
 
@@ -549,14 +550,15 @@ $('sound').addEventListener('click', () => {
 
 loadMission(current);
 const builder = mountBuilder($('builder'));
+const city = mountCity($('city'));
+const modes = ['campaign', 'builder', 'city'];
 function setMode(nextMode) {
   runToken++;
   running = false;
   controls();
   mode = nextMode;
-  $('campaign').hidden = mode !== 'campaign';
-  $('builder').hidden = mode !== 'builder';
-  for (const name of ['campaign', 'builder']) {
+  for (const name of modes) {
+    $(name).hidden = name !== mode;
     $(`${name}-mode`).classList.toggle('active', name === mode);
     $(`${name}-mode`).setAttribute('aria-pressed', String(name === mode));
   }
@@ -582,8 +584,7 @@ $('theme').addEventListener('click', () => {
 prefersLight.addEventListener('change', () => { if (!theme) applyTheme(); });
 applyTheme();
 
-$('campaign-mode').addEventListener('click', () => setMode('campaign'));
-$('builder-mode').addEventListener('click', () => setMode('builder'));
+for (const name of modes) $(`${name}-mode`).addEventListener('click', () => setMode(name));
 
 const isCoding = () => level().kind === 'code' || level().kind === 'algo';
 registerGameTools({
@@ -593,6 +594,7 @@ registerGameTools({
     program:isCoding() ? $('code').value : null,
     completed:[...completed], running,
     architecture:builder.getState(),
+    city:city.getState(),
     missions:levels.map(item => ({id:item.id, name:item.name, kind:item.kind, chapter:item.chapter}))
   }),
   start:id => {
