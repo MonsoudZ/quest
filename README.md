@@ -1,30 +1,126 @@
 # Signal Quest
 
-A beginner programming and computer science game with an orbital-station adventure, interactive puzzles, and a computer-building mode.
+A game that teaches programming, computer science, networking, and system design by making you
+do each of them. Thirty-one missions across four chapters, plus an architecture lab where you
+design a service against a latency, availability, and cost target.
 
 ## Play
 
 Run `npm run dev` and open `http://127.0.0.1:4317`.
 
-- **Adventure & puzzles:** nine missions teach sequences, debugging, loops, variables, conditionals, binary, sorting, and unweighted/weighted graph paths.
-- **Station builder:** three contracts teach resource allocation, throughput, budgets, and bottlenecks.
-- Code drafts and progress stay in this browser. Storage failure does not prevent play.
-- Use Run for animation, Step to inspect instructions, and hints or a sample solution when stuck.
+Everything runs in the browser with no dependencies and no build step. Progress and code drafts
+are stored in this browser; if storage is unavailable, play continues for the session.
+
+## What it teaches
+
+**Chapter 1 — Programming** (9 missions). Sequences, debugging, `for` loops, variables,
+conditionals, `while` loops, and functions, taught by driving a repair drone across a deck; then
+arrays and boolean logic, taught by writing a function that is run against test cases.
+
+**Chapter 2 — Computer science** (11 missions). Binary, bytes and hexadecimal, two's-complement
+signed integers, sorting by adjacent swaps, binary search under a step budget that a linear scan
+cannot meet, recursion via Euclid's algorithm, a stack used for bracket matching, hash tables and
+collisions, growth rates, and shortest paths on unweighted and weighted graphs.
+
+**Chapter 3 — Networking** (8 missions). Protocol layering and the maximum segment size, CIDR
+addressing, variable-length subnet planning inside a single /24, longest-prefix-match forwarding,
+window sizing against the bandwidth-delay product, retransmission strategy and wasted bandwidth
+under loss, DNS resolution and caching, and the round trips before an HTTPS response's first byte.
+
+**Chapter 4 — System design** (3 missions plus the lab). Capacity estimation, queueing and tail
+latency, fan-out, redundancy arithmetic, and the trades behind eventual consistency, idempotency,
+and cache invalidation. The architecture lab then gives you five contracts to design for.
 
 ## Project
 
-This is a dependency-free static application. The authored deployable files are in `dist/`. `server.mjs` is only the local development server. Sites serves the static files in production.
+A dependency-free static application. The deployable files are in `dist/`; `server.mjs` is only
+the local development server, and the host serves `dist/` in production.
 
-`engine.js` parses a deliberately limited JavaScript subset without eval or dynamic function execution: numeric variables, movement calls, bounded for loops, and canMove conditionals. It does not implement arbitrary JavaScript or full block scoping. Mission content uses only the supported syntax. Parsing and execution are bounded to prevent runaway programs.
+| File | Role |
+| --- | --- |
+| `dist/lang.js` | The teaching language: tokenizer, parser, static checker, interpreter |
+| `dist/engine.js` | Mission evaluators: the grid simulation, data puzzles, graphs, algorithm tests |
+| `dist/net.js` | Networking models: addressing, routing, encapsulation, transport |
+| `dist/systems.js` | The system-design model behind the architecture lab |
+| `dist/puzzles.js` | One state/widget/diagram/verdict interface for every non-coding mission |
+| `dist/levels.js` | Mission content, including the solution each mission's tests check |
+| `dist/game.js`, `dist/builder.js`, `dist/scene.js` | Interface and isometric renderer |
 
-The builder is an explicitly simplified three-stage pipeline, not a hardware benchmark or purchasing tool. Its units and prices are teaching values.
+### The language
+
+`lang.js` runs a deliberately small subset of JavaScript. Nothing is passed to `eval` or the
+`Function` constructor: programs are tokenized, parsed, checked, and walked. Property access is
+restricted to a whitelist, so `constructor` and `__proto__` are unreachable, and operations, call
+depth, array length, and total allocation are all bounded — a program that will not finish is
+stopped with an explanation rather than hanging the page.
+
+Supported: numbers, strings, booleans, arrays, `let`, assignment and compound assignment, `++`
+and `--`, arithmetic, comparison and logical operators, `if`/`else`, `for`, `while`, `break`,
+`continue`, function declarations with parameters, `return`, recursion, array indexing and the
+array members listed in the editor, and the `Math` functions listed in `mathMembers`.
+
+Not supported: objects, classes, closures as values, `var`, `const`, `switch`, `try`/`catch`,
+regular expressions, `async`, modules, or any host API beyond the commands a mission provides.
+
+It is also deliberately stricter than JavaScript in five places, because silence would teach the
+wrong thing: reading past the end of an array, dividing by zero, mixing types under an arithmetic
+operator, assigning past the end of an array, and producing `Infinity` or `NaN` are all reported
+instead of returning `undefined` or `NaN`. `tests/lang.test.mjs` pins both the agreements and
+these deviations against real JavaScript.
+
+### The models are teaching models
+
+Every number in the networking and system-design chapters is a simplification chosen to make a
+real effect visible and checkable, not to size real equipment. The game says so where it matters,
+and so does this list:
+
+- **Transport.** A deterministic sliding window: fixed serialisation delay, a fixed loss pattern,
+  timeout-based recovery, no congestion control, no reordering, no delayed acknowledgements. It
+  reproduces the bandwidth-delay product, window sizing, and the cost difference between
+  Go-Back-N and selective repeat. It does not model congestion collapse or bufferbloat, so an
+  oversized window is never punished the way it would be on a real network.
+- **Architecture lab.** Each tier is an M/M/1 queue, so its 99th percentile is
+  `ln(100) / (capacity − arrivals)`; the reported latency follows the slowest path a request can
+  take rather than blending percentiles, which overstates the total. Cache hit ratio is
+  approximated from cache size against the working set. Availability composes redundant instances
+  in parallel and tiers in series. Prices, capacities, and failure rates are fictional. Real
+  systems add bursty arrivals, correlated failures, coordination, and cold starts.
+- **Graph missions.** Link weights are fixed delays. Real packet delay also depends on
+  transmission, processing, and queueing.
+
+Addressing, prefix matching, header arithmetic, and the binary encodings follow the real rules,
+and the tests check them against independent implementations.
 
 ## Validation
 
-Run `npm test` and `npm run check`. The tests cover every mission solution, collision and error handling, execution bounds, graph constraints, puzzle answers, and builder contracts.
+Run `npm test` and `npm run check`. 67 tests across six files:
 
-Browser interaction and visual QA were not requested and have not been performed. Optional WebMCP tools feature-detect `document.modelContext`. Registration and actions have not been verified in a supported WebMCP browser context; normal play does not require that integration.
+- `tests/lang.test.mjs` — 30 programs run in both the interpreter and real JavaScript via
+  `node:vm` and compared, plus the refusals, the deliberate deviations, and the bounds.
+- `tests/engine.test.mjs` — collisions, native argument rules, lesson requirements, bit encodings,
+  and the algorithm harness.
+- `tests/net.test.mjs` — subnet arithmetic against a binary-string implementation, longest prefix
+  match against an independent prefix search, every host count from 1 to 1,000, and the transfer
+  simulation against its closed-form models at both ends of the window range.
+- `tests/systems.test.mjs` — every contract solved by exhaustive search, the techniques each
+  contract requires, the availability and cost arithmetic, and the 99th-percentile formula checked
+  against a simulated M/M/1 queue.
+- `tests/missions.test.mjs` — every mission's shipped solution wins, no mission starts solved,
+  every mission carries its teaching material, and the concept requirements hold.
+- `tests/accuracy.test.mjs` — grid programs compared against real JavaScript, every algorithm
+  solution compared against itself run natively on random inputs, every graph configuration
+  against path enumeration, and every puzzle's whole option space enumerated to prove it is
+  winnable, not winnable by accident, and solved by the answer it ships.
+
+A browser pass through all 31 missions and all 5 lab contracts was run with Playwright against
+the development server: every mission completes from its own "show a solution" button, every
+contract is met, and the page reports no script errors.
+
+Optional WebMCP tools feature-detect `document.modelContext`. Registration and the tool actions
+have not been exercised in a browser that supports it; normal play does not require it.
 
 ## Next chapters
 
-Possible extensions: functions, arrays in code, recursion, search algorithms, richer station construction, and an optional networking campaign. These are future work, not part of this first chapter.
+Possible extensions: sorting and graph algorithms written as code rather than as puzzles, a
+concurrency chapter, congestion control on top of the transport model, and a storage chapter
+covering durability, replication lag, and consensus.

@@ -1,103 +1,510 @@
-const row=(x,y,n)=>Array.from({length:n},(_,i)=>[x+i,y]);
-const column=(x,y,n)=>Array.from({length:n},(_,i)=>[x,y+i]);
-const refs={
-  basics:{label:'Read more: Harvard CS50 — algorithms & binary',url:'https://cs50.harvard.edu/x/notes/0/'},
-  variables:{label:'Reference: MDN — let and block scope',url:'https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/let'},
-  loops:{label:'Reference: MDN — for loops',url:'https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/for'},
-  conditions:{label:'Reference: MDN — if…else',url:'https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/if...else'},
-  sort:{label:'Reference: NIST — bubble sort',url:'https://xlinux.nist.gov/dads/HTML/bubblesort.html'},
-  graph:{label:'Reference: MIT — shortest paths & Dijkstra',url:'https://ocw.mit.edu/courses/6-046j-introduction-to-algorithms-sma-5503-fall-2005/resources/lecture-17-shortest-paths-i-properties-dijkstras-algorithm-breadth-first-search/'}
+// Mission content. Four chapters: programming in a JavaScript subset, computer
+// science fundamentals, networking, and system design. Every mission carries the
+// solution the tests check, so no mission can ship unsolvable.
+const row = (x, y, n) => Array.from({length:n}, (_, i) => [x + i, y]);
+const column = (x, y, n) => Array.from({length:n}, (_, i) => [x, y + i]);
+const ramp = (n, step) => Array.from({length:n}, (_, i) => i * step);
+
+const refs = {
+  basics:{label:'Read more: Harvard CS50 — algorithms & binary', url:'https://cs50.harvard.edu/x/notes/0/'},
+  variables:{label:'Reference: MDN — let and block scope', url:'https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/let'},
+  loops:{label:'Reference: MDN — for loops', url:'https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/for'},
+  whileLoops:{label:'Reference: MDN — while loops', url:'https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/while'},
+  conditions:{label:'Reference: MDN — if…else', url:'https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/if...else'},
+  functions:{label:'Reference: MDN — function declarations', url:'https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/function'},
+  arrays:{label:'Reference: MDN — arrays', url:'https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array'},
+  operators:{label:'Reference: MDN — logical operators', url:'https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators'},
+  sort:{label:'Reference: NIST — bubble sort', url:'https://xlinux.nist.gov/dads/HTML/bubblesort.html'},
+  search:{label:'Reference: NIST — binary search', url:'https://xlinux.nist.gov/dads/HTML/binarySearch.html'},
+  stack:{label:'Reference: NIST — stack', url:'https://xlinux.nist.gov/dads/HTML/stack.html'},
+  hash:{label:'Reference: NIST — hash table', url:'https://xlinux.nist.gov/dads/HTML/hashtab.html'},
+  growth:{label:'Reference: NIST — big-O notation', url:'https://xlinux.nist.gov/dads/HTML/bigOnotation.html'},
+  recursion:{label:'Reference: Recursion in computer science', url:'https://en.wikipedia.org/wiki/Recursion_(computer_science)'},
+  twos:{label:'Reference: Two’s complement', url:'https://en.wikipedia.org/wiki/Two%27s_complement'},
+  graph:{label:'Reference: MIT — shortest paths & Dijkstra', url:'https://ocw.mit.edu/courses/6-046j-introduction-to-algorithms-sma-5503-fall-2005/resources/lecture-17-shortest-paths-i-properties-dijkstras-algorithm-breadth-first-search/'},
+  layering:{label:'Reference: RFC 1122 — internet host layering', url:'https://www.rfc-editor.org/rfc/rfc1122'},
+  cidr:{label:'Reference: RFC 4632 — CIDR addressing', url:'https://www.rfc-editor.org/rfc/rfc4632'},
+  routers:{label:'Reference: RFC 1812 — IPv4 router requirements', url:'https://www.rfc-editor.org/rfc/rfc1812'},
+  tcp:{label:'Reference: RFC 9293 — TCP', url:'https://www.rfc-editor.org/rfc/rfc9293'},
+  dns:{label:'Reference: RFC 1034 — domain names', url:'https://www.rfc-editor.org/rfc/rfc1034'},
+  tls:{label:'Reference: RFC 8446 — TLS 1.3', url:'https://www.rfc-editor.org/rfc/rfc8446'},
+  slo:{label:'Reference: Google SRE — service level objectives', url:'https://sre.google/sre-book/service-level-objectives/'},
+  risk:{label:'Reference: Google SRE — embracing risk', url:'https://sre.google/sre-book/embracing-risk/'},
+  queueing:{label:'Reference: Little’s law', url:'https://en.wikipedia.org/wiki/Little%27s_law'},
+  cap:{label:'Reference: the CAP theorem', url:'https://en.wikipedia.org/wiki/CAP_theorem'}
 };
-export const levels=[
+
+const routingTable = [
+  {prefix:'0.0.0.0/0', via:'uplink'},
+  {prefix:'10.0.0.0/8', via:'core relay'},
+  {prefix:'10.20.0.0/16', via:'station spine'},
+  {prefix:'10.20.30.0/24', via:'lab deck'},
+  {prefix:'10.20.30.64/26', via:'sensor bay'}
+];
+const routeOptions = routingTable.map(route => ({label:`${route.via} (${route.prefix})`}));
+
+export const levels = [
+  // ------------------------------------------------ chapter 1: programming
   {
-    id:'first-contact',kind:'code',chapter:'Programming',concept:'Sequences',name:'First contact',location:'Docking bay',
+    id:'first-contact', kind:'code', chapter:'Programming', concept:'Sequences', name:'First contact', location:'Docking bay',
     objective:'Guide SQ-01 four tiles east to the power cell.',
     intro:'The station is dark. Your repair drone follows instructions from top to bottom. Use the cyan arrow to see which way it faces.',
     lesson:'A program gives a computer instructions. In this game, move() advances one tile in the direction the drone faces; move(3) advances three. The compass maps east to the lower-right diagonal.',
-    start:[1,3,0],goal:[5,3],tiles:row(1,3,5),
+    start:[1,3,0], goal:[5,3], tiles:row(1,3,5),
     starter:'// Reach the power cell, four tiles ahead.\nmove();\n',
     solution:'move(4);',
     hints:['The drone faces east. Count four tile-to-tile moves from its starting tile.','Use four move(); commands, or pass 4 to move().'],
-    takeaway:'You wrote a simple algorithm: precise steps that solve this navigation problem.',reference:refs.basics
+    takeaway:'You wrote a simple algorithm: precise steps that solve this navigation problem.', reference:refs.basics
   },
   {
-    id:'around-the-corner',kind:'code',chapter:'Programming',concept:'Debugging',name:'A change of direction',location:'Service corridor',
+    id:'around-the-corner', kind:'code', chapter:'Programming', concept:'Debugging', name:'A change of direction', location:'Service corridor',
     objective:'Travel east, turn south, and reach the power cell.',
     intro:'The direct route is sealed. Break the journey into moves and turns. If a move fails, the trace identifies the responsible instruction.',
     lesson:'turnRight() rotates the drone 90° clockwise on the deck: east becomes south. turnLeft() rotates the other way. Turning does not change position. The isometric view makes right angles look like diagonal corners.',
-    start:[1,1,0],goal:[5,5],tiles:[...row(1,1,5),...column(5,2,4)],
+    start:[1,1,0], goal:[5,5], tiles:[...row(1,1,5), ...column(5,2,4)],
     starter:'move(4);\n// Turn, then follow the corridor.\n',
     solution:'move(4);\nturnRight();\nmove(4);',
     hints:['Travel four tiles east to the corner, then turn south.','After move(4), use turnRight(), then move four more tiles.'],
-    takeaway:'Debugging means comparing actual behavior with intended behavior, then fixing the responsible instruction.',reference:refs.basics
+    takeaway:'Debugging means comparing actual behaviour with intended behaviour, then fixing the responsible instruction.', reference:refs.basics
   },
   {
-    id:'repeat-the-route',kind:'code',chapter:'Programming',concept:'Loops',name:'Find the pattern',location:'Thermal array',require:'loop',
+    id:'repeat-the-route', kind:'code', chapter:'Programming', concept:'Loops', name:'Find the pattern', location:'Thermal array', require:'loop',
     objective:'Use a for loop to repeat the staircase route.',
     intro:'Three identical service modules stand between you and the cell. Describe their shared pattern once and repeat it.',
-    lesson:'A for loop repeats its body. let i = 0 initializes the counter; i < 3 is checked before every iteration; i++ adds one after the body. The body runs for i = 0, 1, and 2.',
-    start:[0,6,0],goal:[6,3],tiles:[[0,6],[1,6],[2,6],[2,5],[3,5],[4,5],[4,4],[5,4],[6,4],[6,3]],
+    lesson:'A for loop repeats its body. let i = 0 initialises the counter; i < 3 is checked before every iteration; i++ adds one after the body. The body runs for i = 0, 1, and 2.',
+    start:[0,6,0], goal:[6,3], tiles:[[0,6],[1,6],[2,6],[2,5],[3,5],[4,5],[4,4],[5,4],[6,4],[6,3]],
     starter:'for (let i = 0; i < 3; i++) {\n  move(2);\n  // Go north one tile, then face east again.\n}\n',
     solution:'for (let i = 0; i < 3; i++) {\n  move(2);\n  turnLeft();\n  move();\n  turnRight();\n}',
     hints:['Each module is two tiles east and one north. Finish each repetition facing east.','Inside the loop: move(2), turnLeft(), move(), then turnRight().'],
-    takeaway:'Your loop repeats the same navigation pattern. The counter belongs to the for loop and is not accessible after it.',reference:refs.loops
+    takeaway:'Your loop repeats the same navigation pattern. The counter belongs to the for loop and is not accessible after it.', reference:refs.loops
   },
   {
-    id:'name-the-distance',kind:'code',chapter:'Programming',concept:'Variables',name:'Store the answer',location:'Reactor access',require:'variable',
+    id:'name-the-distance', kind:'code', chapter:'Programming', concept:'Variables', name:'Store the answer', location:'Reactor access', require:'variable',
     objective:'Reuse one named distance for both straight corridors.',
     intro:'Both corridors have the same length. Store that distance in a variable and use the name twice.',
-    lesson:'let distance = 4 declares a variable and initializes it with 4. move(distance) then uses that value. let has block scope: a variable declared inside braces belongs to that block. JavaScript also supports reassignment; this sandbox currently focuses on declarations and reads.',
-    start:[1,1,0],goal:[5,5],tiles:[...row(1,1,5),...column(5,2,4)],
+    lesson:'let distance = 4 declares a variable and initialises it with 4. move(distance) then uses that value. let has block scope: a variable declared inside braces belongs to that block. You can also reassign it later with distance = 6.',
+    start:[1,1,0], goal:[5,5], tiles:[...row(1,1,5), ...column(5,2,4)],
     starter:'let distance = 2;\nmove(distance);\nturnRight();\nmove(distance);\n',
     solution:'let distance = 4;\nmove(distance);\nturnRight();\nmove(distance);',
     hints:['The starter turns too soon. Both straight corridors require four moves.','Change the stored distance from 2 to 4. Keep using the same name in both move calls.'],
-    takeaway:'Reusing a named value avoids repeating a literal. Changing this one declaration changes both movement distances.',reference:refs.variables
+    takeaway:'Reusing a named value avoids repeating a literal. Changing this one declaration changes both movement distances.', reference:refs.variables
   },
   {
-    id:'read-the-room',kind:'code',chapter:'Programming',concept:'Conditionals',name:'Read the room',location:'Sensor chamber',require:'conditional',
+    id:'read-the-room', kind:'code', chapter:'Programming', concept:'Conditionals', name:'Read the room', location:'Sensor chamber', require:'conditional',
     objective:'Use canMove() in a conditional to navigate the corner.',
     intro:'SQ-01 can check the tile ahead. Give it one rule for an open path and another for a blocked path.',
     lesson:'canMove() is this game’s sensor function: it returns true when the next tile is traversable. if chooses its body when the condition is true; else chooses the alternative. The loop makes eight decisions: seven moves and one turn.',
-    start:[1,1,0],goal:[4,5],tiles:[...row(1,1,4),...column(4,2,4)],
+    start:[1,1,0], goal:[4,5], tiles:[...row(1,1,4), ...column(4,2,4)],
     starter:'for (let i = 0; i < 8; i++) {\n  if (canMove()) {\n    // Move when the path is open.\n  } else {\n    turnRight();\n  }\n}\n',
     solution:'for (let i = 0; i < 8; i++) {\n  if (canMove()) {\n    move();\n  } else {\n    turnRight();\n  }\n}',
     hints:['The open-path block is empty. Add a movement command there.','Put move(); inside the if block. The else block already handles the blocked path.'],
-    takeaway:'Conditionals let a program respond to its environment. This rule works for this route; it is not a general-purpose maze solver.',reference:refs.conditions
+    takeaway:'Conditionals let a program respond to its environment. This rule works for this route; it is not a general-purpose maze solver.', reference:refs.conditions
   },
   {
-    id:'speak-in-bits',kind:'bits',chapter:'Computer science',concept:'Binary numbers',name:'Speak in bits',location:'Memory bank',
+    id:'unknown-corridor', kind:'code', chapter:'Programming', concept:'While loops', name:'How long is the corridor?', location:'Cargo spine', require:'while',
+    objective:'Cross two corridors of unknown length using while loops.',
+    intro:'Nobody recorded how long these corridors are. A for loop needs a count; a while loop only needs a condition.',
+    lesson:'while (condition) { … } checks the condition before every repetition and stops when it becomes false. while (canMove()) { move(); } walks forward until the way ahead is blocked, whatever the distance. A condition that never becomes false is an infinite loop, which is why this sandbox stops a program that runs too long.',
+    start:[1,2,0], goal:[6,6], tiles:[...row(1,2,6), ...column(6,3,4)],
+    starter:'while (canMove()) {\n  move();\n}\n// The corridor turns south here.\n',
+    solution:'while (canMove()) {\n  move();\n}\nturnRight();\nwhile (canMove()) {\n  move();\n}',
+    hints:['The first loop stops at the corner because canMove() becomes false. Turn, then loop again.','Add turnRight(); and a second identical while loop after the first one.'],
+    takeaway:'A while loop repeats on a condition rather than a count, so the same four lines work for a corridor of any length.', reference:refs.whileLoops
+  },
+  {
+    id:'one-routine-twice', kind:'code', chapter:'Programming', concept:'Functions', name:'Name a routine', location:'Habitat ring', require:'function',
+    objective:'Declare one function for a single leg, then call it twice.',
+    intro:'The two legs of this route are identical. Give the manoeuvre a name and reuse it instead of writing it twice.',
+    lesson:'function leg() { … } declares a function: a named block that runs when you call it with leg(). Calling it does not copy the code, it runs the same code again. Parameters let one function handle several cases: function leg(distance) { move(distance); } is called as leg(2).',
+    start:[0,0,0], goal:[4,4], tiles:[[0,0],[1,0],[2,0],[2,1],[2,2],[3,2],[4,2],[4,3],[4,4]],
+    starter:'function leg() {\n  move(2);\n  // Turn south, cross, then face east again.\n}\n\nleg();\nleg();\n',
+    solution:'function leg() {\n  move(2);\n  turnRight();\n  move(2);\n  turnLeft();\n}\n\nleg();\nleg();',
+    hints:['Each leg is two tiles east, then two tiles south, and it has to end facing east so the next leg works.','Inside the function: move(2), turnRight(), move(2), turnLeft(). Then call leg() twice.'],
+    takeaway:'A function names a routine once and runs it wherever you call it. Fixing the routine fixes every call.', reference:refs.functions
+  },
+  {
+    id:'total-the-readings', kind:'algo', chapter:'Programming', concept:'Arrays', name:'Total the readings', location:'Telemetry bay',
+    objective:'Write total(values) so it returns the sum of an array of readings.',
+    intro:'The sensor log arrives as an array. Walk it once and add up what you find. This console runs your function against every test case below.',
+    lesson:'An array holds an ordered sequence of values. values.length is how many it holds, and values[0] is the first one, because indices start at zero. return hands a value back to whoever called the function. An empty array has length 0, so the loop body never runs and the sum stays at its starting value.',
+    signature:'function total(values)', fn:'total',
+    cases:[
+      {args:[[1,2,3,4]], expect:10},
+      {args:[[5]], expect:5},
+      {args:[[]], expect:0, note:'an empty log is a real case'},
+      {args:[[12,-4,7,-15]], expect:0},
+      {args:[[100,200,300,400,500,600]], expect:2100}
+    ],
+    starter:'function total(values) {\n  let sum = 0;\n  // Visit every entry and add it to sum.\n  return sum;\n}\n',
+    solution:'function total(values) {\n  let sum = 0;\n  for (let i = 0; i < values.length; i++) {\n    sum += values[i];\n  }\n  return sum;\n}',
+    hints:['Loop from i = 0 while i < values.length, and add values[i] to sum each time.','sum += values[i]; is the same as sum = sum + values[i];. Return sum after the loop, not inside it.'],
+    takeaway:'One pass over n entries does n additions, so the work grows in step with the array. Returning from inside the loop would stop after the first entry.', reference:refs.arrays
+  },
+  {
+    id:'hold-the-line', kind:'algo', chapter:'Programming', concept:'Booleans', name:'Hold the line', location:'Reactor control',
+    objective:'Write safe(temperature, pressure) so it returns true only inside the operating window.',
+    intro:'The reactor is safe at 75 °C or below, with pressure from 20 to 110 inclusive. Turn that sentence into one boolean expression.',
+    lesson:'A comparison such as temperature <= 75 produces true or false. && is true only when both sides are true; || is true when either side is. A condition is just a value, so a function can return it directly instead of using if and else to return true or false. Watch the boundaries: <= includes the limit, < excludes it.',
+    signature:'function safe(temperature, pressure)', fn:'safe',
+    cases:[
+      {args:[70,50], expect:true},
+      {args:[76,50], expect:false},
+      {args:[75,20], expect:true, note:'both limits are inclusive'},
+      {args:[75,19], expect:false},
+      {args:[75,110], expect:true},
+      {args:[75,111], expect:false},
+      {args:[0,0], expect:false, note:'zero pressure is not in range'}
+    ],
+    starter:'function safe(temperature, pressure) {\n  // Return true only inside the operating window.\n  return false;\n}\n',
+    solution:'function safe(temperature, pressure) {\n  return temperature <= 75 && pressure >= 20 && pressure <= 110;\n}',
+    hints:['Three conditions have to hold at once: temperature at most 75, pressure at least 20, pressure at most 110.','Join them with &&, and return the whole expression.'],
+    takeaway:'Boundary values are where conditions go wrong. Writing the test cases at the limits is how you find an off-by-one comparison.', reference:refs.operators
+  },
+
+  // ------------------------------------------- chapter 2: computer science
+  {
+    id:'speak-in-bits', kind:'bits', chapter:'Computer science', concept:'Binary numbers', name:'Speak in bits', location:'Memory bank',
     objective:'Encode the unsigned decimal number 13 using four bits.',
     intro:'The memory bank represents information with bits: 0 or 1. Flip them to encode the access code.',
     lesson:'For these four unsigned binary digits, the place values are 8, 4, 2, and 1. A 1 includes its place value; a 0 contributes zero. The pattern 1101 means 8 + 4 + 0 + 1 = 13.',
-    target:13,hints:['13 is 8 + 4 + 1. Leave the 2-value bit off.','From left to right: 1, 1, 0, 1.'],solution:[1,1,0,1],
-    takeaway:'Four bits have 16 possible patterns. As an unsigned integer, they represent 0 through 15. Other encodings can give the same bits a different meaning.',reference:refs.basics
+    bits:{width:4}, target:13,
+    hints:['13 is 8 + 4 + 1. Leave the 2-value bit off.','From left to right: 1, 1, 0, 1.'], solution:[1,1,0,1],
+    takeaway:'Four bits have 16 possible patterns. As an unsigned integer, they represent 0 through 15. Other encodings can give the same bits a different meaning.', reference:refs.basics
   },
   {
-    id:'restore-the-order',kind:'sort',chapter:'Computer science',concept:'Arrays & sorting',name:'Restore the order',location:'Archive index',
+    id:'one-byte-code', kind:'bits', chapter:'Computer science', concept:'Bytes & hexadecimal', name:'One byte, two digits', location:'Firmware vault',
+    objective:'Encode 172 in eight bits and read off its hexadecimal form.',
+    intro:'Firmware is addressed in bytes. Eight bits hold 0 through 255, and hexadecimal writes each group of four bits as a single digit.',
+    lesson:'A byte is eight bits, with place values 128, 64, 32, 16, 8, 4, 2, 1. Hexadecimal is base 16, so one hex digit covers exactly four bits: 1010 is A and 1100 is C. That is why byte values are written as two hex digits, and why 0xAC is easier to read back than 10101100.',
+    bits:{width:8}, target:172,
+    hints:['172 = 128 + 32 + 8 + 4. Turn on exactly those four place values.','Left to right: 1, 0, 1, 0, 1, 1, 0, 0. Read it as two groups of four: 1010 = A, 1100 = C.'],
+    solution:[1,0,1,0,1,1,0,0],
+    takeaway:'Eight bits give 256 patterns. Hexadecimal is not a different number, only a shorter way to write the same bits.', reference:refs.basics
+  },
+  {
+    id:'negative-space', kind:'bits', chapter:'Computer science', concept:'Signed integers', name:'Below zero', location:'Attitude computer',
+    objective:'Encode −40 as an eight-bit two’s-complement integer.',
+    intro:'Thruster corrections go both ways, so the attitude computer needs negative numbers. The same eight switches now use a different encoding.',
+    lesson:'In two’s complement the leftmost bit is worth minus its place value: −128 instead of +128. So 11011000 is −128 + 64 + 16 + 8 = −40. The shortcut is to write the positive value, flip every bit, then add one. This encoding is what nearly every processor uses, because addition and subtraction work on it unchanged.',
+    bits:{width:8, encoding:'twos'}, target:-40,
+    hints:['40 is 00101000. Flip every bit to get 11010111, then add one.','The answer is 11011000: −128 + 64 + 16 + 8 = −40.'],
+    solution:[1,1,0,1,1,0,0,0],
+    takeaway:'The same eight bits mean 216 unsigned and −40 signed. Bits carry no meaning on their own; the encoding supplies it.', reference:refs.twos
+  },
+  {
+    id:'restore-the-order', kind:'sort', chapter:'Computer science', concept:'Arrays & sorting', name:'Restore the order', location:'Archive index',
     objective:'Sort the entries from smallest to largest with adjacent swaps.',
-    intro:'The archive index is scrambled. Reorder its entries by swapping neighboring values.',
+    intro:'The archive index is scrambled. Reorder its entries by swapping neighbouring values.',
     lesson:'An array is an ordered sequence of entries; JavaScript array indices start at 0. This puzzle permits any adjacent swap. Bubble sort is a particular algorithm: scan adjacent pairs in order, swap out-of-order pairs, and repeat passes until sorted.',
-    values:[7,2,9,4,1],hints:['Try moving the largest value right by swapping it past smaller neighbors.','The final order is 1, 2, 4, 7, 9. Move 9 to the end, then work on the earlier entries.'],solution:[1,2,4,7,9],
-    takeaway:'You sorted an array with adjacent swaps. Following a systematic left-to-right pass repeatedly gives bubble sort, which has quadratic worst-case time. Arbitrary swaps need not follow that algorithm.',reference:refs.sort
+    values:[7,2,9,4,1],
+    hints:['Try moving the largest value right by swapping it past smaller neighbours.','The final order is 1, 2, 4, 7, 9. Move 9 to the end, then work on the earlier entries.'], solution:[1,2,4,7,9],
+    takeaway:'You sorted an array with adjacent swaps. Following a systematic left-to-right pass repeatedly gives bubble sort, which has quadratic worst-case time. Arbitrary swaps need not follow that algorithm.', reference:refs.sort
   },
   {
-    id:'fewest-hops',kind:'network',chapter:'Computer science',concept:'Graphs & paths',name:'A shorter route',location:'Navigation core',
+    id:'divide-and-conquer', kind:'algo', chapter:'Computer science', concept:'Binary search', name:'Halve the problem', location:'Star catalogue',
+    objective:'Write find(sorted, target) so it returns the position of target, or −1, without scanning every entry.',
+    intro:'The catalogue is already sorted. A scan from the start would work, but the last two cases allow only 800 interpreter steps each, and a scan of 1,024 entries needs thousands.',
+    lesson:'Binary search compares the middle entry with the target. If the middle is too small, the answer cannot be to its left, so half the remaining range disappears; if it is too large, the other half goes. Each comparison halves what is left, so 1,024 entries take about 10 comparisons and a million take about 20. It only works because the input is sorted.',
+    signature:'function find(sorted, target)', fn:'find',
+    cases:[
+      {args:[[1,3,5,7,9],7], expect:3},
+      {args:[[1,3,5,7,9],1], expect:0},
+      {args:[[1,3,5,7,9],9], expect:4},
+      {args:[[1,3,5,7,9],4], expect:-1, note:'not present'},
+      {args:[[],5], expect:-1},
+      {args:[ramp(1024,3),1533], expect:511, note:'1,024 entries, at most 800 steps', maxOperations:800},
+      {args:[ramp(1024,3),3070], expect:-1, note:'missing, at most 800 steps', maxOperations:800}
+    ],
+    gateHint:'Halving the range each time turns thousands of comparisons into about ten.',
+    starter:'function find(sorted, target) {\n  let low = 0;\n  let high = sorted.length - 1;\n  while (low <= high) {\n    let middle = Math.floor((low + high) / 2);\n    // Compare sorted[middle] with target and discard half the range.\n  }\n  return -1;\n}\n',
+    solution:'function find(sorted, target) {\n  let low = 0;\n  let high = sorted.length - 1;\n  while (low <= high) {\n    let middle = Math.floor((low + high) / 2);\n    if (sorted[middle] === target) {\n      return middle;\n    }\n    if (sorted[middle] < target) {\n      low = middle + 1;\n    } else {\n      high = middle - 1;\n    }\n  }\n  return -1;\n}',
+    hints:['Three cases: the middle entry is the target, it is too small, or it is too large. Move low or high past the middle so the range always shrinks.','If sorted[middle] < target then low = middle + 1, otherwise high = middle - 1. Forgetting the + 1 or − 1 makes the loop run forever.'],
+    takeaway:'Logarithmic search does about 10 comparisons where a linear scan does 1,024. That gap is what algorithmic complexity measures, and it grows as the input does.', reference:refs.search
+  },
+  {
+    id:'call-yourself', kind:'algo', chapter:'Computer science', concept:'Recursion', name:'Call yourself', location:'Signal analyser',
+    objective:'Write a recursive gcd(a, b) that returns the greatest common divisor.',
+    intro:'Two antennas repeat their patterns every a and b samples. The combined pattern repeats every gcd(a, b) samples. Euclid worked out how to find it without trying every divisor.',
+    lesson:'A recursive function calls itself on a smaller version of the same problem and has a base case that stops. Euclid’s insight: any number dividing both a and b also divides a % b, so gcd(a, b) = gcd(b, a % b), and when b reaches 0 the answer is a. Each step shrinks the numbers fast, so even nine-digit inputs finish in a few dozen steps. Without a base case, the calls never stop, and this sandbox reports it instead of crashing the page.',
+    signature:'function gcd(a, b)', fn:'gcd', requireRecursion:true,
+    cases:[
+      {args:[1071,462], expect:21},
+      {args:[270,192], expect:6},
+      {args:[13,13], expect:13},
+      {args:[17,5], expect:1, note:'coprime'},
+      {args:[36,0], expect:36, note:'the base case'},
+      {args:[1234567890,987654321], expect:9, note:'nine digits, at most 400 steps', maxOperations:400}
+    ],
+    gateHint:'Trying every divisor up to the smaller number is hundreds of millions of steps. Euclid’s rule needs a few dozen.',
+    starter:'function gcd(a, b) {\n  // Base case: when b is 0, the answer is a.\n  // Otherwise call gcd again with smaller numbers.\n  return a;\n}\n',
+    solution:'function gcd(a, b) {\n  if (b === 0) {\n    return a;\n  }\n  return gcd(b, a % b);\n}',
+    hints:['The base case is b === 0, and then the answer is a. Everything else reduces to gcd(b, a % b).','Two lines: if (b === 0) { return a; } then return gcd(b, a % b);. Notice the arguments swap.'],
+    takeaway:'Recursion describes a problem in terms of a smaller copy of itself. The base case is not optional: it is the only thing that ends the calls.', reference:refs.recursion
+  },
+  {
+    id:'balance-the-manifest', kind:'algo', chapter:'Computer science', concept:'Stacks', name:'Balance the manifest', location:'Cargo manifest',
+    objective:'Write balanced(text) so it returns true when every bracket closes in the right order.',
+    intro:'Cargo manifests nest: crates inside pallets inside holds. A closing bracket has to match the most recent unclosed opening bracket, which is exactly what a stack remembers.',
+    lesson:'A stack is last in, first out. push adds to the end, pop removes from the end, and an array gives you both. Push every opening bracket; on a closing bracket, pop the most recent opening one and check that they match. Two failure modes are easy to miss: a closing bracket when the stack is empty, and leftovers on the stack when the text ends.',
+    signature:'function balanced(text)', fn:'balanced',
+    cases:[
+      {args:['()'], expect:true},
+      {args:['([]{})'], expect:true},
+      {args:[''], expect:true, note:'nothing is unbalanced'},
+      {args:['(]'], expect:false, note:'mismatched pair'},
+      {args:['(()'], expect:false, note:'left open'},
+      {args:[')('], expect:false, note:'closed before opened'},
+      {args:['{[()()]}[]'], expect:true},
+      {args:['{[(])}'], expect:false, note:'crossed pairs'}
+    ],
+    starter:'function balanced(text) {\n  let stack = [];\n  for (let i = 0; i < text.length; i++) {\n    let character = text[i];\n    // Push openings; on a closing bracket, pop and compare.\n  }\n  return stack.length === 0;\n}\n',
+    solution:'function balanced(text) {\n  let stack = [];\n  for (let i = 0; i < text.length; i++) {\n    let character = text[i];\n    if (character === "(" || character === "[" || character === "{") {\n      stack.push(character);\n    } else {\n      if (stack.length === 0) {\n        return false;\n      }\n      let open = stack.pop();\n      if (character === ")" && open !== "(") {\n        return false;\n      }\n      if (character === "]" && open !== "[") {\n        return false;\n      }\n      if (character === "}" && open !== "{") {\n        return false;\n      }\n    }\n  }\n  return stack.length === 0;\n}',
+    hints:['Push "(", "[" and "{". On any other character, the stack must not be empty, and the popped bracket must be the matching opening one.','Return false as soon as a pair does not match or the stack is empty. At the end, the stack has to be empty too.'],
+    takeaway:'A stack turns “the most recent unclosed thing” into one operation. Parsers, undo histories, and the call stack behind your own function calls all work this way.', reference:refs.stack
+  },
+  {
+    id:'hash-it-out', kind:'hash', chapter:'Computer science', concept:'Hash tables', name:'Somewhere to put it', location:'Index memory',
+    objective:'Choose a table size and multiplier that give all seven station IDs their own slot.',
+    intro:'Seven station IDs need to be found in one step. A hash function turns a key into a slot number; when two keys land in the same slot, the lookup has to search the chain.',
+    lesson:'A hash table computes a slot from the key: slot = (key × multiplier) mod size. Lookup is one step when the slot holds one key, so collisions are what cost time. Six of these IDs are multiples of 10, so a size of 10 sends all six to slot 0, and multiplying first does not help, because a multiple of 10 stays a multiple of 10. A size of 8 or 12 shares factors with the keys and still stacks some of them together. Only a size that shares no factor with them spreads them out, which is why real implementations prefer prime table sizes and keep the load factor well under 1.',
+    keys:[10,20,30,40,50,60,84], maxSlots:13, maxChain:1,
+    dials:[
+      {id:'size', label:'Table size (slots)', help:'How many slots the memory bank provides', value:10, options:[{value:8, label:'8 slots'},{value:10, label:'10 slots'},{value:12, label:'12 slots'},{value:13, label:'13 slots (prime)'},{value:16, label:'16 slots'}]},
+      {id:'multiplier', label:'Hash multiplier', help:'The key is multiplied before the remainder is taken', value:1, options:[{value:1, label:'× 1'},{value:3, label:'× 3'}]}
+    ],
+    solution:{dials:{size:13, multiplier:1}},
+    hints:['Work out (key mod size) for each ID. A size that shares a factor with the keys sends several of them to the same slot, and the multiplier cannot undo that.','13 is prime, so it shares no factor with any of these IDs. Try 13 slots.'],
+    takeaway:'Average lookup is one step only while collisions stay rare. That depends on the relationship between your keys and your table size, not on the speed of the machine.', reference:refs.hash
+  },
+  {
+    id:'how-it-scales', kind:'quiz', chapter:'Computer science', concept:'Complexity', name:'How it scales', location:'Analysis deck',
+    objective:'Predict how four algorithms behave when their input grows.',
+    intro:'Complexity is not about how fast one run is. It is about what happens to the running time when the input gets larger.',
+    lesson:'Big-O describes growth. A linear scan, O(n), does ten times the work for ten times the data. Bubble sort, O(n²), does a hundred times the work for ten times the data. Binary search, O(log n), adds one comparison when the data doubles. The constants matter on small inputs, and the growth rate decides everything on large ones.',
+    instructions:'Each question describes a measured run. Predict the larger one.',
+    questions:[
+      {prompt:'A linear scan of 1,000 entries takes 1 ms. About how long for 1,000,000 entries?', options:[{label:'about 1 ms'},{label:'about 1 second'},{label:'about 20 ms'},{label:'about 1,000 seconds'}], answer:1, why:'A thousand times the data does a thousand times the work: 1 ms becomes about 1 second.'},
+      {prompt:'Bubble sort takes 1 second on 1,000 entries. About how long for 10,000?', options:[{label:'about 10 seconds'},{label:'about 100 seconds'},{label:'about 1 second'},{label:'about 1,000 seconds'}], answer:1, why:'Quadratic growth squares the factor: ten times the data is about a hundred times the work.'},
+      {prompt:'Binary search needs about 10 comparisons for 1,000 sorted entries. About how many for 1,000,000?', options:[{label:'about 20'},{label:'about 1,000'},{label:'about 10,000'},{label:'about 100'}], answer:0, why:'Every doubling adds one comparison, so a thousandfold increase adds about ten.'},
+      {prompt:'Which one is still usable when the input is a million times larger?', options:[{label:'the quadratic sort'},{label:'the linear scan'},{label:'the logarithmic search'},{label:'none of them'}], answer:2, why:'Logarithmic growth is the only one here that barely notices the size change.'}
+    ],
+    quizSuccess:'Growth rate, not raw speed, decides what survives a larger input.',
+    solution:[1,1,0,2],
+    hints:['Work out the factor the input grew by, then apply the growth rate: linear multiplies by it, quadratic by its square, logarithmic adds a constant.','Answers in order: 1 second, 100 seconds, 20 comparisons, the logarithmic search.'],
+    takeaway:'Choosing the algorithm changes the shape of the curve. No amount of faster hardware turns a quadratic algorithm into a linear one.', reference:refs.growth
+  },
+  {
+    id:'fewest-hops', kind:'network', chapter:'Computer science', concept:'Graphs & paths', name:'A shorter route', location:'Navigation core',
     objective:'Enable a route from uplink to archive with at most two hops.',
     intro:'The station is a graph: nodes connected by edges. Each traversed edge is one hop. Enable a short route and test it.',
     lesson:'In an unweighted graph, a shortest path uses the fewest edges. Breadth-first search finds one by exploring nodes in increasing hop distance. This map treats every link as usable in both directions.',
     nodes:[['uplink',12,50],['relay-a',39,22],['relay-b',39,77],['relay-c',65,77],['archive',87,50]],
-    edges:[['uplink','relay-a',1],['relay-a','archive',1],['uplink','relay-b',1],['relay-b','relay-c',1],['relay-c','archive',1]],source:'uplink',target:'archive',maxEdges:2,
-    hints:['Both routes connect the endpoints. Count the edges along each one.','The upper path is uplink → relay A → archive: two hops.'],solution:[0,1],
-    takeaway:'You minimized hops on an unweighted graph. Only traversed edges contribute to path length; unused enabled branches do not.',reference:refs.graph
+    edges:[['uplink','relay-a',1],['relay-a','archive',1],['uplink','relay-b',1],['relay-b','relay-c',1],['relay-c','archive',1]], source:'uplink', target:'archive', maxEdges:2,
+    hints:['Both routes connect the endpoints. Count the edges along each one.','The upper path is uplink → relay A → archive: two hops.'], solution:[0,1],
+    takeaway:'You minimised hops on an unweighted graph. Only traversed edges contribute to path length; unused enabled branches do not.', reference:refs.graph
   },
   {
-    id:'latency-matters',kind:'network',chapter:'Computer science',concept:'Weighted graphs',name:'Find the fastest route',location:'Long-range relay',
+    id:'latency-matters', kind:'network', chapter:'Computer science', concept:'Weighted graphs', name:'Find the fastest route', location:'Long-range relay',
     objective:'Enable a route whose displayed delays total at most 12 ms.',
     intro:'Every link has a delay. A route with fewer hops can still be slower. Compare the sum of weights along each path.',
-    lesson:'A weighted graph assigns a cost to each edge. Here the weights model fixed link delays. Dijkstra’s algorithm finds shortest paths with nonnegative weights. Real packet delay also depends on transmission, processing, and queues; this puzzle omits those effects.',
+    lesson:'A weighted graph assigns a cost to each edge. Here the weights model fixed link delays. Dijkstra’s algorithm finds shortest paths with non-negative weights. Real packet delay also depends on transmission, processing, and queues; this puzzle omits those effects.',
     nodes:[['uplink',12,50],['relay-a',49,20],['relay-b',35,78],['relay-c',64,78],['archive',87,50]],
-    edges:[['uplink','relay-a',9],['relay-a','archive',9],['uplink','relay-b',3],['relay-b','relay-c',4],['relay-c','archive',3]],source:'uplink',target:'archive',budget:12,
-    hints:['The two-hop route takes 18 ms in this model. Add the delays on the three-hop route.','The lower route costs 3 + 4 + 3 = 10 ms.'],solution:[2,3,4],
-    takeaway:'The minimum-weight path costs 10 ms here, despite using more hops. Costs are summed along the chosen route, not across every enabled cable.',reference:refs.graph
+    edges:[['uplink','relay-a',9],['relay-a','archive',9],['uplink','relay-b',3],['relay-b','relay-c',4],['relay-c','archive',3]], source:'uplink', target:'archive', budget:12,
+    hints:['The two-hop route takes 18 ms in this model. Add the delays on the three-hop route.','The lower route costs 3 + 4 + 3 = 10 ms.'], solution:[2,3,4],
+    takeaway:'The minimum-weight path costs 10 ms here, despite using more hops. Costs are summed along the chosen route, not across every enabled cable.', reference:refs.graph
+  },
+
+  // ----------------------------------------------------- chapter 3: networking
+  {
+    id:'stack-of-envelopes', kind:'layers', chapter:'Networking', concept:'Layering', name:'A stack of envelopes', location:'Comms locker',
+    objective:'Order the headers a packet acquires, then size the payload to fill the 1,500-byte MTU exactly.',
+    intro:'Your data does not travel alone. Each layer wraps what the layer above handed it, adding the information its own peers need.',
+    lesson:'Layering means each layer only talks to its own peer. TCP adds 20 bytes of ports and sequence numbers so the far side can reassemble a stream; IP adds 20 bytes of addresses so routers can forward it; Ethernet adds its own header and trailer so the cable’s next device can pick it up. The link’s MTU limits the IP packet, here 1,500 bytes, so the largest payload TCP can carry in one segment is 1,500 − 20 − 20 = 1,460 bytes. That number is the maximum segment size. Exceed it and the packet is fragmented, which costs more than it saves.',
+    items:[
+      {id:'tcp', name:'TCP header', bytes:20, note:'ports, sequence and acknowledgement numbers'},
+      {id:'ip', name:'IP header', bytes:20, note:'source and destination addresses'},
+      {id:'ethernet', name:'Ethernet header and trailer', bytes:38, note:'MAC addresses and frame check, outside the MTU'}
+    ],
+    order:['tcp','ip','ethernet'], mtu:1500, linkOverhead:38,
+    dials:[{id:'payload', label:'Application payload', help:'Bytes of your own data in this packet', value:1400, options:[{value:1400, label:'1,400 B'},{value:1440, label:'1,440 B'},{value:1460, label:'1,460 B'},{value:1480, label:'1,480 B'},{value:1500, label:'1,500 B'}]}],
+    solution:{order:['tcp','ip','ethernet'], dials:{payload:1460}},
+    hints:['Wrapping goes from the inside out: the layer closest to your data is added first, and the frame the cable carries is added last.','The IP packet must be at most 1,500 bytes, and it already spends 20 on TCP and 20 on IP. That leaves 1,460 for your data.'],
+    takeaway:'Every layer costs bytes on every packet. A 1,460-byte payload spends 5% of the frame on headers; a 100-byte payload spends 44% of it.', reference:refs.layering
+  },
+  {
+    id:'address-the-station', kind:'subnet', chapter:'Networking', concept:'IPv4 addressing', name:'Address the deck', location:'Network operations',
+    objective:'Choose the smallest block from 10.20.30.0 that still holds 40 hosts.',
+    intro:'A new deck needs addresses for 40 devices. Hand out too small a block and devices go unaddressed; too large a block and the rest of the station runs short.',
+    lesson:'An IPv4 address is 32 bits. A prefix length says how many of those bits identify the network, leaving the rest for hosts: a /26 has 6 host bits and so 64 addresses. Two of them are not usable as hosts, the all-zeros network address and the all-ones broadcast address, so a /26 holds 62 hosts. A longer prefix is a smaller block, which is the part that reads backwards at first.',
+    base:'10.20.30.0', hosts:40,
+    dials:[{id:'prefix', label:'Prefix length', help:'Longer prefix, smaller block', value:24, options:[24,25,26,27,28,29,30].map(prefix => ({value:prefix, label:`/${prefix}`}))}],
+    solution:{dials:{prefix:26}},
+    hints:['Count the usable addresses for each prefix: /27 gives 30, /26 gives 62. You need 40.','A /26 is the smallest block with room for 40 hosts. /25 would work too, but wastes 86 addresses.'],
+    takeaway:'Subnetting is arithmetic on bits, not on dotted numbers. Each extra host bit doubles the block, so block sizes only ever come in powers of two.', reference:refs.cidr
+  },
+  {
+    id:'carve-the-block', kind:'vlsm', chapter:'Networking', concept:'Subnet planning', name:'Carve up the block', location:'Address registry',
+    objective:'Fit four decks of different sizes inside a single /24.',
+    intro:'One /24 is all the station has: 256 addresses. Four decks need very different amounts. Give each one the smallest block that fits.',
+    lesson:'Variable-length subnet masking gives each subnet only the size it needs. Every block has to start on a boundary that is a multiple of its own size, which is why order matters: a small block placed before a large one can leave a gap the large one is not allowed to start in. Allocating the largest first avoids that, and the decks below are already listed largest first.',
+    base:'10.20.0.0', basePrefix:24,
+    requests:[
+      {id:'ops', name:'Operations deck', hosts:100},
+      {id:'labs', name:'Laboratories', hosts:50},
+      {id:'dock', name:'Docking bay', hosts:20},
+      {id:'bridge', name:'Bridge', hosts:6}
+    ],
+    dials:[
+      {id:'ops', label:'Operations deck · 100 hosts', value:24, options:[24,25,26,27,28,29,30].map(prefix => ({value:prefix, label:`/${prefix}`}))},
+      {id:'labs', label:'Laboratories · 50 hosts', value:24, options:[24,25,26,27,28,29,30].map(prefix => ({value:prefix, label:`/${prefix}`}))},
+      {id:'dock', label:'Docking bay · 20 hosts', value:24, options:[24,25,26,27,28,29,30].map(prefix => ({value:prefix, label:`/${prefix}`}))},
+      {id:'bridge', label:'Bridge · 6 hosts', value:24, options:[24,25,26,27,28,29,30].map(prefix => ({value:prefix, label:`/${prefix}`}))}
+    ],
+    solution:{dials:{ops:25, labs:26, dock:27, bridge:29}},
+    hints:['Work out the smallest prefix for each deck on its own: 100 hosts, 50 hosts, 20 hosts, 6 hosts.','/25 holds 126, /26 holds 62, /27 holds 30, /29 holds 6. Together that is 232 of the 256 addresses.'],
+    takeaway:'Fixed-size subnets would have wasted most of this /24. Sizing each block to its deck left 24 addresses spare for the next one.', reference:refs.cidr
+  },
+  {
+    id:'longest-prefix-wins', kind:'routing', chapter:'Networking', concept:'Forwarding', name:'The most specific route wins', location:'Station router',
+    objective:'Forward five packets using the station’s routing table.',
+    intro:'A router does not know where every address on the network is. It holds a table of prefixes and, for each packet, picks one line from it.',
+    lesson:'Several routes can contain the same destination. The router always forwards along the one with the longest matching prefix, because a longer prefix is a more specific statement about where that address lives. 0.0.0.0/0 matches everything and so acts as the default route, used only when nothing more specific matches. This one rule is what lets a small table forward to the whole internet.',
+    table:routingTable,
+    questions:[
+      {prompt:'A packet for 10.20.30.70 leaves by…', destination:'10.20.30.70', options:routeOptions},
+      {prompt:'A packet for 10.20.30.9 leaves by…', destination:'10.20.30.9', options:routeOptions},
+      {prompt:'A packet for 10.20.99.4 leaves by…', destination:'10.20.99.4', options:routeOptions},
+      {prompt:'A packet for 10.9.1.1 leaves by…', destination:'10.9.1.1', options:routeOptions},
+      {prompt:'A packet for 203.0.113.7 leaves by…', destination:'203.0.113.7', options:routeOptions}
+    ],
+    solution:[4,3,2,1,0],
+    hints:['For each destination, find every prefix that contains it, then keep the one with the largest prefix length.','10.20.30.64/26 covers .64 to .127, so .70 is inside it but .9 is not. Only 203.0.113.7 falls through to the default route.'],
+    takeaway:'Longest prefix match is the whole forwarding decision. Adding a more specific route changes where traffic goes without touching any other line in the table.', reference:refs.routers
+  },
+  {
+    id:'window-of-opportunity', kind:'transport', chapter:'Networking', concept:'Sliding windows', name:'Fill the pipe', location:'Relay uplink',
+    objective:'Send 8 MiB across a 50 Mbps, 200 ms link in under 2 seconds.',
+    intro:'The link is fast and the distance is long. Sending one packet and waiting for its acknowledgement wastes almost all of the capacity.',
+    lesson:'A sender may keep a window of unacknowledged data in flight. The amount that fits in the network at once is the bandwidth-delay product: capacity × round-trip time, here 50 Mbps × 0.2 s = 1.25 MB, about 857 packets. With a smaller window the sender runs out of permission and waits for an acknowledgement while the link sits idle. Beyond one bandwidth-delay product the window is no longer the limit, so nothing more is gained; in a real network an oversized window fills router queues and adds delay, which this model does not simulate.',
+    link:{rttMs:200, capacityMbps:50, mss:1460, lossEvery:0}, bytes:8388608, target:{seconds:2},
+    dials:[{id:'window', label:'Send window', help:'Unacknowledged packets allowed in flight', value:32, options:[{value:32, label:'32 packets'},{value:128, label:'128 packets'},{value:512, label:'512 packets'},{value:857, label:'857 packets (one BDP)'},{value:2048, label:'2,048 packets'}]}],
+    solution:{dials:{window:857}},
+    hints:['Work out how much data fits in the link at once: 50 Mbps for 200 ms. Then divide by the 1,460-byte packet size.','One bandwidth-delay product is about 857 packets. A 512-packet window still leaves the link waiting.'],
+    takeaway:'Throughput on a long link is set by the window, not by the bandwidth. Until the window covers one bandwidth-delay product, most of the capacity you are paying for is idle.', reference:refs.tcp
+  },
+  {
+    id:'lost-in-transit', kind:'transport', chapter:'Networking', concept:'Reliable delivery', name:'Lost in transit', location:'Deep-space array',
+    objective:'Deliver 8 MiB over a lossy link within 2.6 seconds while retransmitting under 10% of it.',
+    intro:'This link drops a packet every so often. Delivery still has to be complete, so anything lost must be sent again — the question is how much else goes with it.',
+    lesson:'Reliability comes from acknowledgements and retransmission: the sender keeps data until the receiver confirms it, and a timeout means resend. What gets resent is the protocol’s choice. Go-Back-N acknowledges cumulatively, so a single loss makes the sender repeat every packet from the lost one onward, including ones that already arrived. Selective repeat acknowledges packets individually and resends only what was lost, at the cost of tracking each one. Both deliver the same bytes; they differ in how much of the link they waste doing it.',
+    link:{rttMs:200, capacityMbps:50, mss:1460, lossEvery:256}, bytes:8388608, target:{seconds:2.6, wasted:0.1},
+    dials:[
+      {id:'window', label:'Send window', value:512, options:[{value:512, label:'512 packets'},{value:857, label:'857 packets (one BDP)'},{value:2048, label:'2,048 packets'}]},
+      {id:'protocol', label:'Recovery strategy', value:'go-back-n', options:[{value:'go-back-n', label:'Go-Back-N'},{value:'selective-repeat', label:'Selective repeat'}]}
+    ],
+    solution:{dials:{window:2048, protocol:'selective-repeat'}},
+    hints:['Two targets bind here. The deadline needs a window large enough to keep sending through the gaps left by recovery; the waste limit is about which packets get resent.','A 2,048-packet window meets the deadline. Go-Back-N then resends about half of everything, so selective repeat is the one that stays under 10%.'],
+    takeaway:'A loss rate of well under 1% cost either 0.4% or 49% of the link, depending only on which packets the protocol chose to resend.', reference:refs.tcp
+  },
+  {
+    id:'name-the-archive', kind:'sequence', chapter:'Networking', concept:'DNS', name:'Ask for it by name', location:'Name service',
+    objective:'Order a DNS resolution and answer it within 60 ms.',
+    intro:'The archive has a name, not an address. Finding the address means walking down the name hierarchy — unless somebody already wrote the answer down.',
+    lesson:'DNS is a hierarchy resolved from the top. A resolver asks a root server which servers know the top-level domain, asks one of those which server is authoritative for the domain, and asks that one for the record. Each step is a round trip, which is why the whole chain is slow and why every answer carries a time-to-live telling resolvers how long they may reuse it. A resolver holding the delegations skips straight to the authoritative server; one holding the record answers immediately, with no network at all.',
+    instructions:'Put the steps in the order they happen, then decide what the resolver already knows.',
+    items:[
+      {id:'stub', name:'Station resolver checks its own cache', ms:1, note:'no network'},
+      {id:'recursive', name:'Recursive resolver accepts the query', ms:4},
+      {id:'root', name:'Root server names the .quest servers', ms:80, note:'one round trip'},
+      {id:'tld', name:'.quest server names the authoritative server', ms:60, note:'one round trip'},
+      {id:'authoritative', name:'Authoritative server returns the address record', ms:45},
+      {id:'answer', name:'Address returns to the station', ms:4}
+    ],
+    order:['stub','recursive','root','tld','authoritative','answer'],
+    orderHint:'Resolution starts at the station and walks down the hierarchy: root, then the top-level domain, then the server authoritative for the name.',
+    dials:[{id:'cache', label:'Resolver cache', help:'What the recursive resolver already holds', value:'cold', options:[{value:'cold', label:'Cold — nothing cached'},{value:'warm', label:'Warm — delegations still within their TTL'}]}],
+    skipWhen:{dial:'cache', value:'warm', skip:['root','tld']},
+    target:{ms:60},
+    solution:{order:['stub','recursive','root','tld','authoritative','answer'], dials:{cache:'warm'}},
+    hints:['The order is fixed by the hierarchy. The 60 ms budget is not reachable while the resolver has to ask the root and the top-level domain.','Warm the resolver cache. The delegations are still valid, so only the authoritative lookup remains: 1 + 4 + 45 + 4 = 54 ms.'],
+    takeaway:'A cold resolution spends 194 ms in round trips and a warm one 54 ms, for the same answer. Caching in DNS is not an optimisation bolted on afterwards; the TTL field is part of the protocol.', reference:refs.dns
+  },
+  {
+    id:'first-byte', kind:'sequence', chapter:'Networking', concept:'Connection setup', name:'Time to first byte', location:'Uplink terminal',
+    objective:'Order the steps of an HTTPS request and get the first byte inside 150 ms.',
+    intro:'The link has a 120 ms round-trip time. Before any of your data moves, the two ends have to agree that they are talking, and that nobody else is listening.',
+    lesson:'A new HTTPS request pays for three round trips: one for the TCP handshake, one for the TLS handshake, and one for the request and response. At 120 ms each, that is 360 ms before the first byte, none of it spent on bandwidth. Keeping the connection open removes the first two, so the next request costs one round trip. This is why connection reuse, and protocols that fold handshakes together, matter more to perceived speed than raw throughput does.',
+    instructions:'Order the exchange, then decide whether this is a new connection or a reused one.',
+    items:[
+      {id:'syn', name:'SYN — client opens the connection', ms:60},
+      {id:'synack', name:'SYN-ACK — server agrees', ms:60},
+      {id:'hello', name:'TLS ClientHello — client proposes keys', ms:60},
+      {id:'server-hello', name:'TLS ServerHello and Finished', ms:60},
+      {id:'request', name:'HTTP GET /archive', ms:60},
+      {id:'response', name:'First byte of the response', ms:60}
+    ],
+    order:['syn','synack','hello','server-hello','request','response'],
+    orderHint:'TCP first, then TLS on top of it, then the HTTP request. Nothing encrypted can precede the handshake that set up the keys.',
+    dials:[{id:'connection', label:'Connection', help:'Whether this request opens a new connection', value:'new', options:[{value:'new', label:'New connection'},{value:'reused', label:'Reused, already handshaken'}]}],
+    skipWhen:{dial:'connection', value:'reused', skip:['syn','synack','hello','server-hello']},
+    target:{ms:150},
+    solution:{order:['syn','synack','hello','server-hello','request','response'], dials:{connection:'reused'}},
+    hints:['Handshakes happen bottom-up: the transport connection exists before TLS can negotiate on it, and TLS finishes before an encrypted request can be sent.','Three round trips is 360 ms, so a new connection cannot make 150 ms. Reuse the connection and only the request and response remain: 120 ms.'],
+    takeaway:'Round trips, not bandwidth, decide time to first byte. Every handshake you can avoid is a whole round trip saved.', reference:refs.tls
+  },
+
+  // -------------------------------------------------- chapter 4: system design
+  {
+    id:'back-of-the-envelope', kind:'quiz', chapter:'System design', concept:'Estimation', name:'Back of the envelope', location:'Planning deck',
+    objective:'Size the station’s service from user numbers alone.',
+    intro:'Before choosing any hardware, you need to know roughly how much work arrives and how much data piles up. Rough is enough: the point is the right order of magnitude.',
+    lesson:'Capacity estimation is arithmetic you can do without a calculator. Requests per second is daily requests divided by 86,400 seconds, and real traffic peaks well above its average, so design for the peak. Storage is requests × bytes each, multiplied by retention and by replication. Machine count follows from the peak rate divided by what one machine serves — plus enough spare that losing one machine does not take the service with it.',
+    instructions:'4.3 million daily active users, 20 requests each per day, peaking at four times the daily average.',
+    questions:[
+      {prompt:'What peak request rate should the design target?', options:[{label:'about 400 per second'},{label:'about 1,000 per second'},{label:'about 4,000 per second'},{label:'about 40,000 per second'}], answer:2, why:'4.3M × 20 = 86M requests a day. 86M ÷ 86,400 ≈ 1,000 per second average, and the peak is four times that.'},
+      {prompt:'Each request writes a 2 KB log line. How much log data per day?', options:[{label:'about 17 GB'},{label:'about 172 GB'},{label:'about 1.7 TB'},{label:'about 17 TB'}], answer:1, why:'86M × 2 KB ≈ 172 GB per day.'},
+      {prompt:'You keep 30 days of those logs, stored in triplicate. How much storage?', options:[{label:'about 5 TB'},{label:'about 15 TB'},{label:'about 155 TB'},{label:'about 1.5 PB'}], answer:1, why:'172 GB × 30 days × 3 copies ≈ 15.5 TB.'},
+      {prompt:'One node serves 2,000 requests per second. How many do you run, if losing a node must not drop traffic?', options:[{label:'two'},{label:'three'},{label:'four'},{label:'eight'}], answer:1, why:'Two nodes cover the 4,000 peak exactly, so a third is what makes a single failure survivable.'}
+    ],
+    quizSuccess:'That is the whole envelope: peak rate, data per day, retention, and the node count that survives a failure.',
+    solution:[2,1,1,1],
+    hints:['There are 86,400 seconds in a day. Work out the average rate first, then multiply by the peak factor.','86M requests a day is about 1,000 per second average and 4,000 at peak; 172 GB of logs a day; 15.5 TB for 30 days in triplicate; three nodes so one can fail.'],
+    takeaway:'These four numbers decide the shape of a design before any technology is chosen. Being out by a factor of two is fine; being out by a factor of a thousand is not.', reference:refs.slo
+  },
+  {
+    id:'the-tail-that-matters', kind:'quiz', chapter:'System design', concept:'Latency & availability', name:'The tail that matters', location:'Telemetry wall',
+    objective:'Reason about queueing, fan-out, and redundancy with numbers.',
+    intro:'Averages hide the requests that make users leave. Utilisation, fan-out, and redundancy all act on the tail rather than on the mean.',
+    lesson:'A queue’s delay depends on how close arrivals are to capacity, not on the gap in absolute terms: at 95% utilisation the wait is long, and adding capacity moves the system away from the cliff rather than making each request faster. Fan-out multiplies tail risk, because a request that touches ten services is slow if any one of them is slow. Redundancy works the other way: independent replicas multiply their failure probabilities together, which is why a second one adds nines.',
+    instructions:'Each answer follows from one line of arithmetic.',
+    questions:[
+      {prompt:'A tier receives 1,000 requests per second and can serve 1,050. You double its capacity to 2,100. What happens to queueing delay?', options:[{label:'it is unchanged: the arrival rate did not change'},{label:'it roughly halves'},{label:'it drops more than twentyfold'},{label:'it doubles'}], answer:2, why:'Delay depends on the headroom, capacity minus arrivals: 50 becomes 1,100, so the wait falls by about a factor of 22.'},
+      {prompt:'One request fans out to 10 services, each slower than 10 ms for 1% of calls. How often is at least one of the ten slow?', options:[{label:'about 1 request in 1,000'},{label:'about 1 request in 100'},{label:'about 1 request in 10'},{label:'about 1 request in 2'}], answer:2, why:'The chance all ten are fast is 0.99^10 ≈ 0.90, so about one request in ten waits on a slow call.'},
+      {prompt:'A region is available 99.9% of the time. Two independent regions, either of which can serve the request, give…', options:[{label:'99.9%'},{label:'99.95%'},{label:'99.99%'},{label:'99.9999%'}], answer:3, why:'Both must fail together: 0.001 × 0.001 = 0.000001, so 99.9999%.'},
+      {prompt:'Which change lowers the 99th percentile without buying capacity?', options:[{label:'raise the client timeout'},{label:'remove a round trip from the request path'},{label:'retry every request once'},{label:'log more detail per request'}], answer:1, why:'A removed round trip is time nobody waits for. A longer timeout hides the symptom, and blanket retries add load exactly when the system is struggling.'}
+    ],
+    quizSuccess:'Headroom, fan-out, and independent redundancy: three numbers that decide what users actually experience.',
+    solution:[2,2,3,1],
+    hints:['For queueing, look at capacity minus arrivals. For fan-out, ask how often every call is fast. For redundancy, multiply the failure probabilities.','Answers in order: more than twentyfold, 1 in 10, 99.9999%, remove a round trip.'],
+    takeaway:'Tail latency is a property of the whole path, and availability is a property of how failures combine. Both are arithmetic before they are engineering.', reference:refs.risk
+  },
+  {
+    id:'consistency-costs', kind:'quiz', chapter:'System design', concept:'Consistency', name:'What consistency costs', location:'Data council',
+    objective:'Name the trade each design choice is actually making.',
+    intro:'Every one of these choices buys something and gives something up. The engineering skill is saying which, out loud, before the incident.',
+    lesson:'Acknowledging a write before storing it makes writes fast and makes readers able to see stale data: that is eventual consistency, and it is a trade rather than a bug. When a network partition splits a system, you may keep answering on both sides and reconcile later, or refuse on one side to keep a single answer: availability or consistency, never both, for the duration of the partition. Retries make duplicates inevitable, so operations that must not happen twice need an idempotency key the server remembers. And a cache is only as fresh as its invalidation: a long time-to-live with nothing telling it the value changed keeps the old answer longest.',
+    instructions:'Choose the answer that names the trade precisely.',
+    questions:[
+      {prompt:'A queue acknowledges a write before the datastore has it. A reader immediately sees the old value. What is that?', options:[{label:'a bug in the queue'},{label:'eventual consistency, the trade the queue makes'},{label:'a cache miss'},{label:'a network partition'}], answer:1, why:'The queue answered before the write landed. Staleness is the price of that latency, not a defect.'},
+      {prompt:'A partition splits two regions. Life support must keep accepting commands in both. What have you chosen?', options:[{label:'consistency over availability'},{label:'availability over consistency, and conflicts to reconcile later'},{label:'both, because the regions are independent'},{label:'neither: partitions are a hardware problem'}], answer:1, why:'Accepting writes on both sides of a partition means the two sides can disagree, and somebody has to merge them afterwards.'},
+      {prompt:'Which change makes a retried command safe to send twice?', options:[{label:'a longer timeout'},{label:'an idempotency key the server records'},{label:'a larger queue'},{label:'a read replica'}], answer:1, why:'The server has to recognise the second copy as the same command. Nothing about timing can guarantee that.'},
+      {prompt:'A record changes in the datastore. Which caching choice keeps readers on the old value longest?', options:[{label:'delete the cache entry as part of the write'},{label:'a 5-second time-to-live'},{label:'a 1-hour time-to-live and no invalidation'},{label:'no cache at all'}], answer:2, why:'Without invalidation, readers keep the stale value for the whole hour the entry is allowed to live.'}
+    ],
+    quizSuccess:'Each of those is a trade with a name. Saying the name is what makes it a design decision instead of a surprise.',
+    solution:[1,1,1,2],
+    hints:['For each option, ask what it costs rather than what it provides.','Answers in order: eventual consistency, availability over consistency, an idempotency key, the one-hour TTL with no invalidation.'],
+    takeaway:'Consistency, availability, and latency are exchanged for one another, never all bought at once. The architecture lab makes the same trades with numbers attached.', reference:refs.cap
   }
 ];
+
+export const chapters = [...new Set(levels.map(level => level.chapter))];

@@ -6,6 +6,6 @@
   "scripts": {
     "dev": "node server.mjs",
     "test": "node --test tests/*.test.mjs",
-    "check": "node --check dist/game.js && node --check dist/engine.js && node --check dist/levels.js && node --check dist/builder.js && node --check dist/webmcp.js && node --check dist/scene.js"
+    "check": "for f in dist/*.js; do node --check \"$f\" || exit 1; done"
   }
 }

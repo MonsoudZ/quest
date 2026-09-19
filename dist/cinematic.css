@@ -4,3 +4,11 @@ body{background:radial-gradient(ellipse at 76% 0,#182b49 0,transparent 55%),#080
 @media(max-width:1200px){.shell{grid-template-columns:200px minmax(0,1fr)}.workspace{padding:25px 22px}.mission-panel{padding:27px 14px}.play-layout{grid-template-columns:minmax(0,1.25fr) minmax(310px,1fr);gap:14px}.game-scene{min-height:355px}.scene-hud{font-size:10px;letter-spacing:.5px;left:12px;right:12px}.scene-compass{right:10px;bottom:12px}.panel-bar{flex-wrap:wrap;gap:3px}.learning-row{grid-template-columns:1fr 1fr;gap:22px}.help-panel{border-top:0;border-left:1px solid var(--line);padding:0 0 0 20px}.mission-panel h1{font-size:29px}}
 @media(max-width:1000px){.play-layout{grid-template-columns:1fr}.game-scene{min-height:0;aspect-ratio:10/7}.scene-hud{font-size:12px}.editor-wrap,textarea{min-height:245px}.learning-row{grid-template-columns:1fr}.help-panel{padding:20px 0 0;border-left:0;border-top:1px solid var(--line)}.panel-bar{flex-wrap:nowrap}.network-svg{min-height:330px}}
 @media(max-width:700px){.shell{display:block}.workspace{padding:22px 15px}.mission-panel{padding:12px 15px}.topbar{padding:14px 17px}.brand small{font-size:10px}.game-modes{padding:10px 15px}.mode-button{font-size:13px;padding:10px}.game-scene{min-height:315px;aspect-ratio:10/8}.scene-hud{font-size:10px;top:13px}.scene-compass{font-size:10px;gap:4px 8px;padding:7px;bottom:10px}.mission-button{min-width:164px}.mission-heading h2{font-size:27px}.intro{font-size:16px}.concept{font-size:12px}.objective p{font-size:14px}.puzzle{padding:32px 18px;min-height:340px}.bit>span{font-size:40px}.network-svg{min-height:290px;padding:7px}.field-notes p,.help-panel p{font-size:15px}.builder-visual{padding:10px}.builder-visual p{font-size:13px}.builder-workspace{padding:25px 15px}.builder-test{align-items:flex-start}footer{font-size:12px}}
+.widget-row{background:#0e1a2b;border-color:#24384f}
+.order-buttons button,.stepper button{background:#152539;border-color:#2f4d66;color:var(--text)}
+.bar-track,.util-track{background:#0f2034;border-color:#284360}
+.question-card,.case-row{background:#0f1c2e;border-color:#243a52}
+.panel-block{background:#0d1929;border-color:#243a52}
+.data-table td{border-bottom-color:#1d3146}
+.stack-layer{border-color:#2c4967;background:rgba(120,200,255,.04)}
+.stack-layer.accent{background:#183351;border-color:var(--accent)}

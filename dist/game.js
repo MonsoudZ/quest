@@ -1,81 +1,535 @@
 import {levels} from './levels.js';
-import {simulate,evaluateNetwork,evaluatePuzzle} from './engine.js';
+import {simulate, evaluateAlgorithm, evaluateNetwork, describe} from './engine.js';
+import {isPuzzle, initialState, solutionState, applyAction, widgets, view, evaluate} from './puzzles.js';
 import {mountBuilder} from './builder.js';
 import {registerGameTools} from './webmcp.js';
 import {createScene} from './scene.js';
-const $=id=>document.getElementById(id);
-const saveKey='signal-quest-v1';
-let saved={};try{saved=JSON.parse(localStorage.getItem(saveKey)||'{}');}catch{}
-const completed=new Set(Array.isArray(saved?.completed)?saved.completed.filter(id=>levels.some(l=>l.id===id)):[]);
-let current=Math.max(0,levels.findIndex(l=>l.id===saved?.current)),drafts=saved?.drafts&&typeof saved.drafts==='object'?saved.drafts:{},selected=[],hintIndex=0,unit=null,visited=[],trace=null,traceIndex=0,runToken=0,running=false,sound=false,audioContext=null;
-const level=()=>levels[current];
-let puzzle=[],swapCount=0,mode='campaign';
-let scene=null,sceneLevel=null,networkResult=null;
-function persist(){try{localStorage.setItem(saveKey,JSON.stringify({completed:[...completed],current:level().id,drafts}));}catch{const note=document.querySelector('.save-note');if(note)note.textContent='Browser storage is unavailable. Progress lasts until this page closes.';}}
-function label(id){return id.replace(/-/g,' ').replace(/\b\w/g,c=>c.toUpperCase());}
-function log(message,style=''){const p=document.createElement('p');p.textContent=message;p.className=style;$('log').append(p);$('log').scrollTop=$('log').scrollHeight;}
-function tone(success=true){if(!sound)return;try{audioContext??=new (window.AudioContext||window.webkitAudioContext)();audioContext.resume();const osc=audioContext.createOscillator(),gain=audioContext.createGain();osc.connect(gain);gain.connect(audioContext.destination);osc.frequency.value=success?660:220;gain.gain.setValueAtTime(.035,audioContext.currentTime);gain.gain.exponentialRampToValueAtTime(.001,audioContext.currentTime+.18);osc.start();osc.stop(audioContext.currentTime+.2);}catch{}}
-function navigation(){let chapter='';$('missions').replaceChildren();levels.forEach((l,i)=>{if(chapter!==l.chapter){chapter=l.chapter;const h=document.createElement('div');h.className='chapter-label';h.textContent=chapter;$('missions').append(h);}const b=document.createElement('button');b.className=`mission-button ${i===current?'active':''} ${completed.has(l.id)?'done':''}`;b.setAttribute('aria-current',i===current?'step':'false');b.innerHTML=`<span class="mission-number">${completed.has(l.id)?'✓':String(i+1).padStart(2,'0')}</span><span class="mission-name">${l.name}</span>`;b.addEventListener('click',()=>loadMission(i));$('missions').append(b);});$('power').value=completed.size;$('power-count').textContent=`${completed.size} / ${levels.length}`;}
-function lineNumbers(){$('line-numbers').textContent=Array.from({length:$('code').value.split('\n').length},(_,i)=>i+1).join('\n');}
-function controls(){const isCode=level().kind==='code';$('run').disabled=running;$('step').disabled=running;$('step').hidden=!isCode;$('code').readOnly=running;}
-function loadMission(index){runToken++;running=false;current=Math.max(0,Math.min(levels.length-1,index));const l=level();hintIndex=0;trace=null;traceIndex=0;selected=[];visited=[];unit=l.start?{x:l.start[0],y:l.start[1],dir:l.start[2]}:null;
-  scene?.destroy();scene=null;sceneLevel=null;networkResult=null;
-  puzzle=l.kind==='bits'?[0,0,0,0]:l.kind==='sort'?[...l.values]:[];swapCount=0;
-  $('mission-meta').textContent=`MISSION ${String(current+1).padStart(2,'0')} / ${String(levels.length).padStart(2,'0')} · ${l.chapter.toUpperCase()}`;$('mission-title').textContent=l.name;$('concept').textContent=l.concept;$('intro').textContent=l.intro;$('location').textContent=l.location.toUpperCase();$('objective').textContent=l.objective;$('lesson-title').textContent=l.concept;$('lesson').textContent=l.lesson;
-  $('lesson-source').href=l.reference.url;$('lesson-source').textContent=l.reference.label;$('syntax-note').hidden=l.kind!=='code';$('map-label').textContent=l.kind==='code'?'ISOMETRIC VIEW':'DATA VISUALIZATION';
-  $('hint-text').textContent='Mistakes are part of the mission. Run an idea and follow the trace.';$('hint').textContent='Get a hint';$('hint').disabled=false;$('result').hidden=true;$('log').replaceChildren();log(l.kind==='code'?'Awaiting your instructions.':'Enable links, then send a test signal.');$('step-count').textContent='Ready';
-  $('code-controls').hidden=l.kind!=='code';$('network-controls').hidden=l.kind==='code';$('editor-title').textContent=l.kind==='code'?'COMMAND CONSOLE':'NETWORK CONTROLS';$('language').textContent=l.kind==='code'?'JavaScript · beginner subset':'Undirected links · simplified model';$('run').textContent=l.kind==='code'?'▶ Run program':l.redundant?'▶ Test resilience':'▶ Send signal';$('code').value=typeof drafts[l.id]==='string'?drafts[l.id]:(l.starter||'');lineNumbers();navigation();renderArena();controls();persist();
-  if(l.kind==='bits'||l.kind==='sort'){$('editor-title').textContent='DATA CONSOLE';$('language').textContent='Interactive puzzle';$('run').textContent='▶ Check solution';$('log').replaceChildren();log(l.kind==='bits'?'Flip bits to encode the target number.':'Swap adjacent entries to restore ascending order.');}
-}
-function renderArena(failed=-1){const l=level();if(l.kind==='code'){
-    if(!scene||sceneLevel!==l.id){scene?.destroy();scene=createScene($('arena'),l,unit);sceneLevel=l.id;}
-    scene.update(unit,visited);$('legend').innerHTML='<span class="legend-unit">➤ Cyan arrow: facing direction</span><span>◎ Amber ring: power cell</span><span>Only raised tiles are traversable</span>';
-  }else{scene?.destroy();scene=null;sceneLevel=null;$('arena').replaceChildren();if(l.kind==='network')renderNetwork(failed);else renderPuzzle();}
-}
-function renderNetwork(failed){document.querySelector('.network-instructions').textContent='Choose cables on the map or use the switches below.';const l=level(),ns='http://www.w3.org/2000/svg';const svg=document.createElementNS(ns,'svg');svg.setAttribute('viewBox','0 0 560 350');svg.setAttribute('class','network-svg');svg.setAttribute('aria-label','Network map. Toggle cables using the buttons in network controls.');const point=id=>{const n=l.nodes.find(n=>n[0]===id);return [n[1]*5.6,n[2]*3.1];};
-  svg.innerHTML='<defs><linearGradient id="node-metal" x2="0" y2="1"><stop stop-color="#355675"/><stop offset="1" stop-color="#0c2139"/></linearGradient><linearGradient id="node-core" x2="0" y2="1"><stop stop-color="#c7f5ff"/><stop offset="1" stop-color="#549abb"/></linearGradient></defs>';
-  l.edges.forEach((edge,i)=>{const [x1,y1]=point(edge[0]),[x2,y2]=point(edge[1]);const line=document.createElementNS(ns,'line');Object.entries({x1,y1,x2,y2,class:`network-link ${selected.includes(i)?'selected':''} ${networkResult?.pathEdges.includes(i)?'route':''} ${i===failed?'failed':''}`}).forEach(([k,v])=>line.setAttribute(k,v));svg.append(line);const hit=line.cloneNode();hit.setAttribute('class','link-hit');hit.addEventListener('click',()=>toggleLink(i));svg.append(hit);if(l.budget){const weight=document.createElementNS(ns,'text');weight.setAttribute('x',(x1+x2)/2);weight.setAttribute('y',(y1+y2)/2-12);weight.setAttribute('class','link-weight');weight.setAttribute('text-anchor','middle');weight.textContent=`${edge[2]} ms`;svg.append(weight);}});
-  l.nodes.forEach(([id])=>{const [cx,cy]=point(id);const endpoint=id===l.source||id===l.target;const circle=document.createElementNS(ns,'circle');Object.entries({cx,cy,r:23,class:`network-node ${endpoint?'endpoint':''}`}).forEach(([k,v])=>circle.setAttribute(k,v));svg.append(circle);const symbol=document.createElementNS(ns,'text');symbol.setAttribute('x',cx);symbol.setAttribute('y',cy);symbol.setAttribute('class',`node-symbol ${endpoint?'endpoint':''}`);symbol.textContent=id===l.source?'↑':id===l.target?'▤':'↔';svg.append(symbol);const text=document.createElementNS(ns,'text');text.setAttribute('x',cx);text.setAttribute('y',cy+45);text.setAttribute('class','node-label');text.textContent=label(id);svg.append(text);});$('arena').append(svg);$('legend').innerHTML='<span class="legend-unit">━ Enabled cable</span><span>━ Available cable</span><span>↔ Relay / router</span>';
-  $('link-list').replaceChildren();l.edges.forEach((edge,i)=>{const b=document.createElement('button');b.className='link-option';b.setAttribute('aria-pressed',String(selected.includes(i)));b.innerHTML=`<span class="link-check">${selected.includes(i)?'✓':''}</span><span>${label(edge[0])} ↔ ${label(edge[1])}</span>${l.budget?`<span class="link-cost">${edge[2]} ms</span>`:''}`;b.addEventListener('click',()=>toggleLink(i));$('link-list').append(b);});
-  const path=evaluateNetwork(l,selected);$('link-total').textContent=`${selected.length} links enabled · ${path.path.length?`${path.hops} hops${l.budget?` / ${path.cost} ms on the fastest route`:''}`:'No complete route'}`;
-  if(networkResult?.path.length){$('legend').innerHTML='<span class="legend-unit">━ Enabled link</span><span style="color:#ffdc93">━ Tested route</span><span>Other links add no path cost</span>';if(running&&!matchMedia('(prefers-reduced-motion: reduce)').matches){const packet=document.createElementNS(ns,'circle');packet.setAttribute('r','6');packet.setAttribute('class','packet');const motion=document.createElementNS(ns,'animateMotion');motion.setAttribute('path',networkResult.path.map((id,i)=>`${i?'L':'M'}${point(id).join(' ')}`).join(' '));motion.setAttribute('dur','1.2s');motion.setAttribute('fill','freeze');packet.append(motion);svg.append(packet);}}
-}
-function toggleLink(i){if(running)return;selected=selected.includes(i)?selected.filter(v=>v!==i):[...selected,i];networkResult=null;$('result').hidden=true;renderArena();}
-function changePuzzle(i){if(running)return;if(level().kind==='bits')puzzle[i]=1-puzzle[i];else{[puzzle[i],puzzle[i+1]]=[puzzle[i+1],puzzle[i]];swapCount++;}$('result').hidden=true;renderArena();}
-function renderPuzzle(){const l=level(),wrap=document.createElement('div');wrap.className='puzzle';$('link-list').replaceChildren();
-  if(l.kind==='bits'){
-    const total=puzzle.reduce((s,v,i)=>s+v*[8,4,2,1][i],0);wrap.innerHTML=`<div class="eyebrow">TARGET VALUE: ${l.target}</div><div class="bit-grid">${puzzle.map((v,i)=>`<button class="bit ${v?'on':''}" data-puzzle="${i}" aria-label="Toggle ${[8,4,2,1][i]} bit" aria-pressed="${!!v}"><span>${v}</span><small>${[8,4,2,1][i]}</small></button>`).join('')}</div><div class="binary-total">${total}<span>DECIMAL VALUE</span></div>`;
-    document.querySelector('.network-instructions').textContent='A bit can be 0 (off) or 1 (on). Turn on the place values that add up to 13.';
-    [8,4,2,1].forEach((weight,i)=>{const b=document.createElement('button');b.className='link-option';b.setAttribute('aria-pressed',String(!!puzzle[i]));b.innerHTML=`<span class="link-check">${puzzle[i]?'✓':''}</span><span>${weight}-value bit</span><span class="link-cost">${puzzle[i]?'On':'Off'}</span>`;b.addEventListener('click',()=>changePuzzle(i));$('link-list').append(b);});$('link-total').textContent=`${puzzle.map((v,i)=>v*[8,4,2,1][i]).join(' + ')} = ${total}`;$('legend').textContent='Left to right: 8s, 4s, 2s, 1s. Tap a bit to flip it.';
-  }else{
-    wrap.innerHTML=`<div class="eyebrow">ARRAY CONTENTS</div><div class="sort-chart">${puzzle.map((v,i)=>`<div class="sort-column"><strong>${v}</strong><div class="sort-bar" style="height:${v*17}px"></div><small>[${i}]</small></div>`).join('')}</div>`;
-    document.querySelector('.network-instructions').textContent='Exchange two neighboring entries. Compare their values before choosing a swap.';
-    puzzle.slice(0,-1).forEach((v,i)=>{const b=document.createElement('button');b.className='link-option';b.textContent=`Swap slots ${i} and ${i+1} · ${v} ↔ ${puzzle[i+1]}`;b.addEventListener('click',()=>changePuzzle(i));$('link-list').append(b);});$('link-total').textContent=`${swapCount} swaps made`;$('legend').textContent='Array indices start at 0. Put the smallest value on the left.';
+
+const $ = id => document.getElementById(id);
+const saveKey = 'signal-quest-v2';
+let saved = {};
+try { saved = JSON.parse(localStorage.getItem(saveKey) || '{}'); } catch { /* storage is optional */ }
+const completed = new Set(Array.isArray(saved?.completed) ? saved.completed.filter(id => levels.some(level => level.id === id)) : []);
+let current = Math.max(0, levels.findIndex(level => level.id === saved?.current));
+let drafts = saved?.drafts && typeof saved.drafts === 'object' ? saved.drafts : {};
+let hintIndex = 0, unit = null, visited = [], trace = null, traceIndex = 0, runToken = 0, running = false;
+let sound = false, audioContext = null, scene = null, sceneLevel = null, networkResult = null;
+let puzzleState = null, algoResult = null, mode = 'campaign';
+const level = () => levels[current];
+
+function persist() {
+  try { localStorage.setItem(saveKey, JSON.stringify({completed:[...completed], current:level().id, drafts})); }
+  catch {
+    const note = document.querySelector('.save-note');
+    if (note) note.textContent = 'Browser storage is unavailable. Progress lasts until this page closes.';
   }
-  wrap.querySelectorAll('[data-puzzle]').forEach(b=>b.addEventListener('click',()=>changePuzzle(Number(b.dataset.puzzle))));$('arena').append(wrap);
 }
-function win(){const l=level();completed.add(l.id);persist();navigation();scene?.celebrate();$('result').hidden=false;$('result-title').textContent=completed.size===levels.length?'Station restored. You did that.':'Mission complete.';$('takeaway').textContent=l.takeaway;$('next').textContent=current===levels.length-1?'Replay the expedition ↺':'Next mission →';log('Objective achieved. System restored.','success');tone();}
-function prepare(){runToken++;traceIndex=0;visited=[];const l=level();unit={x:l.start[0],y:l.start[1],dir:l.start[2]};scene?.update(unit,[],true);$('result').hidden=true;$('log').replaceChildren();drafts[l.id]=$('code').value;persist();try{trace=simulate(l,$('code').value);renderArena();if(!trace.steps.length){log('Your program has no actions yet. Add a command.');return false;}return true;}catch(error){trace=null;log(error.message,'error');tone(false);return false;}}
-function applyStep(){const s=trace.steps[traceIndex++];visited.push(`${unit.x},${unit.y}`);unit={x:s.x,y:s.y,dir:s.dir};renderArena();$('step-count').textContent=`Step ${traceIndex} / ${trace.steps.length}`;log(`L${s.line} · ${s.label}`,s.error?'error':'');if(traceIndex===trace.steps.length){if(trace.success)win();else log(trace.error||'Program finished. The cell is still out of reach—adjust your instructions and try again.','error');}}
-const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
-async function run(){if(running)return;if(level().kind==='bits'||level().kind==='sort'){$('log').replaceChildren();const result=evaluatePuzzle(level(),puzzle);log(result.message,result.success?'success':'error');$('step-count').textContent='Check complete';if(result.success)win();else tone(false);return;}if(level().kind==='network'){running=true;controls();$('result').hidden=true;$('log').replaceChildren();log('Testing the signal path…');const token=++runToken;networkResult=evaluateNetwork(level(),selected);renderArena();await pause(1250);if(token!==runToken)return;const result=networkResult;$('step-count').textContent='Signal test complete';log(result.message,result.success?'success':'error');if(result.success)win();else tone(false);running=false;controls();return;}
-  if(!prepare())return;running=true;controls();const token=runToken;while(token===runToken&&trace&&traceIndex<trace.steps.length){applyStep();await pause(matchMedia('(prefers-reduced-motion: reduce)').matches?80:330);}if(token!==runToken)return;running=false;controls();
+const label = id => String(id).replace(/-/g, ' ').replace(/\b\w/g, character => character.toUpperCase());
+function log(message, style = '') {
+  const line = document.createElement('p');
+  line.textContent = message;
+  line.className = style;
+  $('log').append(line);
+  $('log').scrollTop = $('log').scrollHeight;
 }
-$('run').addEventListener('click',run);$('step').addEventListener('click',()=>{if(running)return;if(!trace||traceIndex>=trace.steps.length){if(!prepare())return;}applyStep();});
-$('code').addEventListener('input',()=>{trace=null;traceIndex=0;drafts[level().id]=$('code').value;lineNumbers();persist();$('result').hidden=true;});
-$('code').addEventListener('keydown',e=>{if(e.key==='Tab'){e.preventDefault();const start=e.target.selectionStart,end=e.target.selectionEnd;e.target.setRangeText('  ',start,end,'end');e.target.dispatchEvent(new Event('input'));}if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)){e.preventDefault();run();}});
-$('reset').addEventListener('click',()=>{if(level().kind==='code')drafts[level().id]=level().starter;loadMission(current);});
-$('hint').addEventListener('click',()=>{const hints=level().hints;$('hint-text').textContent=hints[Math.min(hintIndex++,hints.length-1)];$('hint').textContent=hintIndex>=hints.length?'All hints shown':'Another hint';$('hint').disabled=hintIndex>=hints.length;});
-$('solution').addEventListener('click',()=>{runToken++;running=false;controls();const l=level();if(l.kind==='code'){$('code').value=l.solution;trace=null;lineNumbers();drafts[l.id]=l.solution;persist();}else if(l.kind==='network'){selected=[...l.solution];renderArena();}else{puzzle=[...l.solution];renderArena();}$('result').hidden=true;$('hint-text').textContent='A working solution is loaded. Run it, then reset the mission and try explaining each step yourself.';});
-$('next').addEventListener('click',()=>loadMission((current+1)%levels.length));$('sound').addEventListener('click',()=>{sound=!sound;$('sound').textContent=sound?'Sound on':'Sound off';$('sound').setAttribute('aria-pressed',String(sound));tone();});
+function tone(success = true) {
+  if (!sound) return;
+  try {
+    audioContext ??= new (window.AudioContext || window.webkitAudioContext)();
+    audioContext.resume();
+    const oscillator = audioContext.createOscillator(), gain = audioContext.createGain();
+    oscillator.connect(gain); gain.connect(audioContext.destination);
+    oscillator.frequency.value = success ? 660 : 220;
+    gain.gain.setValueAtTime(.035, audioContext.currentTime);
+    gain.gain.exponentialRampToValueAtTime(.001, audioContext.currentTime + .18);
+    oscillator.start(); oscillator.stop(audioContext.currentTime + .2);
+  } catch { /* audio is optional */ }
+}
+const reduceMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+function navigation() {
+  let chapter = '';
+  $('missions').replaceChildren();
+  levels.forEach((item, index) => {
+    if (chapter !== item.chapter) {
+      chapter = item.chapter;
+      const heading = document.createElement('div');
+      heading.className = 'chapter-label';
+      heading.textContent = chapter;
+      $('missions').append(heading);
+    }
+    const button = document.createElement('button');
+    button.className = `mission-button ${index === current ? 'active' : ''} ${completed.has(item.id) ? 'done' : ''}`;
+    button.setAttribute('aria-current', index === current ? 'step' : 'false');
+    button.innerHTML = `<span class="mission-number">${completed.has(item.id) ? '✓' : String(index + 1).padStart(2, '0')}</span><span class="mission-name">${item.name}</span>`;
+    button.addEventListener('click', () => loadMission(index));
+    $('missions').append(button);
+  });
+  $('power').max = levels.length;
+  $('power').value = completed.size;
+  $('power-count').textContent = `${completed.size} / ${levels.length}`;
+}
+
+const lineNumbers = () => { $('line-numbers').textContent = Array.from({length:$('code').value.split('\n').length}, (_, i) => i + 1).join('\n'); };
+function controls() {
+  const isCode = level().kind === 'code';
+  $('run').disabled = running;
+  $('step').disabled = running;
+  $('step').hidden = !isCode;
+  $('code').readOnly = running;
+}
+
+const runLabel = kind => ({code:'▶ Run program', algo:'▶ Run the tests', network:'▶ Send signal', transport:'▶ Start the transfer', sequence:'▶ Time the exchange', layers:'▶ Send the frame', routing:'▶ Forward the packets'}[kind] ?? '▶ Check answer');
+const panelTitle = kind => ({code:'COMMAND CONSOLE', algo:'FUNCTION CONSOLE'}[kind] ?? 'MISSION CONTROLS');
+const languageTag = kind => ({code:'JavaScript · sandboxed subset', algo:'JavaScript · checked against test cases'}[kind] ?? 'Interactive model · simplified');
+const mapLabel = kind => ({code:'ISOMETRIC VIEW', algo:'TEST CASES'}[kind] ?? 'DATA VISUALISATION');
+
+function commandReference(item) {
+  if (item.kind === 'code') return ['move(n)', 'turnLeft()', 'turnRight()', 'canMove()', 'let', 'for', 'while', 'if / else', 'function'];
+  return [item.signature, 'return', 'let', 'for', 'while', 'if / else', 'values.length', 'values[i]', 'Math.floor()', 'print()'];
+}
+
+function loadMission(index) {
+  runToken++;
+  running = false;
+  current = Math.max(0, Math.min(levels.length - 1, index));
+  const item = level();
+  hintIndex = 0; trace = null; traceIndex = 0; visited = []; networkResult = null; algoResult = null;
+  unit = item.start ? {x:item.start[0], y:item.start[1], dir:item.start[2]} : null;
+  scene?.destroy(); scene = null; sceneLevel = null;
+  puzzleState = isPuzzle(item) ? initialState(item) : null;
+
+  $('mission-meta').textContent = `MISSION ${String(current + 1).padStart(2, '0')} / ${String(levels.length).padStart(2, '0')} · ${item.chapter.toUpperCase()}`;
+  $('mission-title').textContent = item.name;
+  $('concept').textContent = item.concept;
+  $('intro').textContent = item.intro;
+  $('location').textContent = item.location.toUpperCase();
+  $('objective').textContent = item.objective;
+  $('lesson-title').textContent = item.concept;
+  $('lesson').textContent = item.lesson;
+  $('lesson-source').href = item.reference.url;
+  $('lesson-source').textContent = item.reference.label;
+  $('map-label').textContent = mapLabel(item.kind);
+  $('hint-text').textContent = 'Mistakes are part of the mission. Try an idea and read what comes back.';
+  $('hint').textContent = 'Get a hint';
+  $('hint').disabled = false;
+  $('result').hidden = true;
+  $('step-count').textContent = 'Ready';
+
+  const coding = item.kind === 'code' || item.kind === 'algo';
+  $('code-controls').hidden = !coding;
+  $('network-controls').hidden = coding;
+  $('syntax-note').hidden = !coding;
+  $('syntax-note').textContent = item.kind === 'algo'
+    ? 'This sandbox runs a subset of JavaScript: numbers, strings, booleans, arrays, let, assignment, arithmetic and comparison, if/else, for, while, break, continue, and functions with parameters, return, and recursion. Objects, classes, closures as values, and everything outside Math and the array members listed are not available. It reports mistakes JavaScript would let pass silently, such as reading past the end of an array.'
+    : 'This sandbox supports the commands shown plus let, for, while, if/else, and functions. move() takes a whole number of tiles from 0 to 100. The movement commands belong to this game; they are not built-in JavaScript functions.';
+  $('editor-title').textContent = panelTitle(item.kind);
+  $('language').textContent = languageTag(item.kind);
+  $('run').textContent = runLabel(item.kind);
+  document.querySelector('.command-reference').innerHTML = `<strong>${item.kind === 'algo' ? 'Write this function' : 'Available commands'}</strong>${commandReference(item).map(entry => `<code>${entry}</code>`).join('')}`;
+  if (coding) {
+    $('code').value = typeof drafts[item.id] === 'string' ? drafts[item.id] : (item.starter || '');
+    lineNumbers();
+  }
+
+  $('log').replaceChildren();
+  log(item.kind === 'code' ? 'Awaiting your instructions.' : item.kind === 'algo' ? `Write ${item.signature} and run the tests.` : 'Set up the model, then run it.');
+  navigation();
+  renderArena();
+  controls();
+  persist();
+}
+
+function renderArena(failed = -1) {
+  const item = level();
+  if (item.kind === 'code') {
+    if (!scene || sceneLevel !== item.id) { scene?.destroy(); scene = createScene($('arena'), item, unit); sceneLevel = item.id; }
+    scene.update(unit, visited);
+    $('legend').innerHTML = '<span class="legend-unit">➤ Cyan arrow: facing direction</span><span>◎ Amber ring: power cell</span><span>Only raised tiles are traversable</span>';
+    return;
+  }
+  scene?.destroy(); scene = null; sceneLevel = null;
+  if (item.kind === 'algo') { renderCases(); return; }
+  const rendered = view(item, puzzleState);
+  document.querySelector('.network-instructions').textContent = rendered.instructions;
+  $('legend').innerHTML = rendered.legend.map((entry, position) => `<span${position === 0 ? ' class="legend-unit"' : ''}>${entry}</span>`).join('');
+  $('link-total').textContent = rendered.summary;
+  if (rendered.diagram.type === 'graph') renderNetwork(failed);
+  else renderDiagram(rendered.diagram);
+  renderWidgets();
+}
+
+// Diagrams are described by the puzzle layer and drawn by these few renderers,
+// so a new mission kind does not need new markup.
+function renderDiagram(diagram) {
+  const wrap = document.createElement('div');
+  wrap.className = `puzzle diagram-${diagram.type}`;
+  if (diagram.type === 'bits') {
+    const width = diagram.bits.length;
+    wrap.innerHTML = `<div class="eyebrow">TARGET VALUE: ${diagram.target}</div>
+      <div class="bit-grid" style="grid-template-columns:repeat(${Math.min(width, 8)},1fr)">${diagram.bits.map((bit, index) => `<button class="bit ${bit ? 'on' : ''}" data-bit="${index}" aria-label="Toggle the ${diagram.places[index]} bit" aria-pressed="${!!bit}"><span>${bit}</span><small>${index === 0 && diagram.target < 0 ? `−${diagram.places[index]}` : diagram.places[index]}</small></button>`).join('')}</div>
+      <div class="binary-total">${diagram.value}<span>DECIMAL VALUE${diagram.hex ? ` · ${diagram.hex}` : ''}</span></div>`;
+  }
+  if (diagram.type === 'sort') {
+    wrap.innerHTML = `<div class="eyebrow">ARRAY CONTENTS</div><div class="sort-chart">${diagram.values.map((value, index) => `<div class="sort-column"><strong>${value}</strong><div class="sort-bar" style="height:${value * 17}px"></div><small>[${index}]</small></div>`).join('')}</div>`;
+  }
+  if (diagram.type === 'stack') {
+    // Drawn as nested boxes, because that is what encapsulation is: each layer
+    // wraps everything the layer above handed it.
+    const nested = diagram.rows.reduce((inner, row, depth) =>
+      `<div class="stack-layer ${row.accent ? 'accent' : ''}" style="--depth:${depth}"><div class="stack-head"><strong>${row.name}</strong><span>${row.detail}</span></div>${inner}</div>`, '');
+    wrap.innerHTML = `<div class="eyebrow">${diagram.caption ?? 'ENCAPSULATION · OUTERMOST FIRST'}</div><div class="stack-view">${nested}</div>`;
+  }
+  if (diagram.type === 'table') {
+    wrap.innerHTML = `<div class="eyebrow">${diagram.caption ?? ''}</div><table class="data-table"><thead><tr>${diagram.columns.map(column => `<th>${column}</th>`).join('')}</tr></thead><tbody>${diagram.rows.map((row, index) => `<tr class="${diagram.problems?.[index] ? 'problem' : ''} ${diagram.highlight === index ? 'highlight' : ''}">${row.map(cell => `<td>${cell}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+  }
+  if (diagram.type === 'bars') {
+    const widest = Math.max(1, ...diagram.rows.map(row => row.value));
+    wrap.innerHTML = `<div class="eyebrow">${diagram.caption ?? ''}</div><div class="bar-view">${diagram.rows.map(row => `<div class="bar-row ${row.problem ? 'problem' : ''}"><span class="bar-name">${row.name}</span><div class="bar-track"><i style="width:${Math.round(row.value / widest * 100)}%"></i></div><span class="bar-detail">${row.detail}</span></div>`).join('')}</div>`;
+  }
+  if (diagram.type === 'timeline') {
+    wrap.innerHTML = `<div class="eyebrow">${diagram.caption ?? ''} · ${diagram.total} MS</div><div class="bar-view">${diagram.rows.map(row => `<div class="bar-row"><span class="bar-name">${row.name}</span><div class="bar-track"><i style="width:${Math.max(2, Math.round(row.value / diagram.total * 100))}%;margin-left:${Math.round((row.at - row.value) / diagram.total * 100)}%"></i></div><span class="bar-detail">${row.detail}</span></div>`).join('')}</div>`;
+  }
+  if (diagram.type === 'cards') {
+    wrap.innerHTML = `<div class="eyebrow">${diagram.caption ?? 'QUESTIONS'}</div><div class="card-view">${diagram.rows.map((row, index) => `<div class="question-card ${row.answered ? 'answered' : ''}"><small>${index + 1}</small><strong>${row.name}</strong><span>${row.detail}</span></div>`).join('')}</div>`;
+  }
+  $('arena').replaceChildren(wrap);
+  wrap.querySelectorAll('[data-bit]').forEach(button => button.addEventListener('click', () => act({type:'bit', index:Number(button.dataset.bit)})));
+}
+
+function renderWidgets() {
+  const item = level();
+  const list = widgets(item, puzzleState);
+  const container = $('link-list');
+  container.replaceChildren();
+  for (const widget of list) {
+    if (widget.type === 'toggle' || widget.type === 'button') {
+      const button = document.createElement('button');
+      button.className = 'link-option';
+      if (widget.type === 'toggle') button.setAttribute('aria-pressed', String(widget.on));
+      button.innerHTML = widget.type === 'toggle'
+        ? `<span class="link-check">${widget.on ? '✓' : ''}</span><span>${widget.label}</span><span class="link-cost">${widget.note ?? ''}</span>`
+        : `<span>${widget.label}</span>`;
+      button.addEventListener('click', () => act(widget.action));
+      container.append(button);
+      continue;
+    }
+    const row = document.createElement('div');
+    row.className = `widget-row widget-${widget.type}`;
+    if (widget.type === 'order') {
+      row.innerHTML = `<span class="widget-label">${widget.label}${widget.note ? `<small>${widget.note}</small>` : ''}</span><span class="order-buttons"><button aria-label="Move ${widget.label} earlier" ${widget.first ? 'disabled' : ''}>▲</button><button aria-label="Move ${widget.label} later" ${widget.last ? 'disabled' : ''}>▼</button></span>`;
+      const [up, down] = row.querySelectorAll('button');
+      up.addEventListener('click', () => act(widget.up));
+      down.addEventListener('click', () => act(widget.down));
+    }
+    if (widget.type === 'dial' || widget.type === 'choice') {
+      row.innerHTML = `<span class="widget-label">${widget.label}${widget.help || widget.note ? `<small>${widget.help || widget.note}</small>` : ''}</span><span class="segmented">${widget.options.map((option, index) => `<button data-option="${index}" class="component-option ${option.selected ? 'chosen' : ''}" aria-pressed="${!!option.selected}"><span>${option.label}</span></button>`).join('')}</span>`;
+      row.querySelectorAll('[data-option]').forEach(button => {
+        const option = widget.options[Number(button.dataset.option)];
+        button.addEventListener('click', () => act(option.action ?? {type:'dial', id:widget.id, value:option.value}));
+      });
+    }
+    container.append(row);
+  }
+}
+
+function renderCases(result = null) {
+  const item = level();
+  const wrap = document.createElement('div');
+  wrap.className = 'puzzle diagram-cases';
+  const rows = item.cases.map((testCase, index) => {
+    const outcome = result?.cases?.[index];
+    const status = !outcome ? '·' : outcome.passed && !outcome.overGate ? '✓' : '✗';
+    const className = !outcome ? '' : outcome.passed && !outcome.overGate ? 'pass' : 'fail';
+    const detail = !outcome
+      ? testCase.note ?? ''
+      : outcome.error ? outcome.error
+      : !outcome.passed ? `returned ${describe(outcome.actual)}`
+      : outcome.overGate ? `${outcome.operations.toLocaleString('en-US')} steps, over the ${outcome.maxOperations.toLocaleString('en-US')} allowed`
+      : `${outcome.operations.toLocaleString('en-US')} steps${testCase.maxOperations ? ` of ${testCase.maxOperations.toLocaleString('en-US')} allowed` : ''}`;
+    return `<div class="case-row ${className}"><span class="case-status">${status}</span><code>${item.fn}(${testCase.args.map(argument => short(describe(argument))).join(', ')})</code><span class="case-expect">→ ${short(describe(testCase.expect))}</span><span class="case-detail">${detail}</span></div>`;
+  }).join('');
+  wrap.innerHTML = `<div class="eyebrow">${item.cases.length} TEST CASES${result ? ` · ${result.cases.filter(entry => entry.passed && !entry.overGate).length} PASSING` : ''}</div><div class="case-table">${rows}</div>${result?.output?.length ? `<div class="case-output"><strong>print() output</strong>${result.output.slice(0, 12).map(line => `<code>${line}</code>`).join('')}</div>` : ''}`;
+  $('arena').replaceChildren(wrap);
+  $('legend').innerHTML = '<span class="legend-unit">✓ Case passed</span><span>✗ Case failed</span><span>Steps counted by the interpreter</span>';
+}
+const short = text => text.length > 42 ? `${text.slice(0, 39)}…` : text;
+
+function renderNetwork(failed) {
+  const item = level(), ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('viewBox', '0 0 560 350');
+  svg.setAttribute('class', 'network-svg');
+  svg.setAttribute('aria-label', 'Network map. Toggle cables using the buttons in mission controls.');
+  const point = id => { const node = item.nodes.find(entry => entry[0] === id); return [node[1] * 5.6, node[2] * 3.1]; };
+  svg.innerHTML = '<defs><linearGradient id="node-metal" x2="0" y2="1"><stop stop-color="#355675"/><stop offset="1" stop-color="#0c2139"/></linearGradient><linearGradient id="node-core" x2="0" y2="1"><stop stop-color="#c7f5ff"/><stop offset="1" stop-color="#549abb"/></linearGradient></defs>';
+  item.edges.forEach((edge, index) => {
+    const [x1, y1] = point(edge[0]), [x2, y2] = point(edge[1]);
+    const line = document.createElementNS(ns, 'line');
+    Object.entries({x1, y1, x2, y2, class:`network-link ${puzzleState.links.includes(index) ? 'selected' : ''} ${networkResult?.pathEdges.includes(index) ? 'route' : ''} ${index === failed ? 'failed' : ''}`}).forEach(([key, value]) => line.setAttribute(key, value));
+    svg.append(line);
+    const hit = line.cloneNode();
+    hit.setAttribute('class', 'link-hit');
+    hit.addEventListener('click', () => act({type:'link', index}));
+    svg.append(hit);
+    if (item.budget) {
+      const weight = document.createElementNS(ns, 'text');
+      weight.setAttribute('x', (x1 + x2) / 2);
+      weight.setAttribute('y', (y1 + y2) / 2 - 12);
+      weight.setAttribute('class', 'link-weight');
+      weight.setAttribute('text-anchor', 'middle');
+      weight.textContent = `${edge[2]} ms`;
+      svg.append(weight);
+    }
+  });
+  item.nodes.forEach(([id]) => {
+    const [cx, cy] = point(id);
+    const endpoint = id === item.source || id === item.target;
+    const circle = document.createElementNS(ns, 'circle');
+    Object.entries({cx, cy, r:23, class:`network-node ${endpoint ? 'endpoint' : ''}`}).forEach(([key, value]) => circle.setAttribute(key, value));
+    svg.append(circle);
+    const symbol = document.createElementNS(ns, 'text');
+    symbol.setAttribute('x', cx); symbol.setAttribute('y', cy);
+    symbol.setAttribute('class', `node-symbol ${endpoint ? 'endpoint' : ''}`);
+    symbol.textContent = id === item.source ? '↑' : id === item.target ? '▤' : '↔';
+    svg.append(symbol);
+    const text = document.createElementNS(ns, 'text');
+    text.setAttribute('x', cx); text.setAttribute('y', cy + 45);
+    text.setAttribute('class', 'node-label');
+    text.textContent = label(id);
+    svg.append(text);
+  });
+  $('arena').replaceChildren(svg);
+  if (networkResult?.path.length) {
+    $('legend').innerHTML = '<span class="legend-unit">━ Enabled link</span><span style="color:#ffdc93">━ Tested route</span><span>Other links add no path cost</span>';
+    if (running && !reduceMotion()) {
+      const packet = document.createElementNS(ns, 'circle');
+      packet.setAttribute('r', '6');
+      packet.setAttribute('class', 'packet');
+      const motion = document.createElementNS(ns, 'animateMotion');
+      motion.setAttribute('path', networkResult.path.map((id, index) => `${index ? 'L' : 'M'}${point(id).join(' ')}`).join(' '));
+      motion.setAttribute('dur', '1.2s');
+      motion.setAttribute('fill', 'freeze');
+      packet.append(motion);
+      svg.append(packet);
+    }
+  }
+}
+
+function act(action) {
+  if (running || !action) return;
+  puzzleState = applyAction(level(), puzzleState, action);
+  networkResult = null;
+  $('result').hidden = true;
+  renderArena();
+}
+
+function win() {
+  const item = level();
+  completed.add(item.id);
+  persist();
+  navigation();
+  scene?.celebrate();
+  $('result').hidden = false;
+  $('result-title').textContent = completed.size === levels.length ? 'Station restored. You did that.' : 'Mission complete.';
+  $('takeaway').textContent = item.takeaway;
+  $('next').textContent = current === levels.length - 1 ? 'Replay the expedition ↺' : 'Next mission →';
+  log('Objective achieved. System restored.', 'success');
+  tone();
+}
+
+function prepare() {
+  runToken++;
+  traceIndex = 0;
+  visited = [];
+  const item = level();
+  unit = {x:item.start[0], y:item.start[1], dir:item.start[2]};
+  scene?.update(unit, [], true);
+  $('result').hidden = true;
+  $('log').replaceChildren();
+  drafts[item.id] = $('code').value;
+  persist();
+  try {
+    trace = simulate(item, $('code').value);
+    renderArena();
+    for (const line of trace.output) log(`print → ${line}`);
+    if (!trace.steps.length) { log('Your program has no actions yet. Add a command.'); return false; }
+    return true;
+  } catch (error) {
+    trace = null;
+    log(error.message, 'error');
+    tone(false);
+    return false;
+  }
+}
+function applyStep() {
+  const step = trace.steps[traceIndex++];
+  visited.push(`${unit.x},${unit.y}`);
+  unit = {x:step.x, y:step.y, dir:step.dir};
+  renderArena();
+  $('step-count').textContent = `Step ${traceIndex} / ${trace.steps.length}`;
+  log(`L${step.line} · ${step.label}`, step.error ? 'error' : '');
+  if (traceIndex === trace.steps.length) {
+    if (trace.success) win();
+    else log(trace.error || 'Program finished. The cell is still out of reach — adjust your instructions and try again.', 'error');
+  }
+}
+const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+async function run() {
+  if (running) return;
+  const item = level();
+  if (item.kind === 'algo') {
+    drafts[item.id] = $('code').value;
+    persist();
+    $('log').replaceChildren();
+    algoResult = evaluateAlgorithm(item, $('code').value);
+    renderCases(algoResult);
+    for (const line of algoResult.output.slice(0, 12)) log(`print → ${line}`);
+    $('step-count').textContent = `${algoResult.cases.filter(entry => entry.passed && !entry.overGate).length} / ${item.cases.length} cases`;
+    if (algoResult.success) { log(`All ${item.cases.length} cases pass.`, 'success'); win(); }
+    else { log(algoResult.error, 'error'); tone(false); }
+    return;
+  }
+  if (isPuzzle(item)) {
+    const animated = item.kind === 'network';
+    running = animated;
+    controls();
+    $('result').hidden = true;
+    $('log').replaceChildren();
+    if (animated) {
+      log('Testing the signal path…');
+      const token = ++runToken;
+      networkResult = evaluateNetwork(item, puzzleState.links);
+      renderArena();
+      await pause(1250);
+      if (token !== runToken) return;
+    }
+    const result = evaluate(item, puzzleState);
+    $('step-count').textContent = 'Check complete';
+    log(result.message, result.success ? 'success' : 'error');
+    if (result.success) win(); else tone(false);
+    running = false;
+    controls();
+    if (animated) renderArena();
+    return;
+  }
+  if (!prepare()) return;
+  running = true;
+  controls();
+  const token = runToken;
+  while (token === runToken && trace && traceIndex < trace.steps.length) {
+    applyStep();
+    await pause(reduceMotion() ? 80 : 330);
+  }
+  if (token !== runToken) return;
+  running = false;
+  controls();
+}
+
+$('run').addEventListener('click', run);
+$('step').addEventListener('click', () => {
+  if (running || level().kind !== 'code') return;
+  if (!trace || traceIndex >= trace.steps.length) { if (!prepare()) return; }
+  applyStep();
+});
+$('code').addEventListener('input', () => {
+  trace = null; traceIndex = 0;
+  drafts[level().id] = $('code').value;
+  lineNumbers();
+  persist();
+  $('result').hidden = true;
+});
+$('code').addEventListener('keydown', event => {
+  if (event.key === 'Tab') {
+    event.preventDefault();
+    event.target.setRangeText('  ', event.target.selectionStart, event.target.selectionEnd, 'end');
+    event.target.dispatchEvent(new Event('input'));
+  }
+  if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) { event.preventDefault(); run(); }
+});
+$('reset').addEventListener('click', () => {
+  if (level().kind === 'code' || level().kind === 'algo') drafts[level().id] = level().starter;
+  loadMission(current);
+});
+$('hint').addEventListener('click', () => {
+  const hints = level().hints;
+  $('hint-text').textContent = hints[Math.min(hintIndex++, hints.length - 1)];
+  $('hint').textContent = hintIndex >= hints.length ? 'All hints shown' : 'Another hint';
+  $('hint').disabled = hintIndex >= hints.length;
+});
+$('solution').addEventListener('click', () => {
+  runToken++;
+  running = false;
+  controls();
+  const item = level();
+  if (item.kind === 'code' || item.kind === 'algo') {
+    $('code').value = item.solution;
+    trace = null;
+    algoResult = null;
+    lineNumbers();
+    drafts[item.id] = item.solution;
+    persist();
+    if (item.kind === 'algo') renderCases();
+  } else {
+    puzzleState = solutionState(item);
+    networkResult = null;
+    renderArena();
+  }
+  $('result').hidden = true;
+  $('hint-text').textContent = 'A working solution is loaded. Run it, then reset the mission and try explaining each step yourself.';
+});
+$('next').addEventListener('click', () => loadMission((current + 1) % levels.length));
+$('sound').addEventListener('click', () => {
+  sound = !sound;
+  $('sound').textContent = sound ? 'Sound on' : 'Sound off';
+  $('sound').setAttribute('aria-pressed', String(sound));
+  tone();
+});
+
 loadMission(current);
-const builder=mountBuilder($('builder'));
-function setMode(nextMode){runToken++;running=false;controls();mode=nextMode;$('campaign').hidden=mode!=='campaign';$('builder').hidden=mode!=='builder';for(const m of ['campaign','builder']){$(`${m}-mode`).classList.toggle('active',m===mode);$(`${m}-mode`).setAttribute('aria-pressed',String(m===mode));}}
-$('campaign-mode').addEventListener('click',()=>setMode('campaign'));
-$('builder-mode').addEventListener('click',()=>setMode('builder'));
+const builder = mountBuilder($('builder'));
+function setMode(nextMode) {
+  runToken++;
+  running = false;
+  controls();
+  mode = nextMode;
+  $('campaign').hidden = mode !== 'campaign';
+  $('builder').hidden = mode !== 'builder';
+  for (const name of ['campaign', 'builder']) {
+    $(`${name}-mode`).classList.toggle('active', name === mode);
+    $(`${name}-mode`).setAttribute('aria-pressed', String(name === mode));
+  }
+}
+$('campaign-mode').addEventListener('click', () => setMode('campaign'));
+$('builder-mode').addEventListener('click', () => setMode('builder'));
+
+const isCoding = () => level().kind === 'code' || level().kind === 'algo';
 registerGameTools({
-  read:()=>({mode,missionId:level().id,objective:level().objective,kind:level().kind,program:level().kind==='code'?$('code').value:null,completed:[...completed],running,builder:builder.getState(),missions:levels.map(l=>({id:l.id,name:l.name,kind:l.kind}))}),
-  start:id=>{const index=levels.findIndex(l=>l.id===id);if(index<0)throw new Error('Unknown mission.');setMode('campaign');loadMission(index);return {missionId:level().id,objective:level().objective};},
-  stage:source=>{if(mode!=='campaign'||level().kind!=='code'||running)throw new Error('Open an idle coding mission first.');$('code').value=source;$('code').dispatchEvent(new Event('input'));return {missionId:level().id,staged:true};},
-  run:async()=>{if(mode!=='campaign'||level().kind!=='code'||running)throw new Error('Open an idle coding mission first.');await run();return {missionId:level().id,success:!!trace?.success,log:$('log').textContent};}
+  read:() => ({
+    mode, missionId:level().id, chapter:level().chapter, concept:level().concept,
+    objective:level().objective, kind:level().kind,
+    program:isCoding() ? $('code').value : null,
+    completed:[...completed], running,
+    architecture:builder.getState(),
+    missions:levels.map(item => ({id:item.id, name:item.name, kind:item.kind, chapter:item.chapter}))
+  }),
+  start:id => {
+    const index = levels.findIndex(item => item.id === id);
+    if (index < 0) throw new Error('Unknown mission.');
+    setMode('campaign');
+    loadMission(index);
+    return {missionId:level().id, objective:level().objective, kind:level().kind};
+  },
+  stage:source => {
+    if (mode !== 'campaign' || !isCoding() || running) throw new Error('Open an idle coding mission first.');
+    $('code').value = source;
+    $('code').dispatchEvent(new Event('input'));
+    return {missionId:level().id, staged:true};
+  },
+  run:async () => {
+    if (mode !== 'campaign' || !isCoding() || running) throw new Error('Open an idle coding mission first.');
+    await run();
+    return {missionId:level().id, success:level().kind === 'algo' ? !!algoResult?.success : !!trace?.success, log:$('log').textContent};
+  }
 });
