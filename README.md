@@ -45,6 +45,22 @@ the local development server, and the host serves `dist/` in production.
 | `dist/puzzles.js` | One state/widget/diagram/verdict interface for every non-coding mission |
 | `dist/levels.js` | Mission content, including the solution each mission's tests check |
 | `dist/game.js`, `dist/builder.js`, `dist/scene.js` | Interface and isometric renderer |
+| `dist/theme.css` | Design tokens, base elements, and the light and dark colour schemes |
+| `dist/app.css` | Components, composed only from those tokens |
+
+### The interface
+
+One design system, in two files: `theme.css` holds the tokens (type scale, 4px spacing
+rhythm, elevation, motion, and every colour) and `app.css` composes components from them
+only — no component hard-codes a colour or a size. That is what makes a change to the look
+a change in one place.
+
+The colour scheme follows the operating system and can be overridden with the toggle in the
+header, which is then remembered. Text meets WCAG AA contrast in both schemes, icon-only
+controls on small screens keep their labels in the accessibility tree, and everything honours
+`prefers-reduced-motion`. The 31 missions are grouped into four collapsible chapters, each
+carrying its own progress and accent colour; on a phone the rail becomes a drawer over the
+mission it is currently on.
 
 ### The language
 
@@ -93,7 +109,7 @@ and the tests check them against independent implementations.
 
 ## Validation
 
-Run `npm test` and `npm run check`. 67 tests across six files:
+Run `npm test` and `npm run check`. 72 tests across seven files:
 
 - `tests/lang.test.mjs` — 30 programs run in both the interpreter and real JavaScript via
   `node:vm` and compared, plus the refusals, the deliberate deviations, and the bounds.
@@ -107,6 +123,10 @@ Run `npm test` and `npm run check`. 67 tests across six files:
   against a simulated M/M/1 queue.
 - `tests/missions.test.mjs` — every mission's shipped solution wins, no mission starts solved,
   every mission carries its teaching material, and the concept requirements hold.
+- `tests/page.test.mjs` — the checks a no-build static page otherwise lacks: every file the
+  page links to exists, every id the interface looks up is in the markup, every class it
+  renders has a style rule, every custom property it uses is defined, and the accessibility
+  affordances are still there.
 - `tests/accuracy.test.mjs` — grid programs compared against real JavaScript, every algorithm
   solution compared against itself run natively on random inputs, every graph configuration
   against path enumeration, and every puzzle's whole option space enumerated to prove it is
@@ -114,7 +134,8 @@ Run `npm test` and `npm run check`. 67 tests across six files:
 
 A browser pass through all 31 missions and all 5 lab contracts was run with Playwright against
 the development server: every mission completes from its own "show a solution" button, every
-contract is met, and the page reports no script errors.
+contract is met, and the page reports no script errors. The layout was checked at desktop and
+390px widths in both colour schemes, with no horizontal overflow at either size.
 
 Optional WebMCP tools feature-detect `document.modelContext`. Registration and the tool actions
 have not been exercised in a browser that supports it; normal play does not require it.

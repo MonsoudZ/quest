@@ -12,13 +12,14 @@ try { saved = JSON.parse(localStorage.getItem(saveKey) || '{}'); } catch { /* st
 const completed = new Set(Array.isArray(saved?.completed) ? saved.completed.filter(id => levels.some(level => level.id === id)) : []);
 let current = Math.max(0, levels.findIndex(level => level.id === saved?.current));
 let drafts = saved?.drafts && typeof saved.drafts === 'object' ? saved.drafts : {};
+const collapsed = new Set(Array.isArray(saved?.collapsed) ? saved.collapsed : []);
 let hintIndex = 0, unit = null, visited = [], trace = null, traceIndex = 0, runToken = 0, running = false;
 let sound = false, audioContext = null, scene = null, sceneLevel = null, networkResult = null;
 let puzzleState = null, algoResult = null, mode = 'campaign';
 const level = () => levels[current];
 
 function persist() {
-  try { localStorage.setItem(saveKey, JSON.stringify({completed:[...completed], current:level().id, drafts})); }
+  try { localStorage.setItem(saveKey, JSON.stringify({completed:[...completed], current:level().id, drafts, collapsed:[...collapsed]})); }
   catch {
     const note = document.querySelector('.save-note');
     if (note) note.textContent = 'Browser storage is unavailable. Progress lasts until this page closes.';
@@ -47,28 +48,87 @@ function tone(success = true) {
 }
 const reduceMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 
+const slug = text => text.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+const chevron = '<svg class="chapter-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>';
+
+// The rail groups 31 missions into four collapsible chapters, each showing how
+// much of it is finished. The chapter you are in is always open.
 function navigation() {
-  let chapter = '';
-  $('missions').replaceChildren();
-  levels.forEach((item, index) => {
-    if (chapter !== item.chapter) {
-      chapter = item.chapter;
-      const heading = document.createElement('div');
-      heading.className = 'chapter-label';
-      heading.textContent = chapter;
-      $('missions').append(heading);
+  const container = $('missions');
+  container.replaceChildren();
+  for (const chapter of [...new Set(levels.map(item => item.chapter))]) {
+    const missions = levels.filter(item => item.chapter === chapter);
+    const done = missions.filter(item => completed.has(item.id)).length;
+    const key = slug(chapter);
+    const current_chapter = level().chapter === chapter;
+    const expanded = current_chapter || !collapsed.has(key);
+
+    const group = document.createElement('section');
+    group.className = 'chapter-group';
+    group.dataset.chapter = key;
+
+    const head = document.createElement('button');
+    head.className = 'chapter-head';
+    head.setAttribute('aria-expanded', String(expanded));
+    head.innerHTML = `<span class="chapter-dot"></span><span class="chapter-name">${chapter}</span><span class="chapter-count">${done}/${missions.length}</span>${chevron}`;
+    head.addEventListener('click', () => {
+      if (collapsed.has(key)) collapsed.delete(key); else collapsed.add(key);
+      persist();
+      navigation();
+    });
+
+    const track = document.createElement('div');
+    track.className = 'chapter-track';
+    track.innerHTML = `<i style="width:${Math.round(done / missions.length * 100)}%"></i>`;
+
+    const list = document.createElement('div');
+    list.className = 'chapter-missions';
+    for (const item of missions) {
+      const index = levels.indexOf(item);
+      const button = document.createElement('button');
+      button.className = `mission-button ${index === current ? 'active' : ''} ${completed.has(item.id) ? 'done' : ''}`;
+      button.setAttribute('aria-current', index === current ? 'step' : 'false');
+      button.innerHTML = `<span class="mission-number">${completed.has(item.id) ? '✓' : String(index + 1).padStart(2, '0')}</span><span class="mission-name">${item.name}</span>`;
+      button.addEventListener('click', () => {
+        loadMission(index);
+        closeRail();
+      });
+      list.append(button);
     }
-    const button = document.createElement('button');
-    button.className = `mission-button ${index === current ? 'active' : ''} ${completed.has(item.id) ? 'done' : ''}`;
-    button.setAttribute('aria-current', index === current ? 'step' : 'false');
-    button.innerHTML = `<span class="mission-number">${completed.has(item.id) ? '✓' : String(index + 1).padStart(2, '0')}</span><span class="mission-name">${item.name}</span>`;
-    button.addEventListener('click', () => loadMission(index));
-    $('missions').append(button);
-  });
+    group.append(head, track, list);
+    container.append(group);
+  }
+  $('campaign').dataset.chapter = slug(level().chapter);
+  keepActiveVisible(container);
+  $('rail-current').textContent = `${String(current + 1).padStart(2, '0')} · ${level().name}`;
   $('power').max = levels.length;
   $('power').value = completed.size;
   $('power-count').textContent = `${completed.size} / ${levels.length}`;
 }
+
+// Centre the active mission inside whichever element actually scrolls, rather
+// than scrollIntoView, which would also scroll the page under the player.
+function keepActiveVisible(container) {
+  const active = container.querySelector('.mission-button.active');
+  if (!active) return;
+  for (const box of [rail, container]) {
+    if (box.scrollHeight <= box.clientHeight + 4) continue;
+    const middle = active.offsetTop - box.clientHeight / 2 + active.offsetHeight / 2;
+    box.scrollTop = Math.max(0, middle);
+    return;
+  }
+}
+
+const rail = document.querySelector('.mission-panel');
+const railToggle = document.querySelector('.rail-toggle');
+function closeRail() {
+  rail.classList.remove('open');
+  railToggle.setAttribute('aria-expanded', 'false');
+}
+railToggle.addEventListener('click', () => {
+  const open = rail.classList.toggle('open');
+  railToggle.setAttribute('aria-expanded', String(open));
+});
 
 const lineNumbers = () => { $('line-numbers').textContent = Array.from({length:$('code').value.split('\n').length}, (_, i) => i + 1).join('\n'); };
 function controls() {
@@ -482,7 +542,7 @@ $('solution').addEventListener('click', () => {
 $('next').addEventListener('click', () => loadMission((current + 1) % levels.length));
 $('sound').addEventListener('click', () => {
   sound = !sound;
-  $('sound').textContent = sound ? 'Sound on' : 'Sound off';
+  $('sound-label').textContent = sound ? 'Sound on' : 'Sound off';
   $('sound').setAttribute('aria-pressed', String(sound));
   tone();
 });
@@ -501,6 +561,27 @@ function setMode(nextMode) {
     $(`${name}-mode`).setAttribute('aria-pressed', String(name === mode));
   }
 }
+// Colour scheme: follows the system until the player chooses, then stays put.
+const themeKey = 'signal-quest-theme';
+let theme = null;
+try { theme = localStorage.getItem(themeKey); } catch { /* storage is optional */ }
+const prefersLight = matchMedia('(prefers-color-scheme: light)');
+function applyTheme() {
+  if (theme) document.documentElement.dataset.theme = theme;
+  else delete document.documentElement.dataset.theme;
+  const dark = theme ? theme === 'dark' : !prefersLight.matches;
+  $('theme-label').textContent = dark ? 'Light' : 'Dark';
+  $('theme').setAttribute('aria-pressed', String(!dark));
+  $('theme').title = dark ? 'Switch to the light colour scheme' : 'Switch to the dark colour scheme';
+}
+$('theme').addEventListener('click', () => {
+  theme = (theme ? theme === 'dark' : !prefersLight.matches) ? 'light' : 'dark';
+  try { localStorage.setItem(themeKey, theme); } catch { /* storage is optional */ }
+  applyTheme();
+});
+prefersLight.addEventListener('change', () => { if (!theme) applyTheme(); });
+applyTheme();
+
 $('campaign-mode').addEventListener('click', () => setMode('campaign'));
 $('builder-mode').addEventListener('click', () => setMode('builder'));
 

@@ -2,32 +2,147 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#080f1e">
+  <meta name="theme-color" content="#070d1a" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#eef2f7" media="(prefers-color-scheme: light)">
   <title>Signal Quest — Programming, computer science, networking, system design</title>
   <meta name="description" content="A 31-mission game that teaches programming, computer science, networking, and system design: write code in a sandboxed JavaScript subset, subnet a network, size a sliding window, and design a service that meets its SLO.">
   <link rel="icon" href="./icon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="./style.css">
-  <link rel="stylesheet" href="./modes.css">
-  <link rel="stylesheet" href="./cinematic.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <!-- Loaded without blocking first paint: the system fallback renders immediately and the webfont swaps in. -->
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" media="print" onload="this.media='all'">
+  <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap"></noscript>
+  <link rel="stylesheet" href="./theme.css">
+  <link rel="stylesheet" href="./app.css">
   <script type="module" src="./game.js"></script>
 </head>
 <body>
-  <header class="topbar"><a class="brand" href="./" aria-label="Signal Quest home"><span class="brand-mark">S<span>Q</span></span><span>SIGNAL QUEST<small>STATION RECOVERY PROGRAM</small></span></a><div class="station-status"><span id="station-label">Station power</span><progress id="power" max="31" value="0" aria-labelledby="station-label"></progress><span id="power-count">0 / 31</span></div><button id="sound" class="quiet" aria-pressed="false">Sound off</button></header>
-  <nav class="game-modes" aria-label="Game mode"><button id="campaign-mode" class="mode-button active" aria-pressed="true">01 · Adventure & puzzles</button><button id="builder-mode" class="mode-button" aria-pressed="false">02 · Architecture lab</button><span>4 CHAPTERS / 31 MISSIONS</span></nav>
+  <header class="topbar">
+    <a class="brand" href="./" aria-label="Signal Quest home">
+      <span class="brand-mark">S<span>Q</span></span>
+      <span>SIGNAL QUEST<small>STATION RECOVERY PROGRAM</small></span>
+    </a>
+    <div class="station-status">
+      <span id="station-label">Station power</span>
+      <progress id="power" max="31" value="0" aria-labelledby="station-label"></progress>
+      <span id="power-count">0 / 31</span>
+    </div>
+    <button id="theme" class="icon-button" aria-pressed="false" title="Switch between the dark and light colour scheme">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.2M12 19.3v2.2M4.2 4.2l1.6 1.6M18.2 18.2l1.6 1.6M2.5 12h2.2M19.3 12h2.2M4.2 19.8l1.6-1.6M18.2 5.8l1.6-1.6"/></svg>
+      <span id="theme-label">Light</span>
+    </button>
+    <button id="sound" class="icon-button" aria-pressed="false" title="Turn mission feedback sounds on or off">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M5 9.5h3l4.2-3.4v11.8L8 14.5H5z" stroke-linejoin="round"/><path d="M16.2 9.2a4 4 0 0 1 0 5.6"/></svg>
+      <span id="sound-label">Sound off</span>
+    </button>
+  </header>
+
+  <nav class="game-modes" aria-label="Game mode">
+    <div class="mode-switch">
+      <button id="campaign-mode" class="mode-button active" aria-pressed="true">01 · Missions</button>
+      <button id="builder-mode" class="mode-button" aria-pressed="false">02 · Architecture lab</button>
+    </div>
+    <span>4 chapters · 31 missions</span>
+  </nav>
+
   <main class="shell" id="campaign">
-    <aside class="mission-panel"><div class="eyebrow">YOUR EXPEDITION</div><h1>Bring it<br>back online.</h1><p class="muted rail-intro">One station. Four chapters.<br>Programming, computer science,<br>networking, system design.</p><nav id="missions" aria-label="Mission selection"></nav><div class="save-note">Progress saves in this browser.<br>No experience required.</div></aside>
-    <section class="workspace" aria-labelledby="mission-title">
-      <div class="mission-heading"><div><div class="eyebrow" id="mission-meta"></div><h2 id="mission-title"></h2></div><span id="concept" class="concept"></span></div>
-      <p id="intro" class="intro"></p>
-      <div class="play-layout">
-        <section class="arena-panel" aria-label="Mission map"><div class="panel-bar"><span id="location"></span><span class="map-label" id="map-label">TACTICAL VIEW</span></div><div id="arena"></div><div class="map-legend" id="legend"></div><div class="objective"><span class="objective-icon">◎</span><div><small>MISSION OBJECTIVE</small><p id="objective"></p></div></div></section>
-        <section class="console-panel" aria-label="Mission controls"><div class="panel-bar"><span id="editor-title">COMMAND CONSOLE</span><span id="language">JavaScript · beginner subset</span></div><div id="code-controls"><label class="sr-only" for="code">Your program</label><div class="editor-wrap"><pre id="line-numbers" aria-hidden="true">1</pre><textarea id="code" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" aria-describedby="editor-help"></textarea></div><p id="editor-help" class="editor-help">Edit your instructions, then run them. <kbd>⌘ / Ctrl</kbd> + <kbd>Enter</kbd></p><div class="command-reference"></div></div><div id="network-controls" hidden><p class="network-instructions"></p><div id="link-list"></div><p id="link-total" class="link-total"></p></div><div class="actions"><button id="run" class="primary">▶ Run program</button><button id="step" class="secondary">Step</button><button id="reset" class="quiet">Reset</button></div><div class="trace-panel"><div class="trace-heading"><span>MISSION LOG</span><span id="step-count">Ready</span></div><div id="log" role="status" aria-live="polite"><p>Awaiting your instructions.</p></div></div></section>
+    <aside class="mission-panel">
+      <div class="rail-head">
+        <div class="eyebrow">Your expedition</div>
+        <h1>Bring it back online.</h1>
+        <p class="rail-intro">Programming, computer science, networking, and system design — one station at a time.</p>
       </div>
-      <div id="result" class="result" hidden><div><div class="eyebrow">SYSTEM RESTORED</div><h3 id="result-title">Mission complete.</h3><p id="takeaway"></p></div><button id="next" class="primary">Next mission →</button></div>
-      <div class="learning-row"><section class="field-notes"><div class="eyebrow">FIELD NOTES</div><h3 id="lesson-title"></h3><p id="lesson"></p><p id="syntax-note" class="syntax-note"></p><a id="lesson-source" class="lesson-reference" target="_blank" rel="noopener noreferrer">Reference</a></section><section class="help-panel"><div class="eyebrow">STUCK? EXPERIMENT.</div><p id="hint-text">Mistakes are part of the mission. Run an idea and follow the trace.</p><div class="hint-actions"><button id="hint" class="secondary">Get a hint</button><button id="solution" class="quiet">Show a solution</button></div></section></div>
+      <button class="rail-toggle" aria-expanded="false">
+        <span id="rail-current">Choose a mission</span>
+        <svg class="chapter-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>
+      </button>
+      <nav id="missions" aria-label="Mission selection"></nav>
+      <p class="save-note">Progress saves in this browser.<br>No experience required.</p>
+    </aside>
+
+    <section class="workspace" aria-labelledby="mission-title">
+      <div class="mission-heading">
+        <div>
+          <div class="eyebrow" id="mission-meta"></div>
+          <h2 id="mission-title"></h2>
+        </div>
+        <span id="concept" class="concept"></span>
+      </div>
+      <p id="intro" class="intro"></p>
+
+      <div class="play-layout">
+        <section class="arena-panel" aria-label="Mission visualisation">
+          <div class="panel-bar"><span id="location"></span><span class="map-label" id="map-label">Tactical view</span></div>
+          <div id="arena"></div>
+          <div class="map-legend" id="legend"></div>
+          <div class="objective">
+            <span class="objective-icon" aria-hidden="true">◎</span>
+            <div><small>Mission objective</small><p id="objective"></p></div>
+          </div>
+        </section>
+
+        <section class="console-panel" aria-label="Mission controls">
+          <div class="panel-bar"><span id="editor-title">Command console</span><span id="language">JavaScript · sandboxed subset</span></div>
+          <div id="code-controls">
+            <label class="sr-only" for="code">Your program</label>
+            <div class="editor-wrap">
+              <pre id="line-numbers" aria-hidden="true">1</pre>
+              <textarea id="code" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" aria-describedby="editor-help"></textarea>
+            </div>
+            <p id="editor-help" class="editor-help">Edit your instructions, then run them. <kbd>⌘ / Ctrl</kbd> + <kbd>Enter</kbd></p>
+            <div class="command-reference"></div>
+          </div>
+          <div id="network-controls" hidden>
+            <p class="network-instructions"></p>
+            <div id="link-list"></div>
+            <p id="link-total" class="link-total"></p>
+          </div>
+          <div class="actions">
+            <button id="run" class="primary">▶ Run program</button>
+            <button id="step" class="secondary">Step</button>
+            <button id="reset" class="quiet">Reset</button>
+          </div>
+          <div class="trace-panel">
+            <div class="trace-heading"><span>Mission log</span><span id="step-count">Ready</span></div>
+            <div id="log" role="status" aria-live="polite"><p>Awaiting your instructions.</p></div>
+          </div>
+        </section>
+      </div>
+
+      <div id="result" class="result" hidden>
+        <div>
+          <div class="eyebrow">System restored</div>
+          <h3 id="result-title">Mission complete.</h3>
+          <p id="takeaway"></p>
+        </div>
+        <button id="next" class="primary">Next mission →</button>
+      </div>
+
+      <div class="learning-row">
+        <section class="field-notes">
+          <div class="eyebrow">Field notes</div>
+          <h3 id="lesson-title"></h3>
+          <p id="lesson"></p>
+          <p id="syntax-note" class="syntax-note"></p>
+          <a id="lesson-source" class="lesson-reference" target="_blank" rel="noopener noreferrer"></a>
+        </section>
+        <section class="help-panel">
+          <div class="eyebrow">Stuck? Experiment.</div>
+          <p id="hint-text">Mistakes are part of the mission. Try an idea and read what comes back.</p>
+          <div class="hint-actions">
+            <button id="hint" class="secondary">Get a hint</button>
+            <button id="solution" class="quiet">Show a solution</button>
+          </div>
+        </section>
+      </div>
     </section>
   </main>
+
   <main id="builder" class="builder-workspace" hidden></main>
-  <footer><span>LEARN → EXPERIMENT → UNDERSTAND</span><span>Signal Quest · Programming · Computer science · Networking · System design</span></footer>
+
+  <footer>
+    <span>Learn → experiment → understand</span>
+    <span>Signal Quest · Programming · Computer science · Networking · System design</span>
+  </footer>
 </body>
 </html>
