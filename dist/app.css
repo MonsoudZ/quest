@@ -524,8 +524,8 @@ kbd { padding:2px 5px; border:1px solid var(--line-strong); border-radius:4px; b
 }
 @media (max-width:640px) {
   .topbar { gap:var(--s-2); padding:var(--s-2) var(--s-3); min-height:58px; }
-  /* The link keeps its aria-label, so the mark alone still names the page. */
-  .brand > span { display:none; }
+  /* The wordmark goes; the mark stays, and the link keeps its aria-label. */
+  .brand > span:not(.brand-mark) { display:none; }
   .brand-mark { width:36px; height:36px; font-size:22px; }
   .brand > span { font-size:var(--text-base); white-space:nowrap; }
   .icon-button { height:36px; padding:0 var(--s-2); }
