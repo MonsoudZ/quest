@@ -9,7 +9,7 @@ export {QuestError, describe};
 // in what the player is handed: 'algo' a blank function, 'debug' a program that
 // runs but answers wrongly, 'refactor' a program that answers correctly and
 // breaks a shape rule.
-export const algoKinds = new Set(['algo', 'debug', 'refactor']);
+export const algoKinds = new Set(['algo', 'debug', 'refactor', 'spec']);
 export const directions = [[1,0],[0,1],[-1,0],[0,-1]];
 export const gridCommands = ['move','turnLeft','turnRight','canMove','print'];
 const gridLimits = {operations:4000, callDepth:48, arrayLength:256, cells:2000};
@@ -283,6 +283,101 @@ function shapeReport(ast, level) {
   return null;
 }
 
+
+// A spec mission turns the console around: the player writes the test cases and
+// the mission supplies the implementations. Their suite has to agree with a
+// correct one and reject every broken one, which is the whole skill — a test
+// that passes against everything tests nothing.
+export function evaluateSpec(level, source) {
+  const limits = {...(level.limits ?? {}), operations:level.limits?.operations ?? 200000};
+  let suite;
+  try {
+    suite = execute(build(source, {commands:['print']}), {limits});
+  } catch (thrown) {
+    if (!(thrown instanceof QuestError)) throw thrown;
+    return {success:false, error:thrown.message, line:thrown.line, cases:[], mutants:[], output:[]};
+  }
+  if (!suite.has(level.fn)) {
+    return {success:false, error:`This mission needs a function named ${level.fn}() that returns your test cases.`, cases:[], mutants:[], output:[]};
+  }
+
+  let written;
+  try {
+    written = suite.call(level.fn, []).value;
+  } catch (thrown) {
+    if (!(thrown instanceof QuestError)) throw thrown;
+    return {success:false, error:`${level.fn}() stopped with an error: ${thrown.message}`, line:thrown.line, cases:[], mutants:[], output:suite.output};
+  }
+  if (!Array.isArray(written)) {
+    return {success:false, error:`${level.fn}() has to return an array of cases, and it returned ${describe(written)}.`, cases:[], mutants:[], output:suite.output};
+  }
+  if (!written.length) {
+    return {success:false, error:`${level.fn}() returned no cases. A suite that tests nothing passes everything.`, cases:[], mutants:[], output:suite.output};
+  }
+  if (written.length > 40) {
+    return {success:false, error:`${written.length} cases is more than this console runs. A good suite is small and pointed.`, cases:[], mutants:[], output:suite.output};
+  }
+
+  const parameters = level.subject.parameters;
+  for (const [index, entry] of written.entries()) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry) || !Array.isArray(entry.args) || !('expect' in entry)) {
+      return {success:false, error:`Case ${index + 1} is not shaped like a case. Each one is a record: {args: [...], expect: ...}.`, cases:[], mutants:[], output:suite.output};
+    }
+    if (entry.args.length !== parameters) {
+      return {success:false, error:`Case ${index + 1} passes ${entry.args.length} argument${entry.args.length === 1 ? '' : 's'} and ${level.subject.name}() takes ${parameters}.`, cases:[], mutants:[], output:suite.output};
+    }
+  }
+
+  // Each implementation is the mission's own code, run through the same sandbox.
+  const against = (code, label) => {
+    const program = execute(build(code, {commands:['print']}), {limits});
+    return written.map((entry, index) => {
+      const args = clone(entry.args);
+      try {
+        const {value} = program.call(level.subject.name, args);
+        return {index, value, agrees:sameValue(value, entry.expect), error:null};
+      } catch (thrown) {
+        if (!(thrown instanceof QuestError)) throw thrown;
+        return {index, value:null, agrees:false, error:`${label}: ${thrown.message}`};
+      }
+    });
+  };
+
+  const correct = against(level.correct, 'the correct version');
+  const wrongExpectation = correct.find(result => !result.agrees);
+  if (wrongExpectation) {
+    const entry = written[wrongExpectation.index];
+    return {
+      success:false, cases:written, mutants:[], output:suite.output,
+      error:wrongExpectation.error
+        ? `Case ${wrongExpectation.index + 1} cannot run: ${wrongExpectation.error}`
+        : `Case ${wrongExpectation.index + 1} expects ${describe(entry.expect)} from ${level.subject.name}(${entry.args.map(describe).join(', ')}), and a correct implementation returns ${describe(wrongExpectation.value)}. A test is only worth having if its expectation is right.`
+    };
+  }
+
+  const mutants = level.mutants.map(mutant => {
+    const results = against(mutant.code, mutant.name);
+    const caught = results.filter(result => !result.agrees).map(result => result.index + 1);
+    return {name:mutant.name, why:mutant.why, caught:caught.length > 0, by:caught};
+  });
+  const missed = mutants.filter(mutant => !mutant.caught);
+  if (missed.length) {
+    return {
+      success:false, cases:written, mutants, output:suite.output,
+      error:`Every expectation is right, and ${missed.length} of the ${mutants.length} broken versions still passes: ${missed.map(mutant => `“${mutant.name}”`).join(', ')}. ${missed[0].why}`
+    };
+  }
+  if (level.minimumCases && written.length < level.minimumCases) {
+    return {success:false, cases:written, mutants, output:suite.output,
+      error:`Your suite catches all of them with ${written.length} case${written.length === 1 ? '' : 's'}, but this mission asks for at least ${level.minimumCases} so the next mistake is caught too.`};
+  }
+  return {
+    success:true, cases:written, mutants, output:suite.output,
+    error:null,
+    message:`${written.length} cases, every expectation right, and all ${mutants.length} broken versions rejected.`
+  };
+}
+
 // Runs a player's function against the mission's cases. `gate` cases also cap
 // the number of interpreter operations, which is how a mission can insist on a
 // logarithmic or linear algorithm instead of a brute-force scan.
@@ -346,6 +441,8 @@ export function evaluateAlgorithm(level, source) {
       ? `${level.fn}() returns the right answers, but case ${results.indexOf(gated) + 1} used ${gated.operations.toLocaleString('en-US')} steps and this mission allows ${gated.maxOperations.toLocaleString('en-US')}. ${level.gateHint ?? 'A faster algorithm does less work per input.'}`
       : wrong.error
         ? `Case ${results.indexOf(wrong) + 1} stopped with an error: ${wrong.error}`
+        : wrong.mutated && sameValue(wrong.actual, wrong.expect)
+        ? `Case ${results.indexOf(wrong) + 1} returns the right answer and changes what it was given: ${level.fn}(${wrong.args.map(describe).join(', ')}) left it as ${wrong.mutated.map(describe).join(', ')}. An array is passed by reference, so writing into it writes into the caller's copy.`
         : `Case ${results.indexOf(wrong) + 1}: ${level.fn}(${wrong.args.map(describe).join(', ')}) returned ${describe(wrong.actual)}, expected ${describe(wrong.expect)}.`
   };
 }

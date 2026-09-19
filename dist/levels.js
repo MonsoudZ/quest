@@ -54,6 +54,11 @@ const refs = {
   locality:{label:'Reference: what every programmer should know about memory', url:'https://people.freebsd.org/~lstewart/articles/cpumemory.pdf'},
   hamming:{label:'Reference: Hamming codes', url:'https://en.wikipedia.org/wiki/Hamming_code'},
   trees:{label:'Reference: NIST — binary search tree', url:'https://xlinux.nist.gov/dads/HTML/binarySearchTree.html'},
+  memoisation:{label:'Reference: memoization and dynamic programming', url:'https://en.wikipedia.org/wiki/Memoization'},
+  aliasing:{label:'Reference: MDN — passing objects and arrays to functions', url:'https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Functions'},
+  testing:{label:'Reference: equivalence partitioning and boundary values', url:'https://en.wikipedia.org/wiki/Equivalence_partitioning'},
+  mergesort:{label:'Reference: NIST — merge sort', url:'https://xlinux.nist.gov/dads/HTML/mergesort.html'},
+  duplication:{label:'Reference: don’t repeat yourself', url:'https://en.wikipedia.org/wiki/Don%27t_repeat_yourself'},
   records:{label:'Reference: MDN — working with objects', url:'https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Working_with_objects'},
   offByOne:{label:'Reference: the off-by-one error', url:'https://en.wikipedia.org/wiki/Off-by-one_error'},
   nested:{label:'Reference: MDN — indexing nested arrays', url:'https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Indexed_collections'},
@@ -439,6 +444,162 @@ export const levels = [
     hints:['Read each note under the sample before answering: each one points at exactly what its language is making the author declare.','Four of the five answers are the second option, which is a coincidence — check each one against the code rather than the pattern.'],
     takeaway:'Learning a second language is mostly learning what it insists on: types before it runs, ownership of memory, or nothing at all until something breaks. The loop is the same everywhere.', reference:refs.syntax
   },
+  {
+    id:'remember-the-answer', kind:'algo', chapter:'Programming', concept:'Memoisation', name:'Remember the answer', location:'Access ladder',
+    objective:'Write routes(rungs) so it counts the ways up a ladder — without recomputing what it has already worked out.',
+    intro:'You can take one rung at a time or two. With four rungs there are five ways up. With sixty there are more than two trillion, and the obvious program will not finish today.',
+    lesson:'The obvious recursion is right and unusable. routes(n) calls routes(n−1) and routes(n−2), each of which calls two more, so the calls double at every level and the same subproblem is solved over and over: computing routes(22) works out routes(5) more than a thousand times. The answers never change, so record them. Keep a record of what you have already computed, look in it before recursing, and store every result on the way out. The number of distinct subproblems is only n, so the work falls from exponential to linear — and the shape of the program barely changes. That trade, memory for repeated work, is the whole of dynamic programming.',
+    signature:'function routes(rungs)', fn:'routes',
+    toolkit:['return', 'let', 'if', '{ }', 'Object.has(seen, key)', 'seen[key] = n', 'routes(rungs - 1)', 'print()'],
+    limits:{operations:2000000},
+    cases:[
+      {args:[1], expect:1, note:'one rung, one way'},
+      {args:[2], expect:2, note:'two ones, or one two'},
+      {args:[3], expect:3},
+      {args:[4], expect:5},
+      {args:[10], expect:89},
+      {args:[22], expect:28657, note:'22 rungs, at most 3,000 steps', maxOperations:3000},
+      {args:[60], expect:2504730781961, note:'60 rungs, at most 6,000 steps', maxOperations:6000}
+    ],
+    gateHint:'Every subproblem is solved once if you remember its answer. There are only as many subproblems as there are rungs.',
+    starter:'function routes(rungs) {\n  if (rungs <= 2) {\n    return rungs;\n  }\n  // Correct, and it recomputes everything. Give it somewhere to remember.\n  return routes(rungs - 1) + routes(rungs - 2);\n}\n',
+    solution:'function routes(rungs) {\n  let seen = {};\n  return count(rungs, seen);\n}\n\nfunction count(rungs, seen) {\n  if (rungs <= 2) {\n    return rungs;\n  }\n  let key = "n" + rungs;\n  if (Object.has(seen, key)) {\n    return seen[key];\n  }\n  let total = count(rungs - 1, seen) + count(rungs - 2, seen);\n  seen[key] = total;\n  return total;\n}',
+    polyglot:{
+      title:'Memoising the same function in five languages',
+      note:'Every one of these is the naive recursion plus somewhere to remember. Three of the five have it built in.',
+      samples:[
+        {language:'JavaScript', code:'function routes(n, seen) {\n  if (n <= 2) { return n; }\n  if (Object.has(seen, "n" + n)) {\n    return seen["n" + n];\n  }\n  seen["n" + n] =\n    routes(n-1, seen) + routes(n-2, seen);\n  return seen["n" + n];\n}', note:'Carry the record through the calls. Real JavaScript would use a Map, whose keys need not be strings.'},
+        {language:'Python', code:'from functools import cache\n\n@cache\ndef routes(n):\n    if n <= 2:\n        return n\n    return routes(n-1) + routes(n-2)', note:'One line above the unchanged function. The decorator wraps it in a dictionary keyed by the arguments.'},
+        {language:'Ruby', code:'def routes(n, seen = {})\n  return n if n <= 2\n  seen[n] ||= routes(n-1, seen) +\n              routes(n-2, seen)\nend', note:'||= assigns only when the key is missing, so the lookup and the store are one line.'},
+        {language:'Go', code:'var seen = map[int]int64{}\n\nfunc routes(n int) int64 {\n\tif n <= 2 { return int64(n) }\n\tif v, ok := seen[n]; ok { return v }\n\tseen[n] = routes(n-1) + routes(n-2)\n\treturn seen[n]\n}', note:'The two-value map read — value and "was it there" — is how Go distinguishes a stored zero from a missing key.'},
+        {language:'Rust', code:'fn routes(n: u64, seen: &mut HashMap<u64, u64>)\n    -> u64 {\n    if n <= 2 { return n; }\n    if let Some(&v) = seen.get(&n) { return v; }\n    let v = routes(n-1, seen) + routes(n-2, seen);\n    seen.insert(n, v);\n    v\n}', note:'&mut is the compiler being told there is exactly one writer, which is why this cannot race.'}
+      ]
+    },
+    hints:['Run it as it stands and read the step counts. The small cases are instant and the twenty-second is four hundred thousand steps, because it is recomputing the same answers.','Take a record along through the calls: check it before recursing, store the result before returning. A helper that takes the record as a second parameter is the easiest way to do it here.'],
+    takeaway:'Exponential and linear can be two lines apart. When a recursion revisits the same subproblem, the fix is not a cleverer recursion — it is remembering.', reference:refs.memoisation
+  },
+  {
+    id:'whose-array-is-it', kind:'debug', chapter:'Programming', concept:'Aliasing', name:'Whose array is it?', location:'Telemetry review',
+    objective:'ranked(readings) returns the right answer and damages the log it was given. Repair it.',
+    intro:'The sorted display is correct. The raw log, on the next screen over, is now also sorted — and the order it arrived in was the only record of when each reading was taken.',
+    lesson:'An array is not copied when it is passed. The parameter is a second name for the same array, so writing into it writes into the caller’s. The tests here check the returned value and the argument: a function that gets the right answer by rearranging its input has still broken something the caller was relying on. The fix is to work on a copy. Take one explicitly — walk the input and push each value into a new array — and every write after that lands somewhere the caller does not share. This is why so much modern code prefers building a new value to changing an existing one: a function that only reads its arguments can be called from anywhere, in any order, without anyone having to know what it does inside.',
+    signature:'function ranked(readings)', fn:'ranked',
+    toolkit:['return', 'let', 'for', 'if', 'readings.length', 'readings[i]', 'copy.push(value)', 'print()'],
+    cases:[
+      {args:[[3,1,2]], expect:[1,2,3], expectArgs:[[3,1,2]], note:'the log itself must come back unchanged'},
+      {args:[[5]], expect:[5], expectArgs:[[5]]},
+      {args:[[]], expect:[], expectArgs:[[]]},
+      {args:[[2,2,1]], expect:[1,2,2], expectArgs:[[2,2,1]]},
+      {args:[[9,-4,0,7]], expect:[-4,0,7,9], expectArgs:[[9,-4,0,7]]}
+    ],
+    starter:'function ranked(readings) {\n  for (let i = 0; i < readings.length; i++) {\n    for (let j = 0; j < readings.length - 1; j++) {\n      if (readings[j] > readings[j + 1]) {\n        let hold = readings[j];\n        readings[j] = readings[j + 1];\n        readings[j + 1] = hold;\n      }\n    }\n  }\n  return readings;\n}\n',
+    solution:'function ranked(readings) {\n  let copy = [];\n  for (let i = 0; i < readings.length; i++) {\n    copy.push(readings[i]);\n  }\n  for (let i = 0; i < copy.length; i++) {\n    for (let j = 0; j < copy.length - 1; j++) {\n      if (copy[j] > copy[j + 1]) {\n        let hold = copy[j];\n        copy[j] = copy[j + 1];\n        copy[j + 1] = hold;\n      }\n    }\n  }\n  return copy;\n}',
+    artifact:{
+      title:'Two names, one array',
+      note:'Nothing here is a bug in the sort. The sort is fine. What is wrong is who owns the thing it sorted.',
+      panes:[
+        {label:'the symptom', code:'log      = [9, 3, 7, 1]\ndisplay  = ranked(log)\n\ndisplay → [1, 3, 7, 9]   ✓\nlog     → [1, 3, 7, 9]   ✗', note:'The caller never assigned to log. It changed anyway, because ranked() was handed the array itself and not a copy of it.'},
+        {label:'what is passed', code:'log ────────┐\n            ▼\n        [9,3,7,1]\n            ▲\nreadings ───┘\n\nboth names refer to one array', note:'The value passed is the reference. Two names, one array — which is also why returning it looks like it worked.'},
+        {label:'copying', code:'let copy = [];\nfor (…) { copy.push(readings[i]); }\n\n// or, outside this sandbox:\nconst copy = [...readings];\nconst copy = readings.slice();', note:'A shallow copy is enough when the entries are numbers. If they were records, the copy would share those, and the same bug would come back one level down.'},
+        {label:'the convention', code:'sort()      changes and returns it\ntoSorted()  returns a new one\nreverse() / toReversed()\nsplice()   / toSpliced()', note:'JavaScript added the second column in 2023 precisely because the first had caused this bug for thirty years.'}
+      ]
+    },
+    hints:['The cases check two things: what comes back, and what the argument looks like afterwards. Yours passes the first and fails the second.','Build a copy before you sort. Push each reading into a new array, then sort and return that one.'],
+    takeaway:'Passing an array gives away a handle on it, not a snapshot of it. Decide deliberately whether a function reads its arguments or owns them, and say so in the name.', reference:refs.aliasing
+  },
+  {
+    id:'write-the-tests', kind:'spec', chapter:'Programming', concept:'Test design', name:'Write the tests', location:'Verification bay',
+    objective:'Here the code is written and the tests are not. Return a suite that accepts the correct version and rejects all four broken ones.',
+    intro:'Four engineers each submitted a clamp(). One is right. Your job is not to read them — it is to write the cases that tell them apart.',
+    lesson:'A test suite is only as good as what it rejects. Cases in the middle of a range agree with almost any implementation, which is why a suite of happy paths passes code that is badly wrong. Three habits do most of the work. Test the boundaries, because that is where < and <= disagree and where nearly every off-by-one lives. Test each branch, so that a version which only handles one side of a condition is caught by the side it ignores. And test the cases that look degenerate — a range entirely below zero, a value equal to its own limit — because an implementation that special-cases them will otherwise go unnoticed. Write cases(), returning a list of records: each one is {args: [...], expect: ...}. Every expectation has to be right, or the suite is worse than none.',
+    signature:'function cases()', fn:'cases',
+    toolkit:['return', '[ ]', '{args: [...], expect: ...}', 'clamp(value, low, high)'],
+    subject:{
+      name:'clamp', parameters:3,
+      signature:'function clamp(value, low, high)',
+      contract:'clamp(value, low, high)\n\n  returns low    when value is below low\n  returns high   when value is above high\n  returns value  otherwise\n\n  Both bounds are inclusive: a value equal\n  to a bound is inside the range.'
+    },
+    correct:'function clamp(value, low, high) {\n  if (value < low) {\n    return low;\n  }\n  if (value > high) {\n    return high;\n  }\n  return value;\n}',
+    mutants:[
+      {name:'only clamps the low end', why:'Nothing in your suite passes a value above the high bound.',
+        code:'function clamp(value, low, high) {\n  if (value < low) { return low; }\n  return value;\n}'},
+      {name:'only clamps the high end', why:'Nothing in your suite passes a value below the low bound.',
+        code:'function clamp(value, low, high) {\n  if (value > high) { return high; }\n  return value;\n}'},
+      {name:'excludes the bounds', why:'Nothing in your suite passes a value exactly equal to a bound, which is where < and <= disagree.',
+        code:'function clamp(value, low, high) {\n  if (value <= low) { return low + 1; }\n  if (value >= high) { return high - 1; }\n  return value;\n}'},
+      {name:'assumes the range is positive', why:'Nothing in your suite uses a range that lies entirely below zero.',
+        code:'function clamp(value, low, high) {\n  if (low < 0) { return 0; }\n  if (value < low) { return low; }\n  if (value > high) { return high; }\n  return value;\n}'}
+    ],
+    minimumCases:5,
+    starter:'function cases() {\n  return [\n    {args: [5, 0, 10], expect: 5}\n  ];\n}\n',
+    solution:'function cases() {\n  return [\n    {args: [5, 0, 10], expect: 5},\n    {args: [-3, 0, 10], expect: 0},\n    {args: [99, 0, 10], expect: 10},\n    {args: [0, 0, 10], expect: 0},\n    {args: [10, 0, 10], expect: 10},\n    {args: [-5, -9, -1], expect: -5}\n  ];\n}',
+    artifact:{
+      title:'What a suite is actually measured by',
+      note:'Coverage says which lines ran. Mutation testing says which mistakes would have been caught, which is the question you actually care about.',
+      panes:[
+        {label:'a useless suite', code:'test clamp(5, 0, 10) === 5   ✓\ntest clamp(7, 0, 10) === 7   ✓\ntest clamp(3, 0, 10) === 3   ✓\n\n3 passing, 100% line coverage\n4 of 4 broken versions accepted', note:'Every line of the reference runs and nothing is tested. Three cases from the middle of the range agree with almost any implementation.'},
+        {label:'boundaries', code:'low - 1   just outside\nlow       exactly on   ← <  vs <=\nlow + 1   just inside\nhigh - 1\nhigh      exactly on   ← >  vs >=\nhigh + 1', note:'Six values around two bounds catch nearly every off-by-one there is. This is the whole of boundary-value analysis.'},
+        {label:'partitions', code:'below the range\ninside the range\nabove the range\nrange entirely negative\nrange of one value (low == high)\nvalue already equal to the answer', note:'One case from each class of input. Adding a second from the same class tells you nothing new.'},
+        {label:'mutation score', code:'$ npx stryker run\n\nMutants:   4 killed, 0 survived\nMutation score: 100%\n\n(survived mutants are the bugs your\n suite would not have caught)', note:'Exactly what this console does. A surviving mutant is a change to the code that no test noticed.'}
+      ]
+    },
+    hints:['One case from the middle of the range is not enough: try each broken version in your head and ask which input would tell it apart from the correct one.','Six cases do it: one inside, one below, one above, one on each bound, and one where the whole range is negative.'],
+    takeaway:'Tests are not there to show the code works; they are there to fail when it stops working. A suite is worth what it rejects, and the cases that reject things live at the boundaries and the edges.', reference:refs.testing
+  },
+  {
+    id:'split-and-merge', kind:'algo', chapter:'Programming', concept:'Divide and conquer', name:'Split and merge', location:'Archive sorter',
+    objective:'Write sorted(values) so it returns a sorted copy, fast enough for four hundred entries.',
+    intro:'The archive sorter you built in chapter two swaps neighbours until the order is right. It is fine for five entries. Four hundred take four and a half million steps.',
+    lesson:'Merging two sorted lists is easy and linear: look at the front of each, take the smaller, repeat. Merge sort is the observation that if you could sort each half, you could finish the job with that merge — and each half can be sorted the same way, down to lists of one, which are sorted already. The work per level is one pass over everything, and halving the size gives about log₂ n levels, so the total is n log n. For four hundred entries that is around thirty-five hundred comparisons against eighty thousand for the quadratic version. Two details decide correctness: stop at length one or zero, and when the two fronts are equal take from the left, which is what keeps equal entries in the order they arrived — a property sorts are expected to have and which is not free.',
+    signature:'function sorted(values)', fn:'sorted',
+    toolkit:['return', 'let', 'while', 'if / else', 'values.length', 'values.slice(a, b)', 'out.push(v)', 'sorted(half)'],
+    requireRecursion:true,
+    limits:{operations:5000000, cells:2000000},
+    cases:[
+      {args:[[3,1,2]], expect:[1,2,3]},
+      {args:[[]], expect:[], note:'nothing to sort'},
+      {args:[[4]], expect:[4], note:'one entry is already sorted'},
+      {args:[[2,2,1,1]], expect:[1,1,2,2], note:'equal entries keep their order'},
+      {args:[[9,-4,0,7,-4]], expect:[-4,-4,0,7,9]},
+      {args:[ramp(400, 1).reverse()], expect:ramp(400, 1), note:'400 entries, at most 130,000 steps', maxOperations:130000}
+    ],
+    gateHint:'Swapping neighbours does about n² comparisons. Halving the problem and merging does about n log n.',
+    starter:'function sorted(values) {\n  if (values.length <= 1) {\n    return values;\n  }\n  // Split in half, sort each half, then merge the two sorted halves.\n  return values;\n}\n',
+    solution:'function sorted(values) {\n  if (values.length <= 1) {\n    return values;\n  }\n  let middle = Math.floor(values.length / 2);\n  let left = sorted(values.slice(0, middle));\n  let right = sorted(values.slice(middle, values.length));\n  let out = [];\n  let i = 0;\n  let j = 0;\n  while (i < left.length && j < right.length) {\n    if (right[j] < left[i]) {\n      out.push(right[j]);\n      j++;\n    } else {\n      out.push(left[i]);\n      i++;\n    }\n  }\n  while (i < left.length) {\n    out.push(left[i]);\n    i++;\n  }\n  while (j < right.length) {\n    out.push(right[j]);\n    j++;\n  }\n  return out;\n}',
+    hints:['Write the merge first and test it in your head on [1, 4] and [2, 3]. Two indices, one into each half, and you always take the smaller front value.','values.slice(0, middle) and values.slice(middle, values.length) are the two halves. Sort each one with sorted() itself, then merge. Take from the left when the two fronts are equal.'],
+    takeaway:'Divide and conquer turns a problem you cannot do into two you can, plus a cheap way to combine them. The combining step is where the algorithm actually lives.', reference:refs.mergesort
+  },
+  {
+    id:'say-it-once', kind:'refactor', chapter:'Programming', concept:'Duplication', name:'Say it once', location:'Environment console',
+    objective:'report(readings) works. The rule it applies is spelled out inside the loop; move it somewhere it can be named.',
+    intro:'Three temperature bands, decided in the middle of a loop that is really about building a list. The next mission that needs the same bands will copy these lines, and then there will be two copies to keep in step.',
+    lesson:'Duplication is not only the same characters twice; it is the same decision written where it cannot be reused. A function that both walks a list and classifies an entry is doing two things, and the second one is the part someone else will want. Pulling it out gives it a name, a place to be tested on its own, and one site to change when the thresholds move. The console checks two things here: that the classification is called rather than inlined, and that what remains is short. Both are proxies for the real property, which is that the function now says what it does rather than how the bands happen to be defined this week.',
+    signature:'function report(readings)', fn:'report',
+    toolkit:['return', 'let', 'for', 'band(reading)', 'out.push(text)', 'out.join(", ")', 'print()'],
+    shape:{maxStatements:14, requireCalls:['band']},
+    cases:[
+      {args:[[10, 70, 95]], expect:'cool, warm, hot'},
+      {args:[[0]], expect:'cool'},
+      {args:[[60, 60]], expect:'warm, warm', note:'60 is the bottom of warm'},
+      {args:[[85, 86]], expect:'warm, hot', note:'85 is the top of warm'},
+      {args:[[]], expect:'', note:'no readings, no report'}
+    ],
+    starter:'function report(readings) {\n  let out = [];\n  for (let i = 0; i < readings.length; i++) {\n    let reading = readings[i];\n    if (reading < 60) {\n      out.push("cool");\n    } else {\n      if (reading <= 85) {\n        out.push("warm");\n      } else {\n        out.push("hot");\n      }\n    }\n  }\n  return out.join(", ");\n}\n',
+    solution:'function band(reading) {\n  if (reading < 60) {\n    return "cool";\n  }\n  if (reading <= 85) {\n    return "warm";\n  }\n  return "hot";\n}\n\nfunction report(readings) {\n  let out = [];\n  for (let i = 0; i < readings.length; i++) {\n    out.push(band(readings[i]));\n  }\n  return out.join(", ");\n}',
+    artifact:{
+      title:'The same change, as a reviewer sees it',
+      note:'No behaviour changes here. Everything that changes is about where a decision lives and who else can reach it.',
+      panes:[
+        {label:'the diff', code:'+function band(reading) {\n+  if (reading < 60) { return "cool"; }\n+  if (reading <= 85) { return "warm"; }\n+  return "hot";\n+}\n\n function report(readings) {\n-    if (reading < 60) { out.push("cool"); }\n-    else { … }\n+    out.push(band(readings[i]));', note:'Five lines out of a loop and into a name. The loop is now about building a list, which is what its name said all along.'},
+        {label:'what it buys', code:'band() can be tested on its own\nband() can be called from elsewhere\nthe thresholds live in one place\nreport() fits on a screen\nthe diff for a threshold change is 1 line', note:'The last one matters most. When the bands move, the change is obvious, local, and reviewable.'},
+        {label:'when not to', code:'extracted once, used once, never\n  changed → maybe leave it\nnamed helper1, helper2, doStuff\n  → the name is the point; without\n  a good one the extraction is noise', note:'Extraction is not automatically an improvement. If you cannot name the thing you pulled out, you have not found a thing yet.'},
+        {label:'the smell', code:'a function that needs a comment\n  in the middle explaining the\n  next few lines\n\nthat comment is usually the name\nof the function you have not\nwritten yet', note:'A reliable signal, and cheap to act on: turn the comment into a function name and move the lines under it.'}
+      ]
+    },
+    hints:['The console wants a function called band(). Everything the loop currently decides about a single reading belongs inside it.','band(reading) returns "cool", "warm" or "hot". Then report() is a loop that pushes band(readings[i]) and joins the result.'],
+    takeaway:'Pulling a decision out of a loop and giving it a name is the cheapest refactor there is, and the one that pays every time the decision changes. If you cannot name it, you have found a boundary that is not real yet.', reference:refs.duplication
+  },
+
   // ------------------------------------------- chapter 2: computer science
   {
     id:'speak-in-bits', kind:'bits', chapter:'Computer science', concept:'Binary numbers', name:'Speak in bits', location:'Memory bank',

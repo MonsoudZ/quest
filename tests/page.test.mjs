@@ -64,7 +64,7 @@ test('every class the interface renders has a style rule', () => {
   // row, so only the ones that differ are required to have one.
   // The city map is drawn on a canvas now, so district and cable colours live in
   // scenes.js rather than in CSS; only the classes still rendered are required.
-  for (const concrete of ['diagram-bits', 'diagram-sort', 'diagram-stack', 'diagram-table', 'diagram-bars', 'diagram-timeline', 'diagram-cards', 'diagram-cases', 'widget-row', 'widget-choice',
+  for (const concrete of ['diagram-bits', 'diagram-sort', 'diagram-stack', 'diagram-table', 'diagram-bars', 'diagram-timeline', 'diagram-cards', 'diagram-cases', 'diagram-spec', 'widget-row', 'widget-choice',
     'load-cool', 'load-warm', 'load-hot']) {
     assert.ok(styled.has(concrete), `${concrete} has no style rule`);
   }

@@ -419,6 +419,15 @@ kbd { padding:2px 5px; border:1px solid var(--line-strong); border-radius:4px; b
 .lesson-reference:hover { border-color:var(--accent-quiet); background:var(--surface-3); }
 .lesson-reference::after { content:'↗'; }
 
+/* A spec mission shows the code under test above the versions it has to reject. */
+.diagram-spec { display:flex; flex-direction:column; gap:var(--s-3); }
+.diagram-spec .polyglot-code { font-size:var(--text-xs); max-height:220px; overflow:auto; }
+/* Its rows are a short name and a long explanation, so they stack rather than
+   sharing the case grid's columns, which would set the reason one word wide. */
+.diagram-spec .case-row { grid-template-columns:26px 1fr; align-items:start; row-gap:var(--s-1); }
+.diagram-spec .case-row code { grid-column:2; }
+.diagram-spec .case-detail { grid-column:2; text-align:left; }
+
 .case-shape {
   margin:0 0 var(--s-3); padding:var(--s-3) var(--s-4);
   border:1px solid var(--warn); border-left-width:3px; border-radius:var(--r-sm);

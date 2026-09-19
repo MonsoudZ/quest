@@ -1,5 +1,5 @@
 import {levels} from './levels.js';
-import {simulate, evaluateAlgorithm, evaluateNetwork, describe, algoKinds} from './engine.js';
+import {simulate, evaluateAlgorithm, evaluateNetwork, describe, algoKinds, evaluateSpec} from './engine.js';
 import {isPuzzle, initialState, solutionState, applyAction, widgets, view, evaluate} from './puzzles.js';
 import {mountBuilder} from './builder.js';
 import {mountCity} from './citylab.js';
@@ -55,7 +55,7 @@ function tone(success = true) {
 const slug = text => text.toLowerCase().replace(/[^a-z0-9]+/g, '-');
 const chevron = '<svg class="chapter-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>';
 
-// The rail groups 49 missions into four collapsible chapters, each showing how
+// The rail groups 54 missions into four collapsible chapters, each showing how
 // much of it is finished. The chapter you are in is always open.
 function navigation() {
   const container = $('missions');
@@ -143,12 +143,12 @@ function controls() {
   $('code').readOnly = running;
 }
 
-const runLabel = kind => ({code:'▶ Run program', algo:'▶ Run the tests', debug:'▶ Run the tests', refactor:'▶ Run the tests', network:'▶ Send signal', transport:'▶ Start the transfer', sequence:'▶ Time the exchange', layers:'▶ Send the frame', routing:'▶ Forward the packets'}[kind] ?? '▶ Check answer');
-const panelTitle = kind => ({code:'COMMAND CONSOLE', algo:'FUNCTION CONSOLE', debug:'REPAIR CONSOLE', refactor:'REWRITE CONSOLE'}[kind] ?? 'MISSION CONTROLS');
-const languageTag = kind => ({code:'JavaScript · sandboxed subset', algo:'JavaScript · checked against test cases', debug:'JavaScript · a program that runs and is wrong', refactor:'JavaScript · judged on shape as well as answers'}[kind] ?? 'Interactive model · simplified');
-const mapLabel = kind => ({code:'ISOMETRIC VIEW', algo:'TEST CASES', debug:'TEST CASES', refactor:'TEST CASES'}[kind] ?? 'DATA VISUALISATION');
+const runLabel = kind => ({code:'▶ Run program', algo:'▶ Run the tests', debug:'▶ Run the tests', refactor:'▶ Run the tests', spec:'▶ Run your suite', network:'▶ Send signal', transport:'▶ Start the transfer', sequence:'▶ Time the exchange', layers:'▶ Send the frame', routing:'▶ Forward the packets'}[kind] ?? '▶ Check answer');
+const panelTitle = kind => ({code:'COMMAND CONSOLE', algo:'FUNCTION CONSOLE', debug:'REPAIR CONSOLE', refactor:'REWRITE CONSOLE', spec:'TEST CONSOLE'}[kind] ?? 'MISSION CONTROLS');
+const languageTag = kind => ({code:'JavaScript · sandboxed subset', algo:'JavaScript · checked against test cases', debug:'JavaScript · a program that runs and is wrong', refactor:'JavaScript · judged on shape as well as answers', spec:'JavaScript · your cases against their code'}[kind] ?? 'Interactive model · simplified');
+const mapLabel = kind => ({code:'ISOMETRIC VIEW', algo:'TEST CASES', debug:'TEST CASES', refactor:'TEST CASES', spec:'THE CODE UNDER TEST'}[kind] ?? 'DATA VISUALISATION');
 
-const consoleTask = kind => ({debug:'Repair this function', refactor:'Rewrite this function'}[kind] ?? 'Write this function');
+const consoleTask = kind => ({debug:'Repair this function', refactor:'Rewrite this function', spec:'Return your cases from'}[kind] ?? 'Write this function');
 
 function commandReference(item) {
   if (item.kind === 'code') return ['move(n)', 'turnLeft()', 'turnRight()', 'canMove()', 'let', 'for', 'while', 'if / else', 'function'];
@@ -262,6 +262,7 @@ function renderArena(failed = -1) {
     return;
   }
   scene?.destroy(); scene = null; sceneLevel = null;
+  if (item.kind === 'spec') { stage?.destroy(); stage = null; stageKind = null; renderSpec(); return; }
   if (algoKinds.has(item.kind)) { stage?.destroy(); stage = null; stageKind = null; renderCases(); return; }
   const rendered = view(item, puzzleState);
   document.querySelector('.network-instructions').textContent = rendered.instructions;
@@ -375,6 +376,30 @@ function renderWidgets() {
     }
     container.append(row);
   }
+}
+
+
+// A spec mission shows the code under test rather than a case list: the cases
+// are the player's, and what matters is which broken versions they reject.
+function renderSpec(result = null) {
+  const item = level();
+  const wrap = document.createElement('div');
+  wrap.className = 'puzzle diagram-spec';
+  const rows = item.mutants.map((mutant, index) => {
+    const outcome = result?.mutants?.[index];
+    const status = !outcome ? '·' : outcome.caught ? '✓' : '✗';
+    const detail = !outcome ? 'not run yet'
+      : outcome.caught ? `rejected by case ${outcome.by.join(', ')}`
+      : `passes your suite — ${mutant.why}`;
+    return `<div class="case-row ${!outcome ? '' : outcome.caught ? 'pass' : 'fail'}"><span class="case-status">${status}</span><code>${mutant.name}</code><span class="case-detail">${detail}</span></div>`;
+  }).join('');
+  const written = result?.cases?.length ?? 0;
+  wrap.innerHTML = `<div class="eyebrow">${item.subject.signature}</div>
+    <pre class="polyglot-code" tabindex="0" aria-label="The function under test, as it is meant to behave">${item.subject.contract}</pre>
+    <div class="eyebrow">${item.mutants.length} BROKEN VERSIONS${result ? ` · ${result.mutants.filter(mutant => mutant.caught).length} REJECTED · ${written} CASE${written === 1 ? '' : 'S'} WRITTEN` : ''}</div>
+    <div class="case-table">${rows}</div>`;
+  $('arena').replaceChildren(wrap);
+  $('legend').innerHTML = '<span class="legend-unit">✓ Your suite rejects it</span><span>✗ It passes your suite</span><span>A test that passes everything tests nothing</span>';
 }
 
 function renderCases(result = null) {
@@ -531,6 +556,20 @@ const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function run() {
   if (running) return;
   const item = level();
+  if (item.kind === 'spec') {
+    drafts[item.id] = $('code').value;
+    persist();
+    $('log').replaceChildren();
+    algoResult = evaluateSpec(item, $('code').value);
+    renderSpec(algoResult);
+    for (const line of algoResult.output.slice(0, 12)) log(`print → ${line}`);
+    $('step-count').textContent = algoResult.mutants.length
+      ? `${algoResult.mutants.filter(mutant => mutant.caught).length} / ${item.mutants.length} caught`
+      : 'Suite not run';
+    if (algoResult.success) { log(algoResult.message, 'success'); win(); }
+    else { log(algoResult.error, 'error'); tone(false); reveal(outcomePanel()); }
+    return;
+  }
   if (algoKinds.has(item.kind)) {
     drafts[item.id] = $('code').value;
     persist();
@@ -622,7 +661,7 @@ $('solution').addEventListener('click', () => {
     lineNumbers();
     drafts[item.id] = item.solution;
     persist();
-    if (algoKinds.has(item.kind)) renderCases();
+    if (item.kind === 'spec') renderSpec(); else if (algoKinds.has(item.kind)) renderCases();
   } else {
     puzzleState = solutionState(item);
     networkResult = null;

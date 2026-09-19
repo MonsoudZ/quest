@@ -1,14 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {levels, chapters} from '../dist/levels.js';
-import {simulate, evaluateAlgorithm, algoKinds} from '../dist/engine.js';
+import {simulate, evaluateAlgorithm, evaluateSpec, algoKinds} from '../dist/engine.js';
 import {isPuzzle, initialState, solutionState, applyAction, widgets, view, evaluate} from '../dist/puzzles.js';
 
+const run = level => level.kind === 'spec' ? evaluateSpec : evaluateAlgorithm;
 const solve = level => level.kind === 'code' ? simulate(level, level.solution)
-  : algoKinds.has(level.kind) ? evaluateAlgorithm(level, level.solution)
+  : algoKinds.has(level.kind) ? run(level)(level, level.solution)
   : evaluate(level, solutionState(level));
 const attempt = level => level.kind === 'code' ? simulate(level, level.starter)
-  : algoKinds.has(level.kind) ? evaluateAlgorithm(level, level.starter)
+  : algoKinds.has(level.kind) ? run(level)(level, level.starter)
   : evaluate(level, initialState(level));
 
 test('every published mission is solved by the solution it ships', () => {
@@ -44,7 +45,12 @@ test('every mission carries the teaching material the interface shows', () => {
       assert.deepEqual(level.tiles.some(([x, y]) => x === level.goal[0] && y === level.goal[1]), true, `${level.id} goal is off the deck`);
       assert.ok(level.tiles.every(([x, y]) => x >= 0 && x <= 6 && y >= 0 && y <= 6), `${level.id} has tiles outside the deck`);
     }
-    if (algoKinds.has(level.kind)) {
+    if (level.kind === 'spec') {
+      // A spec mission supplies the code and the player supplies the cases.
+      assert.ok(level.mutants.length >= 3, `${level.id} needs at least three broken versions to reject`);
+      assert.ok(level.correct.includes(level.subject.name), `${level.id} correct implementation`);
+      assert.ok(level.subject.contract.length > 40, `${level.id} needs to state what the function is meant to do`);
+    } else if (algoKinds.has(level.kind)) {
       assert.ok(level.cases.length >= 3, `${level.id} needs at least three cases`);
       assert.ok(level.signature.includes(level.fn), `${level.id} signature`);
       assert.ok(level.starter.includes(level.fn), `${level.id} starter should declare the function`);
@@ -159,10 +165,16 @@ test('a refactor mission ships a starter that passes every case and is rejected 
     const solved = evaluateAlgorithm(level, level.solution);
     assert.equal(solved.success, true, `${level.id}: ${solved.error}`);
     assert.equal(solved.shape, null);
-    // The rewrite is the point, so it has to cost visibly less.
+    // A rewrite for speed has to be visibly faster; a rewrite for structure has
+    // to at least not cost more, and its rule has to be about structure.
     const slow = attempted.cases.at(-1).operations;
     const quick = solved.cases.at(-1).operations;
-    assert.ok(quick * 4 < slow, `${level.id}: the rewrite costs ${quick} steps against ${slow}, which is not a visible improvement`);
+    if (level.shape.maxLoops !== undefined || level.shape.maxLoopDepth !== undefined) {
+      assert.ok(quick * 4 < slow, `${level.id}: the rewrite costs ${quick} steps against ${slow}, which is not a visible improvement`);
+    } else {
+      assert.ok(quick <= slow * 1.2, `${level.id}: the rewrite costs ${quick} steps against ${slow}`);
+      assert.ok(level.shape.requireCalls || level.shape.maxStatements !== undefined, `${level.id} has no structural rule`);
+    }
   }
 });
 
@@ -216,11 +228,12 @@ test('the chips beside the console name things that exist in that mission', () =
       const named = chip.match(/^([a-z][\w]*)[.[]/i);
       // Math and Object are the sandbox's own namespaces; the rest are locals a
       // mission's lesson introduces by name.
-      const locals = ['Math', 'Object', 'stack', 'seen', 'report', 'tokens', 'best', 'values', 'digits'];
+      const locals = ['Math', 'Object', 'stack', 'seen', 'report', 'tokens', 'best', 'values', 'digits', 'copy', 'out', 'clamp', 'band', 'args'];
       if (named) assert.ok(parameters.includes(named[1]) || locals.includes(named[1]),
         `${level.id} offers “${chip}”, but it takes ${parameters.join(', ')}`);
       assert.ok(chip.length <= 34, `${level.id} chip “${chip}” is too long for the row`);
     }
+    if (level.kind === 'spec') continue;
     if (!chips.length) {
       // The generated default indexes the first parameter, so that parameter has
       // to be the sequence the mission walks.

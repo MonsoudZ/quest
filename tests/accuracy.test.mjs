@@ -97,6 +97,10 @@ const generators = {
     }
     return [random() < 0.3 ? ` ${text} ` : text];
   },
+  'remember-the-answer':random => [Math.floor(random() * 24) + 1],
+  'whose-array-is-it':random => [Array.from({length:Math.floor(random() * 9)}, () => Math.floor(random() * 60) - 30)],
+  'split-and-merge':random => [Array.from({length:Math.floor(random() * 14)}, () => Math.floor(random() * 40) - 20)],
+  'say-it-once':random => [Array.from({length:Math.floor(random() * 7)}, () => Math.floor(random() * 120))],
   'work-out-the-answer':random => {
     const operators = ['+', '-', '*'];
     const tokens = [{kind:'number', value:Math.floor(random() * 40) - 20}];
@@ -116,7 +120,7 @@ test('every algorithm solution agrees with the same function run as real JavaScr
     value = (value + Math.imul(value ^ (value >>> 7), 61 | value)) ^ value;
     return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
   };
-  for (const level of levels.filter(item => algoKinds.has(item.kind))) {
+  for (const level of levels.filter(item => algoKinds.has(item.kind) && item.kind !== 'spec')) {
     const context = {Object:Object.create(Object), console};
     context.Object.has = Object.hasOwn;
     const reference = runInNewContext(`${level.solution}\n${level.fn};`, context, {timeout:1000});

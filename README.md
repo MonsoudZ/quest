@@ -1,7 +1,7 @@
 # Signal Quest
 
 A game that teaches programming, computer science, networking, and system design by making you
-do each of them. Forty-nine missions across four chapters, plus an architecture lab where you
+do each of them. Fifty-four missions across four chapters, plus an architecture lab where you
 design a service against a latency, availability, and cost target.
 
 ## Play
@@ -13,7 +13,7 @@ are stored in this browser; if storage is unavailable, play continues for the se
 
 ## What it teaches
 
-**Chapter 1 — Programming** (19 missions). Sequences, debugging, `for` loops, variables,
+**Chapter 1 — Programming** (24 missions). Sequences, debugging, `for` loops, variables,
 conditionals, `while` loops, and functions, taught by driving a repair drone across a deck. Then
 the function console takes over: arrays and boolean logic, records, nested loops over a grid,
 binary search under a step budget a linear scan cannot meet, recursion via Euclid's algorithm, a
@@ -25,7 +25,18 @@ missions at all:
   ways, and asks you to read the failing cases rather than start again;
 - a **refactor** mission hands you a program that passes every case and rejects it anyway,
   because it walks the data with a loop inside a loop. The console judges the shape of the
-  answer — loop count, loop nesting, calls made — as well as its values.
+  answer — loop count, loop nesting, calls made — as well as its values. A second one is about
+  readability rather than speed: a decision spelled out inside a loop, which has to be pulled
+  out and given a name;
+- a **spec** mission turns the console around. The code is written and the tests are not: you
+  return a list of cases, and the console runs them against one correct implementation and four
+  broken ones. Every expectation has to be right, and every broken version has to be rejected.
+  A suite of happy paths accepts all four, which is the lesson.
+
+Four more missions go deeper: **memoisation**, where the obvious recursion is correct and
+unusable and the fix is a record; **aliasing**, where a sort returns the right answer and
+rearranges the caller's log, because an array is passed by reference; **merge sort**, under a
+step budget the quadratic version misses by forty-eight times; and the extraction refactor above.
 
 The chapter closes by reading the same function in JavaScript, Python, Ruby, Go, and Rust. Several
 missions carry a read-only **language panel** showing the same idea in all five, with a note on
@@ -143,7 +154,7 @@ mission on a 1366×768 screen changed nothing visible at all.
 The colour scheme follows the operating system and can be overridden with the toggle in the
 header, which is then remembered. Text meets WCAG AA contrast in both schemes, icon-only
 controls on small screens keep their labels in the accessibility tree, and everything honours
-`prefers-reduced-motion`. The 49 missions are grouped into four collapsible chapters, each
+`prefers-reduced-motion`. The 54 missions are grouped into four collapsible chapters, each
 carrying its own progress and accent colour; on a phone the rail becomes a drawer over the
 mission it is currently on.
 
@@ -267,7 +278,7 @@ Run `npm test` and `npm run check`. 127 tests across eleven files:
   against path enumeration, and every puzzle's whole option space enumerated to prove it is
   winnable, not winnable by accident, and solved by the answer it ships.
 
-A browser pass was run with Playwright against the development server: all 49 missions complete
+A browser pass was run with Playwright against the development server: all 54 missions complete
 from their own "show a solution" button, all 5 architecture contracts and all 5 city contracts
 are met, a city built by clicking the map passes its contract and fails again when cables are
 removed, and the page reports no script errors. Outcomes were checked to land on screen at 1440×960,
