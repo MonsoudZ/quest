@@ -17,7 +17,8 @@ test('a collision reports the responsible line and never moves through a wall', 
 test('programs are rejected before they run when they leave the sandbox', () => {
   assert.throws(() => compile('move(3)'), /ends before its/);
   assert.throws(() => compile('alert(1);'), /not defined here/);
-  assert.throws(() => compile('window.location = 2;'), /Assign to a variable or to an array slot/);
+  assert.throws(() => compile('window.location = 2;'), /not defined here/);
+  assert.throws(() => compile('3 = 2;'), /Assign to a variable, an array slot, or a record field/);
   assert.throws(() => compile('print(window.location);'), /not defined here/);
   assert.throws(() => compile('x'.repeat(12001)), /12,000/);
   assert.throws(() => compile('let move = 2;'), /provided by the mission/);

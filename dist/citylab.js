@@ -1,6 +1,8 @@
 // Signal City: the interface for the networking build mode. The model lives in
 // city.js; this file draws the map and collects what the player lays down.
 import {reveal} from './ui.js';
+import {createStage} from './stage.js';
+import {cityScene} from './scenes.js';
 import {grid, districts, technologies, scenarios, scenarioDistricts, referenceDesigns, evaluateCity, blocksBetween} from './city.js';
 
 const saveKey = 'signal-quest-city-v1';
@@ -85,65 +87,25 @@ export function mountCity(container) {
     render();
   }
 
-  function map(result) {
-    const list = available();
-    const box = frame(list);
-    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    svg.setAttribute('viewBox', `${box.left} ${box.top} ${box.width} ${box.height}`);
-    svg.setAttribute('class', 'city-map');
-    svg.setAttribute('role', 'img');
-    svg.setAttribute('aria-label', `City map. ${list.length} districts, ${links.length} links laid. ${links.map(link => `${nameOf(link.from)} to ${nameOf(link.to)} by ${link.tech}`).join('. ')}`);
-
-    const dots = [];
-    for (let x = 0; x < grid.columns; x++) for (let y = 0; y < grid.rows; y++) {
-      const at = {x:margin + x * cell, y:margin + y * cell};
-      if (at.x < box.left || at.x > box.left + box.width || at.y < box.top || at.y > box.top + box.height) continue;
-      dots.push(`<circle class="city-dot" cx="${at.x}" cy="${at.y}" r="1.6"/>`);
-    }
-    const cables = links.map((link, position) => {
-      const from = place(districts.find(district => district.id === link.from));
-      const to = place(districts.find(district => district.id === link.to));
-      const measured = result?.links[position];
-      const state = measured ? band(measured.utilisation) : 'idle';
-      const label = measured ? `${percent(measured.utilisation)}` : '';
-      const middle = {x:(from.x + to.x) / 2, y:(from.y + to.y) / 2};
-      // The clickable part stops short of both district boxes, so aiming at a
-      // cable never removes the wrong one — and the cable list always works.
-      const span = Math.hypot(to.x - from.x, to.y - from.y) || 1;
-      const inset = Math.min(62, span / 2 - 6);
-      const unit = {x:(to.x - from.x) / span, y:(to.y - from.y) / span};
-      const hit = {
-        x1:from.x + unit.x * inset, y1:from.y + unit.y * inset,
-        x2:to.x - unit.x * inset, y2:to.y - unit.y * inset
-      };
-      return `<g class="city-cable tech-${link.tech} load-${state}">
-        <line x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}"/>
-        <line class="city-cable-hit" x1="${hit.x1}" y1="${hit.y1}" x2="${hit.x2}" y2="${hit.y2}" data-remove="${position}"><title>Remove the ${nameOf(link.from)} to ${nameOf(link.to)} link</title></line>
-        ${label ? `<text x="${middle.x}" y="${middle.y - 8}" text-anchor="middle">${label}</text>` : ''}
-      </g>`;
-    }).join('');
-    const nodes = list.map(district => {
-      const at = place(district);
-      const row = result?.districts.find(entry => entry.id === district.id);
-      const starved = row && district.demandMbps > 0 && row.satisfaction < 1;
-      const offline = row && district.demandMbps > 0 && !row.connected;
-      return `<g class="city-district kind-${district.kind} ${selected === district.id ? 'selected' : ''} ${starved ? 'starved' : ''} ${offline ? 'offline' : ''}"
-                 data-district="${district.id}" tabindex="0" role="button"
-                 aria-label="${district.name}${district.demandMbps ? `, wants ${rate(district.demandMbps)}` : ''}${selected === district.id ? ', selected' : ''}">
-        <rect x="${at.x - 56}" y="${at.y - 25}" width="112" height="50" rx="12"/>
-        <text class="city-name" x="${at.x}" y="${at.y - 4}" text-anchor="middle">${district.name}</text>
-        <text class="city-demand" x="${at.x}" y="${at.y + 13}" text-anchor="middle">${district.demandMbps ? rate(district.demandMbps) : district.kind === 'uplink' ? 'the way out' : 'junction'}</text>
-      </g>`;
-    }).join('');
-    svg.innerHTML = `<g class="city-grid">${dots.join('')}</g>${cables}${nodes}`;
-    svg.querySelectorAll('[data-district]').forEach(node => {
-      node.addEventListener('click', () => choose(node.dataset.district));
-      node.addEventListener('keydown', event => {
-        if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); choose(node.dataset.district); }
+  let stage = null;
+  function paintMap(result) {
+    const canvas = container.querySelector('.city-canvas');
+    if (!canvas) return;
+    if (!stage || !canvas.contains(stage.canvas)) {
+      stage?.destroy();
+      stage = createStage(canvas, {
+        aspect:cityScene.aspect,
+        bounds:cityScene.bounds,
+        build:(scene, context) => cityScene.build(scene, context),
+        describe:cityScene.describe,
+        onPick:id => {
+          const [type, ...rest] = String(id).split('-');
+          if (type === 'district') choose(rest.join('-'));
+          if (type === 'cable') disconnect(Number(rest[0]));
+        }
       });
-    });
-    svg.querySelectorAll('[data-remove]').forEach(line => line.addEventListener('click', () => disconnect(Number(line.dataset.remove))));
-    return svg;
+    }
+    stage.update({districts:available(), links, result, selected});
   }
 
   function render() {
@@ -246,7 +208,7 @@ export function mountCity(container) {
       </section>
     </div>`;
 
-    container.querySelector('.city-canvas').append(map(shown));
+    paintMap(shown);
     container.querySelector('#city-contract').addEventListener('change', event => {
       designs[contractId()] = links;
       index = Number(event.target.value);

@@ -5,6 +5,7 @@
 // scene API from iso.js plus the mission state, and adds solids to it.
 import {shade} from './iso.js';
 import {encapsulate, transfer} from './net.js';
+import {districts as cityDistricts, technologies} from './city.js';
 import {evaluateNetwork, bitValue} from './engine.js';
 
 // Scenes take their colours from the stylesheet, so they follow the theme.
@@ -19,7 +20,10 @@ export function palette() {
     accent:read('--accent'), accentQuiet:read('--accent-quiet'),
     success:read('--success'), warn:read('--warn'), danger:read('--danger'),
     deck:'#1d3550', deckDark:'#132538', metal:'#33526f', metalDark:'#223b53',
-    text:read('--text'), dim:read('--text-dim'), ink:'#04101d'
+    // The 3D world is always a dark space, whatever the page theme is, so its
+    // labels are fixed light ink. Reading --text here made every label in the
+    // light theme dark type on a dark deck.
+    text:'#e8f1ff', dim:'#9db4cd', ink:'#04101d'
   }};
   return cached.palette;
 }
@@ -233,6 +237,120 @@ const network = {
       const within = travelled - leg;
       const [ax, ay] = place(result.path[leg]), [bx, by] = place(result.path[leg + 1]);
       scene.orb({x:ax + (bx - ax) * within, y:ay + (by - ay) * within, z:0.66 + Math.sin(within * Math.PI) * 0.14, radius:8, colour:colours.warn});
+    }
+  }
+};
+
+// -------------------------------------------------------------- the city
+
+const kindColour = {
+  uplink:'#6fe3ff', homes:'#7cc5f5', science:'#b6a8ff', industry:'#ffc978',
+  transport:'#6ce3b4', medical:'#ff9d81', commerce:'#ffe08a', relay:'#8ea6bd'
+};
+const band = utilisation => utilisation >= 0.85 ? 'hot' : utilisation >= 0.6 ? 'warm' : 'cool';
+
+export const cityScene = {
+  aspect:0.66,
+  bounds:state => {
+    const xs = state.districts.map(district => district.x);
+    const ys = state.districts.map(district => district.y);
+    return {
+      minX:Math.min(...xs) - 1.1, maxX:Math.max(...xs) + 1.1,
+      minY:Math.min(...ys) - 1.1, maxY:Math.max(...ys) + 1.4,
+      maxZ:3.9, ratio:0.74, maxUnit:78
+    };
+  },
+  describe:state => `A city map. ${state.districts.length} districts, ${state.links.length} cables laid. ${state.links.map(link => `${link.from} to ${link.to}`).join('; ')}.`,
+  build(scene, {state, time, hovered}) {
+    const colours = palette();
+    const {districts, links, result, selected} = state;
+    const at = id => districts.find(district => district.id === id);
+    const peak = Math.max(1, ...districts.map(district => district.demandMbps));
+    const height = district => district.kind === 'uplink' ? 2.5
+      : district.kind === 'relay' ? 0.85
+      : 0.75 + (district.demandMbps / peak) * 1.85;
+
+    // The ground the city stands on.
+    const xs = districts.map(district => district.x), ys = districts.map(district => district.y);
+    const left = Math.min(...xs) - 1.3, right = Math.max(...xs) + 1.3;
+    const top = Math.min(...ys) - 1.3, bottom = Math.max(...ys) + 1.3;
+    scene.tile({x:left, y:top, w:right - left, d:bottom - top, colour:shade(colours.deckDark, -0.28)});
+    for (let x = Math.ceil(left); x <= right; x++) scene.tube({from:[x, top, 0.004], to:[x, bottom, 0.004], radius:0.7, colour:colours.metal, alpha:0.28});
+    for (let y = Math.ceil(top); y <= bottom; y++) scene.tube({from:[left, y, 0.004], to:[right, y, 0.004], radius:0.7, colour:colours.metal, alpha:0.28});
+
+    // Cables run at street level between the buildings they join.
+    links.forEach((link, index) => {
+      const from = at(link.from), to = at(link.to);
+      if (!from || !to) return;
+      const measured = result?.links[index];
+      const load = measured ? band(measured.utilisation) : null;
+      const colour = load === 'hot' ? colours.danger : load === 'warm' ? colours.warn : load === 'cool' ? colours.success : colours.accentQuiet;
+      const technology = technologies.find(entry => entry.id === link.tech);
+      const thickness = {fibre:9, copper:6.5, microwave:4}[link.tech] ?? 6;
+      scene.tube({
+        from:[from.x, from.y, 0.34], to:[to.x, to.y, 0.34],
+        radius:hovered === `cable-${index}` ? thickness + 4 : thickness,
+        colour, alpha:0.98,
+        dash:link.tech === 'microwave' ? [0.5, 0.4].map(value => value * 26) : null,
+        glow:load === 'hot',
+        id:`cable-${index}`
+      });
+      if (measured && (load !== 'cool' || hovered === `cable-${index}`)) {
+        scene.label({
+          x:(from.x + to.x) / 2, y:(from.y + to.y) / 2, z:0.78,
+          text:`${Math.round(measured.utilisation * 100)}%`, size:12, weight:600,
+          colour:load === 'hot' ? colours.danger : load === 'warm' ? colours.warn : colours.text
+        });
+      }
+      // Traffic, once the city has been measured.
+      if (measured && measured.loadMbps > 0 && time) {
+        const beads = Math.min(4, 1 + Math.floor(measured.utilisation * 4));
+        for (let bead = 0; bead < beads; bead++) {
+          const offset = ((time * 0.3) + bead / beads) % 1;
+          scene.orb({
+            x:from.x + (to.x - from.x) * offset, y:from.y + (to.y - from.y) * offset, z:0.34,
+            radius:4.5, colour:shade(colour, 0.3), glow:false
+          });
+        }
+      }
+    });
+
+    // Districts as buildings, tall where the demand is.
+    for (const district of districts) {
+      const tall = height(district);
+      const row = result?.districts.find(entry => entry.id === district.id);
+      const starved = row && district.demandMbps > 0 && row.satisfaction < 1;
+      const offline = row && district.demandMbps > 0 && !row.connected;
+      const base = kindColour[district.kind] ?? colours.metal;
+      const colour = offline ? colours.danger : starved ? colours.warn : base;
+      const picked = selected === district.id || hovered === `district-${district.id}`;
+      const x = district.x - 0.46, y = district.y - 0.46;
+      scene.glow({x:district.x, y:district.y, radius:1.5, colour, strength:picked ? 0.3 : 0.12});
+      scene.shadow({x:x - 0.1, y:y - 0.1, w:1.1, d:1.1, strength:0.45});
+      scene.box({x:x - 0.12, y:y - 0.12, z:0, w:1.16, d:1.16, h:0.16, colour:shade(colours.metalDark, -0.25), outline:false, id:`district-${district.id}`});
+      // The tower, in two stages so it reads as a building rather than a block.
+      scene.box({x, y, z:0.16, w:0.92, d:0.92, h:tall * 0.72, colour:shade(colour, -0.4), top:shade(colour, -0.2), id:`district-${district.id}`});
+      scene.box({x:x + 0.1, y:y + 0.1, z:0.16 + tall * 0.72, w:0.72, d:0.72, h:tall * 0.28, colour:shade(colour, -0.2), top:shade(colour, 0.05)});
+      if (district.kind === 'uplink') {
+        scene.tube({from:[district.x, district.y, 0.16 + tall], to:[district.x, district.y, 3.4], radius:5, colour:colours.accent, alpha:0.5, glow:true});
+        scene.orb({x:district.x, y:district.y, z:3.5, radius:7, colour:colours.accent});
+      } else if (district.demandMbps > 0) {
+        scene.orb({x:district.x, y:district.y, z:0.16 + tall + 0.16, radius:4.5, colour:offline ? colours.danger : starved ? colours.warn : shade(base, 0.35), glow:false});
+      }
+      if (picked) scene.tile({x:x - 0.18, y:y - 0.18, z:0.17, w:1.28, d:1.28, colour:colours.accent, alpha:0.25, bias:0.5});
+      scene.label({
+        x:district.x, y:district.y, z:0.16 + tall + 0.66,
+        text:district.name, size:12, weight:600,
+        colour:picked ? colours.accent : offline ? colours.danger : starved ? colours.warn : colours.text
+      });
+      // Only a district in trouble carries a figure; the table below has them all.
+      if (starved || offline) {
+        scene.label({
+          x:district.x, y:district.y, z:0.16 + tall + 0.42,
+          text:offline ? 'no route' : `${Math.round(row.satisfaction * 100)}% served`,
+          size:11, weight:600, colour:offline ? colours.danger : colours.warn
+        });
+      }
     }
   }
 };

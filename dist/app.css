@@ -564,47 +564,6 @@ kbd { padding:2px 5px; border:1px solid var(--line-strong); border-radius:4px; b
 .city-toolbar .component-option span:last-child { font:var(--text-2xs)/1.3 var(--font-mono); color:var(--text-dim); }
 .city-toolbar .component-option.chosen span:last-child { color:inherit; }
 .city-canvas { border:1px solid var(--line); border-radius:var(--r-sm); background:var(--viewport); overflow:hidden; }
-.city-map { display:block; width:100%; height:auto; max-height:min(54vh, 520px); }
-.city-grid { pointer-events:none; }
-.city-dot { fill:var(--text-dim); opacity:.35; }
-
-.city-cable line { stroke:var(--line-strong); stroke-linecap:round; transition:stroke var(--base), stroke-width var(--base); }
-.city-cable.tech-fibre line { stroke-width:6; }
-.city-cable.tech-copper line { stroke-width:4; }
-.city-cable.tech-microwave line { stroke-width:2.5; stroke-dasharray:9 7; }
-.city-cable.load-cool line { stroke:var(--success); }
-.city-cable.load-warm line { stroke:var(--warn); }
-.city-cable.load-hot line { stroke:var(--danger); }
-.city-cable text { fill:var(--text-muted); font:500 12px var(--font-mono); paint-order:stroke; stroke:var(--viewport); stroke-width:5px; stroke-linejoin:round; }
-.city-cable-hit { stroke:transparent !important; stroke-width:22 !important; cursor:pointer; stroke-dasharray:none !important; }
-.city-cable:hover line:first-child { stroke:var(--accent); }
-
-.city-district { --kind:var(--line-strong); }
-.city-district.kind-homes { --kind:#7cc5f5; }
-.city-district.kind-science { --kind:#b6a8ff; }
-.city-district.kind-industry { --kind:#ffc978; }
-.city-district.kind-transport { --kind:#6ce3b4; }
-.city-district.kind-medical { --kind:#ff9d81; }
-.city-district.kind-commerce { --kind:#ffe08a; }
-.city-district.kind-relay { --kind:var(--text-dim); }
-.city-district.kind-uplink { --kind:var(--accent); }
-.city-district rect {
-  fill:var(--surface-2); stroke:color-mix(in srgb, var(--kind) 60%, var(--line-strong)); stroke-width:1.5;
-  transition:fill var(--fast), stroke var(--fast);
-}
-.city-district .city-demand { fill:color-mix(in srgb, var(--kind) 65%, var(--text-dim)); }
-.city-district { cursor:pointer; }
-.city-district:hover rect { stroke:var(--accent); }
-.city-district:focus-visible { outline:none; }
-.city-district:focus-visible rect { stroke:var(--accent); stroke-width:3; }
-.city-district.selected rect { fill:var(--accent-wash); stroke:var(--accent); stroke-width:2.5; }
-.city-district.kind-uplink rect { fill:color-mix(in srgb, var(--accent) 22%, var(--surface-2)); stroke:var(--accent); }
-.city-district.kind-relay rect { stroke-dasharray:6 5; }
-.city-district.starved rect { stroke:var(--warn); }
-.city-district.offline rect { stroke:var(--danger); stroke-dasharray:5 4; }
-.city-name { fill:var(--text); font:500 13px var(--font-display); }
-.city-demand { fill:var(--text-dim); font:11px var(--font-mono); }
-.city-district.kind-uplink .city-demand { fill:var(--accent); }
 .table-scroll { max-width:100%; overflow-x:auto; }
 
 .city-build { display:flex; flex-direction:column; gap:var(--s-3); }

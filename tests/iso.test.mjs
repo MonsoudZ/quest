@@ -122,3 +122,34 @@ test('the camera never scales past its cap, so a tiny world is not absurdly magn
   const camera = fitCamera({width:1200, height:800, bounds:{minX:0, maxX:0.5, minY:0, maxY:0.5, maxZ:0}, maxUnit:60});
   assert.equal(camera.unit, 60);
 });
+
+test('scene ink stays readable on the deck in both page themes', async () => {
+  // palette() reads a few page tokens, so the module needs a document. The ones
+  // that matter here — the deck and the label ink — are fixed, and this test is
+  // what stops them drifting back to the theme, where light mode painted dark
+  // labels on a dark deck.
+  const tokens = {
+    dark:{'--accent':'#6fe3ff', '--accent-quiet':'#3f7f96', '--success':'#5fd6a4', '--warn':'#f0b866', '--danger':'#ff7d6b', '--text':'#e8f1ff', '--text-dim':'#8fa6c0', '--surface-2':'#132538'},
+    light:{'--accent':'#0d6b86', '--accent-quiet':'#2d7f99', '--success':'#1d7a52', '--warn':'#8a5a10', '--danger':'#b23824', '--text':'#10202f', '--text-dim':'#4a5a6b', '--surface-2':'#ffffff'}
+  };
+  let theme = 'dark';
+  globalThis.document = {documentElement:{dataset:{get theme() { return theme; }}}};
+  globalThis.getComputedStyle = () => ({getPropertyValue:name => tokens[theme][name] ?? ''});
+  const {palette} = await import('../dist/scenes.js');
+
+  const channel = value => { const c = value / 255; return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
+  const luminance = colour => { const {r, g, b} = parseColour(colour); return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b); };
+  const contrast = (a, b) => { const [high, low] = [luminance(a), luminance(b)].sort((x, y) => y - x); return (high + 0.05) / (low + 0.05); };
+
+  for (theme of ['dark', 'light']) {
+    const colours = palette();
+    for (const surface of [colours.deck, colours.deckDark, colours.metal, colours.metalDark, colours.ink]) {
+      assert.ok(contrast(colours.text, surface) >= 4.5, `${theme}: label ink on ${surface} is ${contrast(colours.text, surface).toFixed(2)}:1`);
+      assert.ok(contrast(colours.dim, surface) >= 3, `${theme}: dim ink on ${surface} is ${contrast(colours.dim, surface).toFixed(2)}:1`);
+    }
+    // The halo behind a label is dark, so the ink over it must be light.
+    assert.ok(luminance(colours.text) > 0.5, `${theme}: label ink is too dark for the halo behind it`);
+  }
+  delete globalThis.document;
+  delete globalThis.getComputedStyle;
+});

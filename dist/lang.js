@@ -27,7 +27,7 @@ export class QuestError extends Error {
 }
 const fail = (message, line=null) => { throw new QuestError(message, line); };
 
-const pattern = /\s+|\/\/[^\n]*|\/\*[\s\S]*?\*\/|===|!==|<=|>=|==|!=|&&|\|\||\+\+|--|\+=|-=|\*=|\/=|%=|\d+(?:\.\d+)?|[A-Za-z_][A-Za-z0-9_]*|"[^"\n]*"|'[^'\n]*'|[-+*/%!<>=(){}\[\];,.]/gy;
+const pattern = /\s+|\/\/[^\n]*|\/\*[\s\S]*?\*\/|===|!==|<=|>=|==|!=|&&|\|\||\+\+|--|\+=|-=|\*=|\/=|%=|\d+(?:\.\d+)?|[A-Za-z_][A-Za-z0-9_]*|"[^"\n]*"|'[^'\n]*'|[-+*/%!<>=(){}\[\];,.:]/gy;
 
 function classify(text) {
   if (/^\d/.test(text)) return 'number';
@@ -56,6 +56,9 @@ export function tokenize(source, maxLength = defaultLimits.sourceLength) {
 // ---------------------------------------------------------------- parser
 
 const assignOps = new Set(['=','+=','-=','*=','/=','%=']);
+// Records are made with a null prototype, and these names are refused outright
+// so no program can even ask for them.
+const forbidden = new Set(['__proto__', 'constructor', 'prototype']);
 const binaryLevels = [
   ['||'], ['&&'], ['===','!==','==','!='], ['<','>','<=','>='], ['+','-'], ['*','/','%']
 ];
@@ -175,7 +178,7 @@ export function parse(source, options = {}) {
     const left = binary(depth, 0);
     if (assignOps.has(text())) {
       const operator = next();
-      if (left.type !== 'name' && left.type !== 'index') fail('Assign to a variable or to an array slot.', operator.line);
+      if (!['name', 'index', 'member'].includes(left.type)) fail('Assign to a variable, an array slot, or a record field.', operator.line);
       const value = assignment(depth);
       return {type:'assign', operator:operator.text, target:left, value, line:operator.line};
     }
@@ -202,7 +205,7 @@ export function parse(source, options = {}) {
     if (at('++') || at('--')) {
       const operator = next();
       const argument = unary(depth);
-      if (argument.type !== 'name' && argument.type !== 'index') fail(`“${operator.text}” needs a variable to change.`, operator.line);
+      if (!['name', 'index', 'member'].includes(argument.type)) fail(`“${operator.text}” needs a variable, an array slot, or a record field to change.`, operator.line);
       return {type:'update', operator:operator.text, target:argument, prefix:true, line:operator.line};
     }
     return postfix(depth, primary(depth));
@@ -236,7 +239,7 @@ export function parse(source, options = {}) {
         node = {type:'member', object:node, name:name.text, line};
       } else if (at('++') || at('--')) {
         const operator = next();
-        if (node.type !== 'name' && node.type !== 'index') fail(`“${operator.text}” needs a variable to change.`, operator.line);
+        if (!['name', 'index', 'member'].includes(node.type)) fail(`“${operator.text}” needs a variable, an array slot, or a record field to change.`, operator.line);
         node = {type:'update', operator:operator.text, target:node, prefix:false, line:operator.line};
       } else return node;
     }
@@ -256,6 +259,25 @@ export function parse(source, options = {}) {
       const value = expression(depth);
       expect(')');
       return value;
+    }
+    if (token.text === '{') {
+      const entries = [];
+      const seen = new Set();
+      while (!at('}')) {
+        const key = next();
+        if (!key || (key.kind !== 'name' && key.kind !== 'string' && key.kind !== 'keyword')) fail('A record field needs a name before its colon.', token.line);
+        const name = key.kind === 'string' ? key.text.slice(1, -1) : key.text;
+        if (forbidden.has(name)) fail(`“${name}” cannot be used as a field name.`, key.line);
+        if (seen.has(name)) fail(`The field “${name}” is given twice in the same record.`, key.line);
+        seen.add(name);
+        expect(':', 'A record is written { field: value }.');
+        entries.push({name, value:expression(depth)});
+        if (at(',')) next();
+        else break;
+      }
+      expect('}');
+      if (entries.length > 32) fail('Keep records to 32 fields or fewer.', token.line);
+      return {type:'record', entries, line:token.line};
     }
     if (token.text === '[') {
       const items = [];
@@ -282,7 +304,7 @@ export function parse(source, options = {}) {
 // Resolves every identifier before the program runs, so typos and unavailable
 // commands are reported without executing anything.
 export function check(ast, available = []) {
-  const globals = new Set([...available, 'Math', 'print']);
+  const globals = new Set([...available, 'Math', 'print', 'Object']);
   const commandList = available.length ? available.join(', ') : 'none in this mission';
   function declarations(body) {
     const names = new Map();
@@ -350,6 +372,7 @@ export function check(ast, available = []) {
       case 'index': walk(node.object, scopes, context); walk(node.property, scopes, context); return;
       case 'member': walk(node.object, scopes, context); return;
       case 'array': node.items.forEach(a => walk(a, scopes, context)); return;
+      case 'record': node.entries.forEach(entry => walk(entry.value, scopes, context)); return;
       default: return;
     }
   }
@@ -368,12 +391,24 @@ const mathMembers = {
   min:Math.min, max:Math.max, pow:Math.pow, sign:Math.sign, trunc:Math.trunc, log2:Math.log2
 };
 const mathValue = {kind:'namespace', name:'Math', members:mathMembers};
+const objectMembers = {
+  keys:value => Object.keys(assertRecord(value, 'Object.keys')),
+  values:value => Object.values(assertRecord(value, 'Object.values')),
+  has:(value, key) => Object.hasOwn(assertRecord(value, 'Object.has'), String(key))
+};
+const objectValue = {kind:'namespace', name:'Object', members:objectMembers};
+export const isRecord = value => typeof value === 'object' && value !== null && !Array.isArray(value) && !value.kind;
+function assertRecord(value, where) {
+  if (!isRecord(value)) throw new QuestError(`${where}() needs a record, not ${describe(value)}.`);
+  return value;
+}
 const uninitialized = Symbol('uninitialized');
 const arrayMethods = new Set(['push','pop','shift','unshift','indexOf','lastIndexOf','includes','slice','join','concat','reverse']);
 const stringMethods = new Set(['charAt','indexOf','includes','slice','toUpperCase','toLowerCase','split','repeat','startsWith','endsWith']);
 
 export function describe(value) {
   if (Array.isArray(value)) return `[${value.map(describe).join(', ')}]`;
+  if (value && typeof value === 'object' && !value.kind) return `{${Object.entries(value).map(([key, item]) => `${key}: ${describe(item)}`).join(', ')}}`;
   if (typeof value === 'string') return JSON.stringify(value);
   if (value === undefined) return 'undefined';
   if (typeof value === 'number' && !Number.isInteger(value)) return String(Number(value.toFixed(6)));
@@ -390,6 +425,7 @@ export function execute(ast, options = {}) {
   const global = scope(null);
   for (const [name, fn] of Object.entries(natives)) global.values.set(name, {kind:'native', name, fn});
   global.values.set('Math', mathValue);
+  global.values.set('Object', objectValue);
   if (!global.values.has('print')) global.values.set('print', {kind:'native', name:'print', fn:args => {
     if (state.output.length < 200) state.output.push(args.map(describe).join(' '));
     return undefined;
@@ -510,11 +546,16 @@ export function execute(ast, options = {}) {
       if (stringMethods.has(name)) return {kind:'method', name, target:object};
       fail(`Strings in this sandbox support length, ${[...stringMethods].join(', ')}. “${name}” is not available.`, line);
     }
+    if (isRecord(object)) {
+      if (forbidden.has(name)) fail(`“${name}” is not a field you can read.`, line);
+      if (!Object.hasOwn(object, name)) fail(`This record has no field called “${name}”. It has ${Object.keys(object).length ? Object.keys(object).join(', ') : 'no fields'}.`, line);
+      return object[name];
+    }
     if (object?.kind === 'namespace') {
       if (Object.hasOwn(object.members, name)) return {kind:'native', name:`${object.name}.${name}`, fn:args => object.members[name](...args)};
       fail(`${object.name}.${name} is not available. This sandbox provides ${Object.keys(object.members).join(', ')}.`, line);
     }
-    fail(`Only arrays, strings, and Math have members here. ${describe(object)} does not.`, line);
+    fail(`Only records, arrays, strings, Math and Object have members here. ${describe(object)} does not.`, line);
   }
 
   function callMethod(value, args, line) {
@@ -564,6 +605,7 @@ export function execute(ast, options = {}) {
   function arithmetic(operator, left, right, line) {
     switch (operator) {
       case '+':
+        if (isRecord(left) || isRecord(right)) fail('Records cannot be joined with +. Set their fields instead.', line);
         if (Array.isArray(left) || Array.isArray(right)) fail('Arrays cannot be joined with +. Use push() or concat().', line);
         return guard(left + right, line);
       case '-': case '*': case '/': case '%': {
@@ -585,7 +627,12 @@ export function execute(ast, options = {}) {
   function slot(node, env) {
     const object = evaluate(node.object, env);
     const property = evaluate(node.property, env);
-    if (!Array.isArray(object) && typeof object !== 'string') fail(`Only arrays and strings can be indexed with [ ]. ${describe(object)} cannot.`, node.line);
+    if (isRecord(object)) {
+      if (typeof property !== 'string') fail(`A record is indexed by a field name, not by ${describe(property)}.`, node.line);
+      if (forbidden.has(property)) fail(`“${property}” is not a field you can use.`, node.line);
+      return {object, property, record:true};
+    }
+    if (!Array.isArray(object) && typeof object !== 'string') fail(`Only records, arrays and strings can be indexed with [ ]. ${describe(object)} cannot.`, node.line);
     if (typeof property !== 'number' || !Number.isInteger(property)) fail(`Array positions are whole numbers. ${describe(property)} is not one.`, node.line);
     return {object, property};
   }
@@ -595,10 +642,20 @@ export function execute(ast, options = {}) {
     switch (node.type) {
       case 'number': case 'string': case 'boolean': return node.value;
       case 'array': return track(node.items.map(item => evaluate(item, env)));
+      case 'record': {
+        const record = Object.create(null);
+        for (const entry of node.entries) record[entry.name] = evaluate(entry.value, env);
+        track([]);
+        return record;
+      }
       case 'name': return lookup(node.name, env, node.line);
       case 'member': return member(evaluate(node.object, env), node.name, node.line);
       case 'index': {
-        const {object, property} = slot(node, env);
+        const {object, property, record} = slot(node, env);
+        if (record) {
+          if (!Object.hasOwn(object, property)) fail(`This record has no field called “${property}”.`, node.line);
+          return object[property];
+        }
         if (property < 0 || property >= object.length) fail(`Position ${property} is outside ${describe(object)}, which has ${object.length} ${Array.isArray(object) ? 'entries' : 'characters'}. Valid positions run from 0 to ${object.length - 1}.`, node.line);
         return object[property];
       }
@@ -620,11 +677,24 @@ export function execute(ast, options = {}) {
         return invoke(callee, args, node, env);
       }
       case 'assign': {
+        if (node.target.type === 'member') {
+          const host = evaluate(node.target.object, env);
+          if (!isRecord(host)) fail(`Only a record's fields can be assigned to. ${describe(host)} has none.`, node.line);
+          if (forbidden.has(node.target.name)) fail(`“${node.target.name}” is not a field you can assign.`, node.line);
+          const current = node.operator === '=' ? null : host[node.target.name];
+          if (node.operator !== '=' && !Object.hasOwn(host, node.target.name)) fail(`This record has no field called “${node.target.name}” to change.`, node.line);
+          let next = evaluate(node.value, env);
+          if (node.operator !== '=') next = arithmetic(node.operator[0], current, next, node.line);
+          host[node.target.name] = guard(next, node.line);
+          return next;
+        }
         const current = node.operator === '=' ? null : node.target.type === 'name' ? lookup(node.target.name, env, node.line) : (({object, property}) => object[property])(slot(node.target, env));
         let value = evaluate(node.value, env);
         if (node.operator !== '=') value = arithmetic(node.operator[0], current, value, node.line);
         if (node.target.type === 'name') return assign(node.target.name, value, env, node.line);
-        const {object, property} = slot(node.target, env);
+        const target = slot(node.target, env);
+        const {object, property} = target;
+        if (target.record) { object[property] = guard(value, node.line); return value; }
         if (typeof object === 'string') fail('Strings cannot be changed in place. Build a new string instead.', node.line);
         if (property < 0 || property > object.length) fail(`Position ${property} is outside ${describe(object)}. Assign inside the array, or append with push().`, node.line);
         object[property] = value;
@@ -638,6 +708,16 @@ export function execute(ast, options = {}) {
           if (typeof before !== 'number') fail(`“${node.operator}” needs a number, not ${describe(before)}.`, node.line);
           assign(node.target.name, guard(before + step, node.line), env, node.line);
           return node.prefix ? before + step : before;
+        }
+        if (node.target.type === 'member') {
+          const host = evaluate(node.target.object, env);
+          if (!isRecord(host)) fail(`Only a record's fields can be changed with “${node.operator}”. ${describe(host)} has none.`, node.line);
+          if (forbidden.has(node.target.name)) fail(`“${node.target.name}” is not a field you can change.`, node.line);
+          if (!Object.hasOwn(host, node.target.name)) fail(`This record has no field called “${node.target.name}” to change.`, node.line);
+          const current = host[node.target.name];
+          if (typeof current !== 'number') fail(`“${node.operator}” needs a number, not ${describe(current)}.`, node.line);
+          host[node.target.name] = guard(current + step, node.line);
+          return node.prefix ? current + step : current;
         }
         const {object, property} = slot(node.target, env);
         if (typeof object === 'string') fail('Strings cannot be changed in place.', node.line);

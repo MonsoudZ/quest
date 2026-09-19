@@ -59,12 +59,13 @@ test('every class the interface renders has a style rule', () => {
   const styled = new Set([...styles.matchAll(/\.([a-zA-Z][\w-]*)/g)].map(match => match[1]));
   const missing = [...classes].filter(name => !styled.has(name));
   assert.deepEqual(missing, [], `these classes are rendered but never styled: ${missing.join(', ')}`);
-  assert.deepEqual([...prefixes].sort(), ['diagram-', 'kind-', 'load-', 'tech-', 'widget-'], 'a new interpolated class name needs its concrete forms listed below');
+  assert.deepEqual([...prefixes].sort(), ['diagram-', 'load-', 'widget-'], 'a new interpolated class name needs its concrete forms listed below');
   // Every diagram kind needs its own rule. Widget kinds mostly share the base
   // row, so only the ones that differ are required to have one.
+  // The city map is drawn on a canvas now, so district and cable colours live in
+  // scenes.js rather than in CSS; only the classes still rendered are required.
   for (const concrete of ['diagram-bits', 'diagram-sort', 'diagram-stack', 'diagram-table', 'diagram-bars', 'diagram-timeline', 'diagram-cards', 'diagram-cases', 'widget-row', 'widget-choice',
-    'tech-fibre', 'tech-copper', 'tech-microwave', 'load-cool', 'load-warm', 'load-hot',
-    'kind-uplink', 'kind-relay', 'kind-homes', 'kind-science', 'kind-industry', 'kind-transport', 'kind-medical', 'kind-commerce']) {
+    'load-cool', 'load-warm', 'load-hot']) {
     assert.ok(styled.has(concrete), `${concrete} has no style rule`);
   }
   assert.ok(classes.size > 60, `only ${classes.size} classes were found, so the scan is not working`);

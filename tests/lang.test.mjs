@@ -13,6 +13,7 @@ function reference(source) {
 }
 function format(value) {
   if (Array.isArray(value)) return `[${value.map(format).join(', ')}]`;
+  if (value && typeof value === 'object') return `{${Object.entries(value).map(([key, item]) => `${key}: ${format(item)}`).join(', ')}}`;
   if (typeof value === 'string') return JSON.stringify(value);
   if (typeof value === 'number' && !Number.isInteger(value)) return String(Number(value.toFixed(6)));
   return String(value);
@@ -48,7 +49,20 @@ const agreeing = [
   'let flag = 3 > 2 === true; print(flag);',
   'function classify(n) { if (n < 0) { return "low"; } else if (n === 0) { return "zero"; } else { return "high"; } } print(classify(-1), classify(0), classify(4));',
   'let text = ""; for (let i = 0; i < 3; i++) { text = text + i; } print(text, text.length);',
-  'function countdown(n) { if (n === 0) { return []; } let rest = countdown(n - 1); rest.push(n); return rest; } print(countdown(4));'
+  'function countdown(n) { if (n === 0) { return []; } let rest = countdown(n - 1); rest.push(n); return rest; } print(countdown(4));',
+  'let site = {name: "labs", demand: 500}; print(site.name, site.demand, site);',
+  'let site = {name: "labs"}; site.name = "depot"; print(site.name, site);',
+  'let counts = {hits: 1}; counts.hits += 4; counts.hits++; print(counts.hits);',
+  'let site = {}; site.tier = "edge"; print(site, Object.keys(site), Object.values(site));',
+  'let site = {a: 1, b: 2}; print(Object.keys(site), Object.values(site), Object.keys(site).length);',
+  'let nested = {link: {bandwidth: 100, up: true}}; print(nested.link.bandwidth, nested.link.up, nested);',
+  'let site = {ports: [1, 2]}; site.ports.push(3); print(site.ports, site.ports.length, site);',
+  'function make(n) { return {id: n, twice: n * 2}; } let r = make(4); print(r.id, r.twice, r);',
+  'let rows = [{n: "a", v: 1}, {n: "b", v: 2}]; let out = []; for (let i = 0; i < rows.length; i++) { out.push(rows[i].n + "=" + rows[i].v); } print(out.join(","));',
+  'let site = {load: 0}; for (let i = 0; i < 4; i++) { site.load += i; } print(site.load);',
+  'let a = {n: 1}; let b = a; b.n = 9; print(a.n, a === b, a === {n: 1});',
+  'let site = {a: 1}; print(site["a"], site["a"] + 1); site["a"] = 7; print(site.a);',
+  'function busiest(sites) { let best = sites[0]; for (let i = 1; i < sites.length; i++) { if (sites[i].load > best.load) { best = sites[i]; } } return best; } print(busiest([{id: 1, load: 3}, {id: 2, load: 9}, {id: 3, load: 4}]));'
 ];
 
 test('the interpreter agrees with real JavaScript on every supported feature', () => {
@@ -77,7 +91,11 @@ test('unavailable names and unsupported JavaScript are refused before anything r
     'alert(1);': /not defined here/,
     'print(window.location);': /not defined here/,
     'print([].constructor);': /not available/,
-    'let x = {a: 1};': /does not understand the character/,
+    'let x = {a() { return 1; }};': /A record is written \{ field: value \}/,
+    'let y = {a: 1}; let x = {...y};': /needs a name before its colon/,
+    'let x = {a: 1}; for (let k in x) { print(k); }': /Give the variable a starting value/,
+    'let x = {a: 1}; delete x.a;': /not part of this sandbox/,
+    'let x = {a: 1}; print(Object.assign(x, x));': /Object.assign is not available/,
     'function f() { return 1; } function f() { return 2; }': /already declared/,
     'class Ship {}': /not part of this sandbox/,
     'var n = 1;': /not part of this sandbox/,
@@ -91,7 +109,7 @@ test('unavailable names and unsupported JavaScript are refused before anything r
     'print("unterminated);': /does not understand the character/,
     'print(2 ** 3);': /Unexpected/,
     'print(Math.constructor);': /Math.constructor is not available/,
-    'print(Math.floor.name);': /Only arrays, strings, and Math/,
+    'print(Math.floor.name);': /Only records, arrays, strings, Math and Object/,
     'print(eval("1"));': /cannot be used as a value/,
     'let Math = 1;': /provided by the mission/,
     'print = 1;': /belongs to the mission/
@@ -105,7 +123,7 @@ test('type mistakes are reported instead of silently producing NaN', () => {
     'print(1 / 0);': /Dividing by zero/,
     'print([1] + [2]);': /cannot be joined with \+/,
     'print(1 < "a");': /Compare two numbers or two strings/,
-    'print((1).length);': /Only arrays, strings, and Math/,
+    'print((1).length);': /Only records, arrays, strings, Math and Object/,
     'let values = [1]; print(values[0.5]);': /whole numbers/,
     'let n = 1; n();': /is not a function/,
     'let s = "ab"; s[0] = "c";': /cannot be changed in place/
@@ -187,4 +205,40 @@ test('operation counts grow with the algorithm, which is what the complexity gat
   assert.equal(linear.call('find', [sorted, 1022]).value, 511);
   assert.equal(binary.call('find', [sorted, 1022]).value, 511);
   assert.ok(binaryCost * 10 < linearCost, `${binaryCost} vs ${linearCost}`);
+});
+
+test('records carry named fields, and the mistakes JavaScript hides are reported', () => {
+  // Everything below is legal JavaScript. Each line produces undefined, NaN, or a
+  // silent prototype write there; the sandbox explains the mistake instead.
+  for (const [source, expected] of Object.entries({
+    'let site = {a: 1}; print(site.b);': /no field called “b”. It has a/,
+    'let site = {}; print(site.b);': /no field called “b”. It has no fields/,
+    'let site = {a: 1}; print(site["b"]);': /no field called “b”/,
+    'let site = {a: 1}; print(site[0]);': /indexed by a field name, not by 0/,
+    'let site = {a: 1}; print(site.__proto__);': /“__proto__” is not a field you can read/,
+    'let site = {a: 1}; site.__proto__ = {};': /“__proto__” is not a field you can assign/,
+    'let site = {a: 1}; print(site.constructor);': /“constructor” is not a field you can read/,
+    'print({a: 1} + 1);': /Records cannot be joined with \+/,
+    'print({a: 1} - 1);': /needs numbers on both sides/,
+    'let n = 4; n.a = 2;': /Only a record\'s fields can be assigned to. 4 has none/,
+    'let n = 4; n.a++;': /Only a record\'s fields can be changed/,
+    'let site = {a: 1}; site.b += 1;': /no field called “b” to change/,
+    'let site = {a: 1}; site.b++;': /no field called “b” to change/,
+    'let site = {a: "x"}; site.a++;': /needs a number, not "x"/,
+    'let site = {a: 1, a: 2};': /given twice in the same record/,
+    'print(Object.keys(5));': /needs a record, not 5/,
+    'print(Object.values([1]));': /needs a record, not \[1\]/
+  })) assert.throws(() => sandbox(source), expected, source);
+
+  // A record is a fixed-size container, not a growable one.
+  const wide = `let site = {${Array.from({length:33}, (_, i) => `f${i}: ${i}`).join(', ')}};`;
+  assert.throws(() => sandbox(wide), /32 fields or fewer/);
+  assert.doesNotThrow(() => sandbox(wide.replace(', f32: 32', '')));
+
+  // Records are references, and the host sees them as ordinary objects.
+  const program = execute(compile('function tally(rows) { let out = {total: 0, count: 0}; for (let i = 0; i < rows.length; i++) { out.total += rows[i].load; out.count++; } return out; }'));
+  const tallied = program.call('tally', [[{load:3}, {load:4}]]).value;
+  assert.deepEqual({...tallied}, {total:7, count:2});
+  // Records are built with a null prototype, so no program can reach Object.prototype through one.
+  assert.equal(Object.getPrototypeOf(tallied), null);
 });
