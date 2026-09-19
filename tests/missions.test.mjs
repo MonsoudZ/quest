@@ -206,3 +206,27 @@ test('every polyglot panel is complete, and none of it claims to run', () => {
     assert.ok(languages.has(language), `no mission shows ${language}`);
   }
 });
+
+test('the chips beside the console name things that exist in that mission', () => {
+  for (const level of levels.filter(item => algoKinds.has(item.kind))) {
+    const parameters = level.signature.slice(level.signature.indexOf('(') + 1, -1).split(',').map(name => name.trim()).filter(Boolean);
+    const chips = level.toolkit ?? [];
+    for (const chip of chips) {
+      // A chip that reads a parameter has to read one this mission actually takes.
+      const named = chip.match(/^([a-z][\w]*)[.[]/i);
+      // Math and Object are the sandbox's own namespaces; the rest are locals a
+      // mission's lesson introduces by name.
+      const locals = ['Math', 'Object', 'stack', 'seen', 'report', 'tokens', 'best', 'values', 'digits'];
+      if (named) assert.ok(parameters.includes(named[1]) || locals.includes(named[1]),
+        `${level.id} offers “${chip}”, but it takes ${parameters.join(', ')}`);
+      assert.ok(chip.length <= 34, `${level.id} chip “${chip}” is too long for the row`);
+    }
+    if (!chips.length) {
+      // The generated default indexes the first parameter, so that parameter has
+      // to be the sequence the mission walks.
+      const walked = level.cases[0].args[0];
+      assert.ok(Array.isArray(walked) || typeof walked === 'string',
+        `${level.id} has no toolkit, so the console would offer ${parameters[0]}.length on a ${typeof walked}`);
+    }
+  }
+});

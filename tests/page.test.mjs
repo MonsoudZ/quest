@@ -111,3 +111,13 @@ test('the page keeps its accessibility affordances', () => {
   }
   assert.match(styles, /\.icon-button span \{ position:absolute;[^}]*clip:/, 'hidden button labels must stay in the accessibility tree');
 });
+
+test('the console chip row survives a mission that has no function to write', async () => {
+  // A quiz or model mission carries no signature. Deriving chips from one
+  // crashed the whole mission load until this guard existed.
+  const {levels} = await import('../dist/levels.js');
+  const source = scripts;
+  const guard = /if \(!item\.signature\) return \[\];/;
+  assert.match(source, guard, 'commandReference no longer guards against a missing signature');
+  assert.ok(levels.some(level => !level.signature && level.kind !== 'code'), 'there are no signature-less missions left to guard against');
+});

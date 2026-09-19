@@ -155,6 +155,7 @@ export const levels = [
     objective:'Write safe(temperature, pressure) so it returns true only inside the operating window.',
     intro:'The reactor is safe at 75 °C or below, with pressure from 20 to 110 inclusive. Turn that sentence into one boolean expression.',
     lesson:'A comparison such as temperature <= 75 produces true or false. && is true only when both sides are true; || is true when either side is. A condition is just a value, so a function can return it directly instead of using if and else to return true or false. Watch the boundaries: <= includes the limit, < excludes it.',
+    toolkit:['return', '&&', '||', '!', '<=', '>=', '===', 'true / false', 'print()'],
     signature:'function safe(temperature, pressure)', fn:'safe',
     cases:[
       {args:[70,50], expect:true},
@@ -206,6 +207,7 @@ export const levels = [
     objective:'average(readings) is already written, and it is wrong. Read the failures and repair it.',
     intro:'This console hands you a program that already compiles. It is still wrong. The test cases below tell you exactly how — your job is to read them rather than to rewrite from scratch.',
     lesson:'Three separate faults hide in four lines. Starting the counter at 1 skips the first reading. Testing i <= readings.length walks one step past the end, and this sandbox reports that instead of quietly handing back undefined the way JavaScript would. Dividing by a length of zero is the third: an empty log has no average, so the function has to decide what to return before it divides. Fix one fault at a time and re-run; the case list tells you which ones are left.',
+    toolkit:['return', 'let', 'for', 'if / else', 'readings.length', 'readings[i]', 'sum / count', 'print()'],
     signature:'function average(readings)', fn:'average',
     cases:[
       {args:[[2,4,6]], expect:4},
@@ -244,6 +246,7 @@ export const levels = [
     objective:'Write find(sorted, target) so it returns the position of target, or −1, without scanning every entry.',
     intro:'The catalogue is already sorted. A scan from the start would work, but the last two cases allow only 800 interpreter steps each, and a scan of 1,024 entries needs thousands.',
     lesson:'Binary search compares the middle entry with the target. If the middle is too small, the answer cannot be to its left, so half the remaining range disappears; if it is too large, the other half goes. Each comparison halves what is left, so 1,024 entries take about 10 comparisons and a million take about 20. It only works because the input is sorted.',
+    toolkit:['return', 'let', 'while', 'if / else', 'sorted.length', 'sorted[middle]', 'Math.floor()', 'print()'],
     signature:'function find(sorted, target)', fn:'find',
     cases:[
       {args:[[1,3,5,7,9],7], expect:3},
@@ -265,6 +268,7 @@ export const levels = [
     objective:'Write a recursive gcd(a, b) that returns the greatest common divisor.',
     intro:'Two antennas repeat their patterns every a and b samples. The combined pattern repeats every gcd(a, b) samples. Euclid worked out how to find it without trying every divisor.',
     lesson:'A recursive function calls itself on a smaller version of the same problem and has a base case that stops. Euclid’s insight: any number dividing both a and b also divides a % b, so gcd(a, b) = gcd(b, a % b), and when b reaches 0 the answer is a. Each step shrinks the numbers fast, so even nine-digit inputs finish in a few dozen steps. Without a base case, the calls never stop, and this sandbox reports it instead of crashing the page.',
+    toolkit:['return', 'if', 'a % b', 'gcd(b, a % b)', 'print()'],
     signature:'function gcd(a, b)', fn:'gcd', requireRecursion:true,
     cases:[
       {args:[1071,462], expect:21},
@@ -285,6 +289,7 @@ export const levels = [
     objective:'Write balanced(text) so it returns true when every bracket closes in the right order.',
     intro:'Cargo manifests nest: crates inside pallets inside holds. A closing bracket has to match the most recent unclosed opening bracket, which is exactly what a stack remembers.',
     lesson:'A stack is last in, first out. push adds to the end, pop removes from the end, and an array gives you both. Push every opening bracket; on a closing bracket, pop the most recent opening one and check that they match. Two failure modes are easy to miss: a closing bracket when the stack is empty, and leftovers on the stack when the text ends.',
+    toolkit:['return', 'let', 'for', 'if / else', 'text.length', 'text[i]', 'stack.push(c)', 'stack.pop()', 'print()'],
     signature:'function balanced(text)', fn:'balanced',
     cases:[
       {args:['()'], expect:true},

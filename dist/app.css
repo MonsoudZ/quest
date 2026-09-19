@@ -419,6 +419,13 @@ kbd { padding:2px 5px; border:1px solid var(--line-strong); border-radius:4px; b
 .lesson-reference:hover { border-color:var(--accent-quiet); background:var(--surface-3); }
 .lesson-reference::after { content:'↗'; }
 
+.case-shape {
+  margin:0 0 var(--s-3); padding:var(--s-3) var(--s-4);
+  border:1px solid var(--warn); border-left-width:3px; border-radius:var(--r-sm);
+  background:color-mix(in srgb, var(--warn) 10%, transparent);
+  color:var(--text); font-size:var(--text-sm); line-height:1.6;
+}
+
 /* Read-only samples of the same idea in other languages. */
 .polyglot { margin-top:var(--s-5); padding-top:var(--s-5); border-top:1px solid var(--line-soft); }
 .polyglot-head h4 { margin:0 0 var(--s-2); font:600 var(--text-base)/1.3 var(--font-display); }

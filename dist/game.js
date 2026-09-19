@@ -152,8 +152,12 @@ const consoleTask = kind => ({debug:'Repair this function', refactor:'Rewrite th
 
 function commandReference(item) {
   if (item.kind === 'code') return ['move(n)', 'turnLeft()', 'turnRight()', 'canMove()', 'let', 'for', 'while', 'if / else', 'function'];
-  // A mission may name the pieces it is actually about; otherwise the general set.
-  return [item.signature, ...(item.toolkit ?? ['return', 'let', 'for', 'while', 'if / else', 'values.length', 'values[i]', 'Math.floor()', 'print()'])];
+  // Puzzle missions have no function to write, and their row stays hidden.
+  if (!item.signature) return [];
+  // A mission may name the pieces it is actually about; otherwise the general
+  // set, written against this mission's own parameter rather than a stand-in.
+  const parameter = item.signature.match(/\(([^,)]+)/)?.[1].trim() || 'values';
+  return [item.signature, ...(item.toolkit ?? ['return', 'let', 'for', 'while', 'if / else', `${parameter}.length`, `${parameter}[i]`, 'Math.floor()', 'print()'])];
 }
 
 
@@ -379,7 +383,10 @@ function renderCases(result = null) {
       : `${outcome.operations.toLocaleString('en-US')} steps${testCase.maxOperations ? ` of ${testCase.maxOperations.toLocaleString('en-US')} allowed` : ''}`;
     return `<div class="case-row ${className}"><span class="case-status">${status}</span><code>${item.fn}(${testCase.args.map(argument => short(describe(argument))).join(', ')})</code><span class="case-expect">→ ${short(describe(testCase.expect))}</span><span class="case-detail">${detail}</span></div>`;
   }).join('');
-  wrap.innerHTML = `<div class="eyebrow">${item.cases.length} TEST CASES${result ? ` · ${result.cases.filter(entry => entry.passed && !entry.overGate).length} PASSING` : ''}</div><div class="case-table">${rows}</div>${result?.output?.length ? `<div class="case-output"><strong>print() output</strong>${result.output.slice(0, 12).map(line => `<code>${line}</code>`).join('')}</div>` : ''}`;
+  // A refactor mission can pass every case and still be refused, so the panel
+  // says which rule is outstanding rather than showing an unexplained full house.
+  const shapeNote = result?.shape ? `<p class="case-shape">${result.shape}</p>` : '';
+  wrap.innerHTML = `<div class="eyebrow">${item.cases.length} TEST CASES${result ? ` · ${result.cases.filter(entry => entry.passed && !entry.overGate).length} PASSING${result.shape ? ' · SHAPE RULE NOT MET' : ''}` : ''}</div>${shapeNote}<div class="case-table">${rows}</div>${result?.output?.length ? `<div class="case-output"><strong>print() output</strong>${result.output.slice(0, 12).map(line => `<code>${line}</code>`).join('')}</div>` : ''}`;
   $('arena').replaceChildren(wrap);
   $('legend').innerHTML = '<span class="legend-unit">✓ Case passed</span><span>✗ Case failed</span><span>Steps counted by the interpreter</span>';
 }
