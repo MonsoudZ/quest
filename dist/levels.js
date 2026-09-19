@@ -1,20 +1,103 @@
 const row=(x,y,n)=>Array.from({length:n},(_,i)=>[x+i,y]);
 const column=(x,y,n)=>Array.from({length:n},(_,i)=>[x,y+i]);
-const missionLibrary=[
- {id:'first-contact',kind:'code',chapter:'Programming',concept:'Sequences',name:'First contact',location:'Docking bay',objective:'Guide your maintenance unit to the power cell.',intro:'The station is dark. Your first job is simple: bring a repair unit to the power cell. The unit follows your instructions from top to bottom.',lesson:'A program is a sequence of instructions. move() advances one tile in the direction the unit faces. move(3) advances three tiles.',start:[1,3,0],goal:[5,3],tiles:row(1,3,5),starter:'// Reach the power cell, four tiles ahead.\nmove();\n',solution:'move(4);',hints:['The unit starts on the left, facing right. Count the tiles between it and the glowing goal.','Use four move(); commands, or pass the number of tiles to move().'],takeaway:'You wrote an algorithm: a precise sequence of steps that solves a problem.'},
- {id:'around-the-corner',kind:'code',chapter:'Programming',concept:'Debugging',name:'A change of direction',location:'Service corridor',objective:'Follow the corridor and reach the next power cell.',intro:'The direct route is sealed. Break the journey into smaller moves and turns. If you hit a wall, the trace shows exactly where to fix your program.',lesson:'turnRight() rotates 90° clockwise without moving. turnLeft() rotates the other way. Direction matters: forward is wherever the unit is facing.',start:[1,1,0],goal:[5,5],tiles:[...row(1,1,5),...column(5,2,4)],starter:'move(4);\n// Turn, then follow the corridor.\n',solution:'move(4);\nturnRight();\nmove(4);',hints:['Move right to the end of the top corridor, then turn toward the bottom.','After move(4), use turnRight(), then move four more tiles.'],takeaway:'Debugging means comparing what happened with what you intended, then changing the responsible instruction.'},
- {id:'repeat-the-route',kind:'code',chapter:'Programming',concept:'Loops',name:'Find the pattern',location:'Thermal array',objective:'Repeat the staircase pattern three times.',intro:'Three identical service modules stand between you and the cell. Once you recognize the pattern, you can describe it once and repeat it.',lesson:'A for loop repeats its body. let i = 0 starts a counter; i < 3 keeps going while it is below 3; i++ adds one after each repetition.',start:[0,6,0],goal:[6,3],tiles:[[0,6],[1,6],[2,6],[2,5],[3,5],[4,5],[4,4],[5,4],[6,4],[6,3]],starter:'for (let i = 0; i < 3; i++) {\n  move(2);\n  // Go up one tile, then face right again.\n}\n',solution:'for (let i = 0; i < 3; i++) {\n  move(2);\n  turnLeft();\n  move();\n  turnRight();\n}',hints:['Each module is two tiles right and one tile up. Finish each repetition facing right.','Inside the loop: move(2), turnLeft(), move(), then turnRight().'],takeaway:'Loops express repeated work with one reusable pattern. This loop runs with i equal to 0, 1, and 2.'},
- {id:'name-the-distance',kind:'code',chapter:'Programming',concept:'Variables',name:'Store the answer',location:'Reactor access',objective:'Use one distance value for both sides of the route.',intro:'Both corridors have the same length. Store that length in a variable so your program can use it twice.',lesson:'A variable gives a value a name. let distance = 4; stores 4, so move(distance) means move(4). Choose names that explain what the value means.',start:[1,1,0],goal:[5,5],tiles:[...row(1,1,5),...column(5,2,4)],starter:'let distance = 2;\nmove(distance);\nturnRight();\nmove(distance);\n',solution:'let distance = 4;\nmove(distance);\nturnRight();\nmove(distance);',hints:['The starter program turns too soon. Both straight corridors are four tiles long.','Change the stored distance from 2 to 4.'],takeaway:'Variables let one meaningful value control several instructions. Changing the value updates every place that uses it.'},
- {id:'read-the-room',kind:'code',chapter:'Programming',concept:'Conditionals',name:'Read the room',location:'Sensor chamber',objective:'Use a sensor to navigate the corner without a collision.',intro:'Your unit can now check the tile ahead. Give it a rule for open space and another for a wall.',lesson:'canMove() returns true when the tile ahead is open. if chooses a block when its condition is true; else chooses the other block.',start:[1,1,0],goal:[4,5],tiles:[...row(1,1,4),...column(4,2,4)],starter:'for (let i = 0; i < 8; i++) {\n  if (canMove()) {\n    // Move when the path is open.\n  } else {\n    turnRight();\n  }\n}\n',solution:'for (let i = 0; i < 8; i++) {\n  if (canMove()) {\n    move();\n  } else {\n    turnRight();\n  }\n}',hints:['Seven forward moves and one turn reach the goal. The loop gives you eight decisions.','Put move(); inside the if block. The else block already handles the wall.'],takeaway:'Conditionals let a program respond to its environment instead of blindly following a fixed list.'},
- {id:'fewest-hops',kind:'network',chapter:'Computer science',concept:'Graphs & paths',name:'A shorter route',location:'Navigation core',objective:'Connect uplink to archive using at most two links.',intro:'The navigation system represents the station as a graph: nodes joined by edges. Find a route with the fewest edges.',lesson:'A graph is a set of nodes and connections. In an unweighted graph, a shortest path uses the fewest edges. Breadth-first search finds such paths by exploring one hop at a time.',nodes:[['uplink',12,50],['relay-a',39,22],['relay-b',39,77],['relay-c',65,77],['archive',87,50]],edges:[['uplink','relay-a',1],['relay-a','archive',1],['uplink','relay-b',1],['relay-b','relay-c',1],['relay-c','archive',1]],source:'uplink',target:'archive',maxEdges:2,hints:['The upper route and lower route both work. Count their edges.','The upper route goes uplink → relay A → archive.'],solution:[0,1],takeaway:'The shortest path depends on what you measure. For this unweighted graph, you minimized the number of hops.'},
- {id:'deliver-the-signal',kind:'network',chapter:'Networking',concept:'Packet forwarding',name:'Deliver the signal',location:'Communications deck',objective:'Build a continuous route through the router to the archive.',intro:'Power is restored, but the crew’s messages cannot reach the archive. Enable the cables that form a complete route.',lesson:'Routers forward packets toward a destination. A working route requires every link along the path to be available. This map simplifies forwarding to focus on connectivity.',nodes:[['uplink',12,50],['router',49,50],['sensor',49,18],['archive',87,50],['lab',49,84]],edges:[['uplink','router',1],['router','archive',1],['router','sensor',1],['router','lab',1]],source:'uplink',target:'archive',maxEdges:2,hints:['The sensor and lab are side branches. Your destination is the archive.','Enable uplink ↔ router and router ↔ archive.'],solution:[0,1],takeaway:'A packet needs an end-to-end path. Real routers choose a next hop from their forwarding tables.'},
- {id:'latency-matters',kind:'network',chapter:'Networking',concept:'Routing costs',name:'Fastest, not fewest',location:'Long-range relay',objective:'Deliver the signal with at most 12 ms of total link latency.',intro:'Every connection has a delay. The route with fewer hops is not always the fastest. Add the delays along each possible path.',lesson:'A weighted graph assigns a cost to each edge. Here the weight is simplified link latency in milliseconds. A minimum-cost path minimizes the sum, rather than the number of hops.',nodes:[['uplink',12,50],['relay-a',49,20],['relay-b',35,78],['relay-c',64,78],['archive',87,50]],edges:[['uplink','relay-a',9],['relay-a','archive',9],['uplink','relay-b',3],['relay-b','relay-c',4],['relay-c','archive',3]],source:'uplink',target:'archive',budget:12,hints:['The two-link route costs 18 ms. Try adding the costs on the longer route.','The lower route costs 3 + 4 + 3 = 10 ms.'],solution:[2,3,4],takeaway:'Different metrics produce different routes. Real routing protocols use defined metrics; hop count and latency are distinct.'},
- {id:'no-single-point',kind:'network',chapter:'Network design',concept:'Redundancy',name:'Keep the crew connected',location:'Station backbone',objective:'Keep uplink connected to archive after any one cable fails.',intro:'A meteor shower is approaching. Build a network with two independent routes, then run a failure test on every enabled cable.',lesson:'Redundant paths protect against a failed link. Two edge-disjoint paths share no cable, so losing one cable cannot break both routes. This mission tests cable failures, not router failures.',nodes:[['uplink',12,50],['relay-a',49,20],['relay-b',49,80],['archive',87,50]],edges:[['uplink','relay-a',1],['relay-a','archive',1],['uplink','relay-b',1],['relay-b','archive',1]],source:'uplink',target:'archive',redundant:true,hints:['A single route always has a cable whose failure disconnects it.','Enable all four links to create an upper route and a lower route.'],solution:[0,1,2,3],takeaway:'You designed link redundancy. A production design also considers device failures, capacity, physical cable routes, and operating cost.'}
-];
+const refs={
+  basics:{label:'Read more: Harvard CS50 — algorithms & binary',url:'https://cs50.harvard.edu/x/notes/0/'},
+  variables:{label:'Reference: MDN — let and block scope',url:'https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/let'},
+  loops:{label:'Reference: MDN — for loops',url:'https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/for'},
+  conditions:{label:'Reference: MDN — if…else',url:'https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/if...else'},
+  sort:{label:'Reference: NIST — bubble sort',url:'https://xlinux.nist.gov/dads/HTML/bubblesort.html'},
+  graph:{label:'Reference: MIT — shortest paths & Dijkstra',url:'https://ocw.mit.edu/courses/6-046j-introduction-to-algorithms-sma-5503-fall-2005/resources/lecture-17-shortest-paths-i-properties-dijkstras-algorithm-breadth-first-search/'}
+};
 export const levels=[
-  ...missionLibrary.slice(0,5),
-  {id:'speak-in-bits',kind:'bits',chapter:'Computer science',concept:'Binary numbers',name:'Speak in bits',location:'Memory bank',objective:'Encode the decimal number 13 using four bits.',intro:'The memory bank stores information as 0s and 1s. Flip the switches to encode the access code and open the next sector.',lesson:'Each binary position has a place value: 8, 4, 2, 1. A 1 includes its value; a 0 leaves it out. Add the enabled values to read the number.',target:13,hints:['13 is 8 + 4 + 1. The 2-value bit should stay off.','From left to right, set the bits to 1, 1, 0, 1.'],solution:[1,1,0,1],takeaway:'1101 in binary represents 8 + 4 + 1 = 13 in decimal. Four bits can represent 16 values, from 0 through 15.'},
-  {id:'restore-the-order',kind:'sort',chapter:'Computer science',concept:'Arrays & sorting',name:'Restore the order',location:'Archive index',objective:'Sort the data from smallest to largest using adjacent swaps.',intro:'The archive index is scrambled. Reorder its values so the station can search them efficiently. Each swap exchanges two neighboring entries.',lesson:'An array is an ordered sequence of values. Compare adjacent entries and swap them if the left value is larger. Repeating this across the array is the idea behind bubble sort.',values:[7,2,9,4,1],hints:['Move the largest number right by swapping it with smaller neighbors, then repeat.','The final order is 1, 2, 4, 7, 9. Try moving 9 to the end first.'],solution:[1,2,4,7,9],takeaway:'You sorted an array with local comparisons and swaps. Bubble sort is simple, but its worst-case work grows quadratically with the number of entries.'},
-  missionLibrary[5],
-  {...missionLibrary[7],chapter:'Computer science',concept:'Weighted graphs',name:'Find the fastest route'}
+  {
+    id:'first-contact',kind:'code',chapter:'Programming',concept:'Sequences',name:'First contact',location:'Docking bay',
+    objective:'Guide SQ-01 four tiles east to the power cell.',
+    intro:'The station is dark. Your repair drone follows instructions from top to bottom. Use the cyan arrow to see which way it faces.',
+    lesson:'A program gives a computer instructions. In this game, move() advances one tile in the direction the drone faces; move(3) advances three. The compass maps east to the lower-right diagonal.',
+    start:[1,3,0],goal:[5,3],tiles:row(1,3,5),
+    starter:'// Reach the power cell, four tiles ahead.\nmove();\n',
+    solution:'move(4);',
+    hints:['The drone faces east. Count four tile-to-tile moves from its starting tile.','Use four move(); commands, or pass 4 to move().'],
+    takeaway:'You wrote a simple algorithm: precise steps that solve this navigation problem.',reference:refs.basics
+  },
+  {
+    id:'around-the-corner',kind:'code',chapter:'Programming',concept:'Debugging',name:'A change of direction',location:'Service corridor',
+    objective:'Travel east, turn south, and reach the power cell.',
+    intro:'The direct route is sealed. Break the journey into moves and turns. If a move fails, the trace identifies the responsible instruction.',
+    lesson:'turnRight() rotates the drone 90° clockwise on the deck: east becomes south. turnLeft() rotates the other way. Turning does not change position. The isometric view makes right angles look like diagonal corners.',
+    start:[1,1,0],goal:[5,5],tiles:[...row(1,1,5),...column(5,2,4)],
+    starter:'move(4);\n// Turn, then follow the corridor.\n',
+    solution:'move(4);\nturnRight();\nmove(4);',
+    hints:['Travel four tiles east to the corner, then turn south.','After move(4), use turnRight(), then move four more tiles.'],
+    takeaway:'Debugging means comparing actual behavior with intended behavior, then fixing the responsible instruction.',reference:refs.basics
+  },
+  {
+    id:'repeat-the-route',kind:'code',chapter:'Programming',concept:'Loops',name:'Find the pattern',location:'Thermal array',require:'loop',
+    objective:'Use a for loop to repeat the staircase route.',
+    intro:'Three identical service modules stand between you and the cell. Describe their shared pattern once and repeat it.',
+    lesson:'A for loop repeats its body. let i = 0 initializes the counter; i < 3 is checked before every iteration; i++ adds one after the body. The body runs for i = 0, 1, and 2.',
+    start:[0,6,0],goal:[6,3],tiles:[[0,6],[1,6],[2,6],[2,5],[3,5],[4,5],[4,4],[5,4],[6,4],[6,3]],
+    starter:'for (let i = 0; i < 3; i++) {\n  move(2);\n  // Go north one tile, then face east again.\n}\n',
+    solution:'for (let i = 0; i < 3; i++) {\n  move(2);\n  turnLeft();\n  move();\n  turnRight();\n}',
+    hints:['Each module is two tiles east and one north. Finish each repetition facing east.','Inside the loop: move(2), turnLeft(), move(), then turnRight().'],
+    takeaway:'Your loop repeats the same navigation pattern. The counter belongs to the for loop and is not accessible after it.',reference:refs.loops
+  },
+  {
+    id:'name-the-distance',kind:'code',chapter:'Programming',concept:'Variables',name:'Store the answer',location:'Reactor access',require:'variable',
+    objective:'Reuse one named distance for both straight corridors.',
+    intro:'Both corridors have the same length. Store that distance in a variable and use the name twice.',
+    lesson:'let distance = 4 declares a variable and initializes it with 4. move(distance) then uses that value. let has block scope: a variable declared inside braces belongs to that block. JavaScript also supports reassignment; this sandbox currently focuses on declarations and reads.',
+    start:[1,1,0],goal:[5,5],tiles:[...row(1,1,5),...column(5,2,4)],
+    starter:'let distance = 2;\nmove(distance);\nturnRight();\nmove(distance);\n',
+    solution:'let distance = 4;\nmove(distance);\nturnRight();\nmove(distance);',
+    hints:['The starter turns too soon. Both straight corridors require four moves.','Change the stored distance from 2 to 4. Keep using the same name in both move calls.'],
+    takeaway:'Reusing a named value avoids repeating a literal. Changing this one declaration changes both movement distances.',reference:refs.variables
+  },
+  {
+    id:'read-the-room',kind:'code',chapter:'Programming',concept:'Conditionals',name:'Read the room',location:'Sensor chamber',require:'conditional',
+    objective:'Use canMove() in a conditional to navigate the corner.',
+    intro:'SQ-01 can check the tile ahead. Give it one rule for an open path and another for a blocked path.',
+    lesson:'canMove() is this game’s sensor function: it returns true when the next tile is traversable. if chooses its body when the condition is true; else chooses the alternative. The loop makes eight decisions: seven moves and one turn.',
+    start:[1,1,0],goal:[4,5],tiles:[...row(1,1,4),...column(4,2,4)],
+    starter:'for (let i = 0; i < 8; i++) {\n  if (canMove()) {\n    // Move when the path is open.\n  } else {\n    turnRight();\n  }\n}\n',
+    solution:'for (let i = 0; i < 8; i++) {\n  if (canMove()) {\n    move();\n  } else {\n    turnRight();\n  }\n}',
+    hints:['The open-path block is empty. Add a movement command there.','Put move(); inside the if block. The else block already handles the blocked path.'],
+    takeaway:'Conditionals let a program respond to its environment. This rule works for this route; it is not a general-purpose maze solver.',reference:refs.conditions
+  },
+  {
+    id:'speak-in-bits',kind:'bits',chapter:'Computer science',concept:'Binary numbers',name:'Speak in bits',location:'Memory bank',
+    objective:'Encode the unsigned decimal number 13 using four bits.',
+    intro:'The memory bank represents information with bits: 0 or 1. Flip them to encode the access code.',
+    lesson:'For these four unsigned binary digits, the place values are 8, 4, 2, and 1. A 1 includes its place value; a 0 contributes zero. The pattern 1101 means 8 + 4 + 0 + 1 = 13.',
+    target:13,hints:['13 is 8 + 4 + 1. Leave the 2-value bit off.','From left to right: 1, 1, 0, 1.'],solution:[1,1,0,1],
+    takeaway:'Four bits have 16 possible patterns. As an unsigned integer, they represent 0 through 15. Other encodings can give the same bits a different meaning.',reference:refs.basics
+  },
+  {
+    id:'restore-the-order',kind:'sort',chapter:'Computer science',concept:'Arrays & sorting',name:'Restore the order',location:'Archive index',
+    objective:'Sort the entries from smallest to largest with adjacent swaps.',
+    intro:'The archive index is scrambled. Reorder its entries by swapping neighboring values.',
+    lesson:'An array is an ordered sequence of entries; JavaScript array indices start at 0. This puzzle permits any adjacent swap. Bubble sort is a particular algorithm: scan adjacent pairs in order, swap out-of-order pairs, and repeat passes until sorted.',
+    values:[7,2,9,4,1],hints:['Try moving the largest value right by swapping it past smaller neighbors.','The final order is 1, 2, 4, 7, 9. Move 9 to the end, then work on the earlier entries.'],solution:[1,2,4,7,9],
+    takeaway:'You sorted an array with adjacent swaps. Following a systematic left-to-right pass repeatedly gives bubble sort, which has quadratic worst-case time. Arbitrary swaps need not follow that algorithm.',reference:refs.sort
+  },
+  {
+    id:'fewest-hops',kind:'network',chapter:'Computer science',concept:'Graphs & paths',name:'A shorter route',location:'Navigation core',
+    objective:'Enable a route from uplink to archive with at most two hops.',
+    intro:'The station is a graph: nodes connected by edges. Each traversed edge is one hop. Enable a short route and test it.',
+    lesson:'In an unweighted graph, a shortest path uses the fewest edges. Breadth-first search finds one by exploring nodes in increasing hop distance. This map treats every link as usable in both directions.',
+    nodes:[['uplink',12,50],['relay-a',39,22],['relay-b',39,77],['relay-c',65,77],['archive',87,50]],
+    edges:[['uplink','relay-a',1],['relay-a','archive',1],['uplink','relay-b',1],['relay-b','relay-c',1],['relay-c','archive',1]],source:'uplink',target:'archive',maxEdges:2,
+    hints:['Both routes connect the endpoints. Count the edges along each one.','The upper path is uplink → relay A → archive: two hops.'],solution:[0,1],
+    takeaway:'You minimized hops on an unweighted graph. Only traversed edges contribute to path length; unused enabled branches do not.',reference:refs.graph
+  },
+  {
+    id:'latency-matters',kind:'network',chapter:'Computer science',concept:'Weighted graphs',name:'Find the fastest route',location:'Long-range relay',
+    objective:'Enable a route whose displayed delays total at most 12 ms.',
+    intro:'Every link has a delay. A route with fewer hops can still be slower. Compare the sum of weights along each path.',
+    lesson:'A weighted graph assigns a cost to each edge. Here the weights model fixed link delays. Dijkstra’s algorithm finds shortest paths with nonnegative weights. Real packet delay also depends on transmission, processing, and queues; this puzzle omits those effects.',
+    nodes:[['uplink',12,50],['relay-a',49,20],['relay-b',35,78],['relay-c',64,78],['archive',87,50]],
+    edges:[['uplink','relay-a',9],['relay-a','archive',9],['uplink','relay-b',3],['relay-b','relay-c',4],['relay-c','archive',3]],source:'uplink',target:'archive',budget:12,
+    hints:['The two-hop route takes 18 ms in this model. Add the delays on the three-hop route.','The lower route costs 3 + 4 + 3 = 10 ms.'],solution:[2,3,4],
+    takeaway:'The minimum-weight path costs 10 ms here, despite using more hops. Costs are summed along the chosen route, not across every enabled cable.',reference:refs.graph
+  }
 ];

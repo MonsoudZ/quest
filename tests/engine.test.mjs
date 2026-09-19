@@ -8,7 +8,7 @@ test('every published mission has a working solution',()=>{
   for(const level of levels){const result=level.kind==='code'?simulate(level,level.solution):level.kind==='network'?evaluateNetwork(level,level.solution):evaluatePuzzle(level,level.solution);assert.equal(result.success,true,level.id);}
 });
 test('a collision reports the responsible line and never moves through a wall',()=>{
-  const result=simulate(levels[0],'move(5);');assert.equal(result.success,false);assert.equal(result.state.x,5);assert.equal(result.steps.at(-1).line,1);assert.match(result.error,/wall/);
+  const result=simulate(levels[0],'move(5);');assert.equal(result.success,false);assert.equal(result.state.x,5);assert.equal(result.steps.at(-1).line,1);assert.match(result.error,/no traversable tile/);
 });
 test('syntax errors and arbitrary JavaScript are rejected without execution',()=>{
   assert.throws(()=>compile('move(3)'),/Expected/);assert.throws(()=>compile('alert(1);'),/Unknown command/);assert.throws(()=>compile('window.location = 2;'),/Unexpected character/);assert.throws(()=>compile('x'.repeat(12001)),/12,000/);

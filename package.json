@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "node server.mjs",
-    "test": "node --test tests/engine.test.mjs",
-    "check": "node --check dist/game.js && node --check dist/engine.js && node --check dist/levels.js && node --check dist/builder.js && node --check dist/webmcp.js"
+    "test": "node --test tests/*.test.mjs",
+    "check": "node --check dist/game.js && node --check dist/engine.js && node --check dist/levels.js && node --check dist/builder.js && node --check dist/webmcp.js && node --check dist/scene.js"
   }
 }

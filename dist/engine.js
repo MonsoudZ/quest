@@ -18,7 +18,8 @@ export function compile(source) {
     if (!token || (value && token.value !== value)) throw new Error(`Expected ${value || 'a value'}${token ? ` on line ${token.line}, found “${token.value}”` : ' at the end of your program'}.`);
     return token;
   };
-  const name = () => { const t=take(); if(!/^[A-Za-z_]\w*$/.test(t.value)) throw new Error(`Expected a name on line ${t.line}.`); return t.value; };
+  const reserved=new Set(['let','for','if','else','const','var','true','false','null','return','function','class','new','this','while','do','break','continue','switch','case','default','try','catch','throw','delete','typeof','void','in','instanceof','with','yield','await','import','export','super','extends','debugger','move','turnLeft','turnRight','canMove']);
+  const name = () => { const t=take(); if(!/^[A-Za-z_]\w*$/.test(t.value)||reserved.has(t.value)) throw new Error(`Choose a variable name that is not a keyword or game command on line ${t.line}.`); return t.value; };
   const value = () => {const t=take(); if(!/^(\d+|[A-Za-z_]\w*)$/.test(t.value)) throw new Error(`Use a number or variable on line ${t.line}.`); return t.value;};
   function block(depth=0) {
     if(depth>12) throw new Error('Keep nesting to 12 blocks or fewer.');
@@ -38,7 +39,9 @@ export function compile(source) {
     if(!['move','turnLeft','turnRight'].includes(first.value)) throw new Error(`Unknown command “${first.value}” on line ${line}. Try move(), turnLeft(), or turnRight().`);
     take('(');let count='1';if(first.value==='move'&&peek()!==')')count=value();take(')');take(';');return {type:first.value,count,line};
   }
-  const ast=[];while(peek()) ast.push(statement());return ast;
+  const ast=[];while(peek()) ast.push(statement());
+  function validate(items){const names=new Set();for(const node of items){if(node.type==='let'){if(names.has(node.id))throw new Error(`“${node.id}” is already declared in this block (line ${node.line}).`);names.add(node.id);}if(node.body)validate(node.body);if(node.other)validate(node.other);}}
+  validate(ast);return ast;
 }
 
 export function evaluatePuzzle(level,values){
@@ -57,42 +60,64 @@ export function evaluatePuzzle(level,values){
 
 export const directions=[[1,0],[0,1],[-1,0],[0,-1]];
 export function simulate(level, source) {
-  const ast=compile(source);const env=Object.create(null);const steps=[];
-  let state={x:level.start[0],y:level.start[1],dir:level.start[2]};let operations=0;
+  const ast=compile(source),steps=[],uninitialized=Symbol('uninitialized');
+  const stats={loopMoves:0,conditionalMoves:0,variableMoves:new Map()};
+  let state={x:level.start[0],y:level.start[1],dir:level.start[2]},operations=0;
   const allowed=new Set(level.tiles.map(p=>p.join(',')));
-  const number=v=>{const n=/^\d+$/.test(v)?Number(v):env[v];if(!Number.isInteger(n)||n<0||n>100)throw new Error(`“${v}” must be a whole number from 0 to 100. Declare variables with let first.`);return n;};
+  function scope(items,parent=null){return {parent,values:new Map(items.filter(n=>n.type==='let').map(n=>[n.id,uninitialized]))};}
+  function read(id,env){if(!env)throw new Error(`“${id}” is not defined here. Declare variables with let first; a block’s variables stay inside that block.`);if(env.values.has(id)){const n=env.values.get(id);if(n===uninitialized)throw new Error(`Cannot use “${id}” before its let declaration has initialized it.`);return n;}return read(id,env.parent);}
+  function number(value,env){const n=/^\d+$/.test(value)?Number(value):read(value,env);if(!Number.isInteger(n)||n<0||n>100)throw new Error(`This game accepts whole numbers from 0 to 100. JavaScript itself supports other numbers.`);return n;}
   const canMove=()=>{const [dx,dy]=directions[state.dir];return allowed.has(`${state.x+dx},${state.y+dy}`);};
-  function record(node,label,error=null) {steps.push({...state,line:node.line,label,error});}
-  function execute(items) {
-    for(const node of items) {
-      if(++operations>1000)throw new Error('Program too long. Try fewer repetitions.');
-      if(node.type==='let'){env[node.id]=number(node.val);record(node,`${node.id} = ${env[node.id]}`);}
+  function budget(){if(++operations>1000)throw new Error('Program too long. Try fewer repetitions.');}
+  function record(node,label,error=null){if(steps.length>=400)throw new Error('Program too long. Keep the trace under 400 steps.');steps.push({...state,line:node.line,label,error});}
+  function execute(items,parent=null,loopDepth=0,conditionDepth=0){
+    const env=scope(items,parent);
+    for(const node of items){
+      budget();
+      if(node.type==='let'){const n=number(node.val,env);env.values.set(node.id,n);record(node,`${node.id} = ${n}`);}
       else if(node.type==='for'){
-        const start=number(node.start),end=number(node.end),prior=env[node.id];
-        for(let j=start;j<end;j++){env[node.id]=j;execute(node.body);}if(prior===undefined)delete env[node.id];else env[node.id]=prior;
-      } else if(node.type==='if') {const clear=canMove();record(node,`canMove() → ${clear}`);execute(clear!==node.negate?node.body:node.other);}
-      else if(node.type==='move'){
-        const count=number(node.count);
+        const loop={parent:env,values:new Map([[node.id,uninitialized]])};
+        loop.values.set(node.id,number(node.start,loop));
+        while(read(node.id,loop)<number(node.end,loop)){budget();execute(node.body,loop,loopDepth+1,conditionDepth);loop.values.set(node.id,read(node.id,loop)+1);}
+      }else if(node.type==='if'){
+        const clear=canMove();record(node,`canMove() → ${clear}`);execute(clear!==node.negate?node.body:node.other,env,loopDepth,conditionDepth+1);
+      }else if(node.type==='move'){
+        const count=number(node.count,env);
+        if(count>0&&!/^\d+$/.test(node.count))stats.variableMoves.set(node.count,(stats.variableMoves.get(node.count)||0)+1);
         for(let j=0;j<count;j++){
-          if(steps.length>=400)throw new Error('Too many actions. Keep your program under 400 steps.');
-          if(!canMove()){record(node,'Movement stopped','There’s a wall ahead. Turn before moving, or check canMove().');throw {collision:true};}
-          const [dx,dy]=directions[state.dir];state={...state,x:state.x+dx,y:state.y+dy};record(node,'Moved forward');
+          if(!canMove()){record(node,'Movement stopped','There’s no traversable tile ahead. Turn before moving, or check canMove().');throw {collision:true};}
+          const [dx,dy]=directions[state.dir];state={...state,x:state.x+dx,y:state.y+dy};
+          if(loopDepth)stats.loopMoves++;if(conditionDepth)stats.conditionalMoves++;record(node,'Moved forward');
         }
-      } else {state={...state,dir:(state.dir+(node.type==='turnRight'?1:3))%4};record(node,node.type==='turnRight'?'Turned right':'Turned left');}
+      }else{state={...state,dir:(state.dir+(node.type==='turnRight'?1:3))%4};record(node,node.type==='turnRight'?'Turned right':'Turned left');}
     }
   }
   let error=null;
   try{execute(ast);}catch(e){if(e.collision)error=steps.at(-1).error;else throw e;}
-  return {steps,state,success:!error&&state.x===level.goal[0]&&state.y===level.goal[1],error};
+  const reached=state.x===level.goal[0]&&state.y===level.goal[1];
+  if(reached&&!error){
+    if(level.require==='loop'&&!stats.loopMoves)error='You reached the cell. Now put movement inside a for loop to complete the loop lesson.';
+    if(level.require==='variable'&&![...stats.variableMoves.values()].some(n=>n>=2))error='You reached the cell. Reuse the same named distance in both move calls to complete the variable lesson.';
+    if(level.require==='conditional'&&!stats.conditionalMoves)error='You reached the cell. Use if (canMove()) to decide when to move and complete this lesson.';
+  }
+  return {steps,state,success:!error&&reached,error};
 }
 
 export function evaluateNetwork(level, selected) {
-  const edges=level.edges.filter((e,i)=>selected.includes(i));
-  const reachable=(excluded=-1)=>{const found=new Set([level.source]);let changed=true;while(changed){changed=false;edges.forEach((e,i)=>{if(i===excluded)return;if(found.has(e[0])&&!found.has(e[1])){found.add(e[1]);changed=true;}if(found.has(e[1])&&!found.has(e[0])){found.add(e[0]);changed=true;}});}return found.has(level.target);};
-  if(!reachable())return {success:false,message:'The signal cannot reach the destination. Connect a continuous path from uplink to archive.'};
-  const cost=edges.reduce((sum,e)=>sum+e[2],0);
-  if(level.maxEdges&&edges.length>level.maxEdges)return {success:false,message:`Use at most ${level.maxEdges} links. You currently have ${edges.length}.`};
-  if(level.budget&&cost>level.budget)return {success:false,message:`Your links total ${cost} ms. Find a route of ${level.budget} ms or less; fewer hops can still take longer.`};
-  if(level.redundant){const failure=edges.findIndex((_,i)=>!reachable(i));if(failure>=0)return {success:false,failedEdge:level.edges.indexOf(edges[failure]),message:'One cable failure can still cut off the archive. Add a second independent route.'};}
-  return {success:true,cost,message:level.redundant?'Every single-cable failure leaves a working route. Your network is resilient.':`Signal delivered through ${edges.length} links${level.budget?` with ${cost} ms of total latency`:''}.`};
+  if(!Array.isArray(selected)||selected.some(i=>!Number.isInteger(i)||!level.edges[i]))throw new Error('Choose valid links.');
+  const active=new Set(selected),dist=new Map([[level.source,0]]),previous=new Map(),pending=new Set(level.nodes.map(n=>n[0]));
+  while(pending.size){
+    const node=[...pending].reduce((best,n)=>(dist.get(n)??Infinity)<(dist.get(best)??Infinity)?n:best);
+    if(!Number.isFinite(dist.get(node)))break;pending.delete(node);if(node===level.target)break;
+    for(const i of active){const [a,b,weight]=level.edges[i],neighbor=a===node?b:b===node?a:null;if(!neighbor||!pending.has(neighbor))continue;
+      const candidate=dist.get(node)+(level.budget?weight:1);if(candidate<(dist.get(neighbor)??Infinity)){dist.set(neighbor,candidate);previous.set(neighbor,{node,index:i});}
+    }
+  }
+  if(!dist.has(level.target))return {success:false,path:[],pathEdges:[],cost:null,message:'The signal cannot reach the archive. Enable a continuous path from uplink to archive.'};
+  const path=[level.target],pathEdges=[];let cursor=level.target;
+  while(cursor!==level.source){const step=previous.get(cursor);pathEdges.unshift(step.index);path.unshift(step.node);cursor=step.node;}
+  const cost=pathEdges.reduce((sum,i)=>sum+level.edges[i][2],0),result={path,pathEdges,cost,hops:pathEdges.length};
+  if(level.maxEdges&&result.hops>level.maxEdges)return {...result,success:false,message:`The shortest enabled route has ${result.hops} hops. Find one with at most ${level.maxEdges}.`};
+  if(level.budget&&cost>level.budget)return {...result,success:false,message:`The fastest enabled route takes ${cost} ms. Find one at or below ${level.budget} ms. Fewer hops can still take longer.`};
+  return {...result,success:true,message:`Signal delivered in ${result.hops} hops${level.budget?` with ${cost} ms of modelled path latency`:''}. Only the links used by this route count.`};
 }
