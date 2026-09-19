@@ -639,3 +639,14 @@ kbd { padding:2px 5px; border:1px solid var(--line-strong); border-radius:4px; b
   .city-toolbar .component-option { flex:1; }
   .city-metrics { grid-template-columns:1fr; }
 }
+.city-legend { display:flex; flex-wrap:wrap; gap:var(--s-2) var(--s-4); }
+.city-key { display:inline-flex; align-items:center; gap:var(--s-2); font-size:var(--text-xs); color:var(--text-dim); }
+.city-swatch { flex:none; display:inline-block; width:22px; height:0; border-top:2px solid var(--line-strong); }
+.city-swatch.is-fibre { border-top-width:6px; }
+.city-swatch.is-copper { border-top-width:4px; }
+.city-swatch.is-microwave { border-top-width:2px; border-top-style:dashed; }
+.city-swatch.is-cool { border-top-width:5px; border-top-color:var(--success); }
+.city-swatch.is-warm { border-top-width:5px; border-top-color:var(--warn); }
+.city-swatch.is-hot { border-top-width:5px; border-top-color:var(--danger); }
+.city-swatch.is-starved, .city-swatch.is-offline { width:18px; height:12px; border:1.5px solid var(--warn); border-radius:4px; }
+.city-swatch.is-offline { border-color:var(--danger); border-style:dashed; }

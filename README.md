@@ -37,7 +37,9 @@ The missions teach a concept each; the build modes are where you apply them at s
 contracts that have to be met all at once.
 
 **Signal City** (networking). Lay cable between districts and the model tells you what the city
-gets: which route each district's traffic takes, how loaded every cable is, how much of the
+gets. Each contract keeps its own city, so switching between them compares designs instead of
+throwing work away, and a legend under the map says what the line weights and load colours mean.
+The model reports: which route each district's traffic takes, how loaded every cable is, how much of the
 demand actually arrives, what the round trip looks like once queues build, and who loses the
 uplink when a single cable is cut. Five contracts move from "connect everything within budget"
 to "survive any one cut without losing more than 40% of the traffic". Copper is cheap and short,
@@ -63,6 +65,7 @@ the local development server, and the host serves `dist/` in production.
 | `dist/puzzles.js` | One state/widget/diagram/verdict interface for every non-coding mission |
 | `dist/levels.js` | Mission content, including the solution each mission's tests check |
 | `dist/game.js`, `dist/builder.js`, `dist/citylab.js`, `dist/scene.js` | Interface, city map, and isometric renderer |
+| `dist/ui.js` | The few behaviours all three modes share |
 | `dist/theme.css` | Design tokens, base elements, and the light and dark colour schemes |
 | `dist/app.css` | Components, composed only from those tokens |
 
@@ -72,6 +75,11 @@ One design system, in two files: `theme.css` holds the tokens (type scale, 4px s
 rhythm, elevation, motion, and every colour) and `app.css` composes components from them
 only — no component hard-codes a colour or a size. That is what makes a change to the look
 a change in one place.
+
+Running anything brings its outcome into view: the result banner after a win, the mission log
+after a failure, the verdict after a load test or a city run. It scrolls the smallest distance
+that does it, and never moves a result the player can already see — before that, finishing a
+mission on a 1366×768 screen changed nothing visible at all.
 
 The colour scheme follows the operating system and can be overridden with the toggle in the
 header, which is then remembered. Text meets WCAG AA contrast in both schemes, icon-only
@@ -132,7 +140,7 @@ and the tests check them against independent implementations.
 
 ## Validation
 
-Run `npm test` and `npm run check`. 83 tests across eight files:
+Run `npm test` and `npm run check`. 93 tests across nine files:
 
 - `tests/lang.test.mjs` — 30 programs run in both the interpreter and real JavaScript via
   `node:vm` and compared, plus the refusals, the deliberate deviations, and the bounds.
@@ -150,6 +158,8 @@ Run `npm test` and `npm run check`. 83 tests across eight files:
   path, max-min fair sharing against a hand-computed allocation, cut analysis against an
   independent reachability search, and a check that each contract fails when the technique it
   teaches is removed.
+- `tests/ui.test.mjs` — when the page should scroll an outcome into view and, just as
+  importantly, when it should leave the page alone.
 - `tests/page.test.mjs` — the checks a no-build static page otherwise lacks: every file the
   page links to exists, every id the interface looks up is in the markup, every class it
   renders has a style rule, every custom property it uses is defined, and the accessibility
@@ -162,8 +172,10 @@ Run `npm test` and `npm run check`. 83 tests across eight files:
 A browser pass was run with Playwright against the development server: all 31 missions complete
 from their own "show a solution" button, all 5 architecture contracts and all 5 city contracts
 are met, a city built by clicking the map passes its contract and fails again when cables are
-removed, and the page reports no script errors. The layout was swept from 320px to 1920px in
-both colour schemes across all three modes, with no horizontal overflow anywhere.
+removed, and the page reports no script errors. Outcomes were checked to land on screen at 1440×960,
+1366×768, and 390×844 for wins, failures, load tests, and city runs. The layout was swept from
+320px to 1920px in both colour schemes across all three modes, with no horizontal overflow
+anywhere.
 
 Optional WebMCP tools feature-detect `document.modelContext`. Registration and the tool actions
 have not been exercised in a browser that supports it; normal play does not require it.

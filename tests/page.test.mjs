@@ -9,7 +9,7 @@ import {fileURLToPath} from 'node:url';
 const dist = resolve(dirname(fileURLToPath(import.meta.url)), '../dist');
 const read = name => readFileSync(resolve(dist, name), 'utf8');
 const html = read('index.html');
-const scripts = ['game.js', 'builder.js', 'citylab.js', 'scene.js', 'webmcp.js', 'puzzles.js'].map(read).join('\n');
+const scripts = ['game.js', 'builder.js', 'citylab.js', 'scene.js', 'webmcp.js', 'puzzles.js', 'ui.js'].map(read).join('\n');
 const styles = ['theme.css', 'app.css'].map(read).join('\n');
 
 test('every local file the page links to exists', () => {
@@ -78,6 +78,22 @@ test('the stylesheets define both colour schemes and every token they use', () =
   const used = new Set([...styles.matchAll(/var\((--[\w-]+)/g)].map(match => match[1]));
   const undefinedTokens = [...used].filter(token => !defined.has(token));
   assert.deepEqual(undefinedTokens, [], `these custom properties are used but never defined: ${undefinedTokens.join(', ')}`);
+});
+
+test('every mode brings its outcome into view rather than leaving it below the fold', () => {
+  // The browser pass checks that this works; this checks it is still wired up,
+  // because the failure mode is silent: the player simply sees nothing happen.
+  for (const [file, expected] of [['game.js', 3], ['builder.js', 1], ['citylab.js', 1]]) {
+    const source = read(file);
+    assert.match(source, /from '\.\/ui\.js'/, `${file} should use the shared reveal helper`);
+    const calls = (source.match(/reveal\(/g) ?? []).length;
+    assert.ok(calls >= expected, `${file} calls reveal() ${calls} times, expected at least ${expected}`);
+  }
+  // The mission screen has to cover a win and both kinds of failure.
+  const game = read('game.js');
+  for (const site of ['reveal($(\'result\'))', 'reveal(outcomePanel())']) {
+    assert.ok(game.includes(site), `game.js is missing ${site}`);
+  }
 });
 
 test('the page keeps its accessibility affordances', () => {

@@ -5,6 +5,7 @@ import {mountBuilder} from './builder.js';
 import {mountCity} from './citylab.js';
 import {registerGameTools} from './webmcp.js';
 import {createScene} from './scene.js';
+import {reveal, reduceMotion} from './ui.js';
 
 const $ = id => document.getElementById(id);
 const saveKey = 'signal-quest-v2';
@@ -47,7 +48,6 @@ function tone(success = true) {
     oscillator.start(); oscillator.stop(audioContext.currentTime + .2);
   } catch { /* audio is optional */ }
 }
-const reduceMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 const slug = text => text.toLowerCase().replace(/[^a-z0-9]+/g, '-');
 const chevron = '<svg class="chapter-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>';
@@ -385,6 +385,8 @@ function act(action) {
   renderArena();
 }
 
+const outcomePanel = () => document.querySelector('.trace-panel');
+
 function win() {
   const item = level();
   completed.add(item.id);
@@ -397,6 +399,7 @@ function win() {
   $('next').textContent = current === levels.length - 1 ? 'Replay the expedition ↺' : 'Next mission →';
   log('Objective achieved. System restored.', 'success');
   tone();
+  reveal($('result'));
 }
 
 function prepare() {
@@ -420,6 +423,7 @@ function prepare() {
     trace = null;
     log(error.message, 'error');
     tone(false);
+    reveal(outcomePanel());
     return false;
   }
 }
@@ -431,8 +435,9 @@ function applyStep() {
   $('step-count').textContent = `Step ${traceIndex} / ${trace.steps.length}`;
   log(`L${step.line} · ${step.label}`, step.error ? 'error' : '');
   if (traceIndex === trace.steps.length) {
-    if (trace.success) win();
-    else log(trace.error || 'Program finished. The cell is still out of reach — adjust your instructions and try again.', 'error');
+    if (trace.success) { win(); return; }
+    log(trace.error || 'Program finished. The cell is still out of reach — adjust your instructions and try again.', 'error');
+    reveal(outcomePanel());
   }
 }
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -449,7 +454,7 @@ async function run() {
     for (const line of algoResult.output.slice(0, 12)) log(`print → ${line}`);
     $('step-count').textContent = `${algoResult.cases.filter(entry => entry.passed && !entry.overGate).length} / ${item.cases.length} cases`;
     if (algoResult.success) { log(`All ${item.cases.length} cases pass.`, 'success'); win(); }
-    else { log(algoResult.error, 'error'); tone(false); }
+    else { log(algoResult.error, 'error'); tone(false); reveal(outcomePanel()); }
     return;
   }
   if (isPuzzle(item)) {
@@ -469,7 +474,7 @@ async function run() {
     const result = evaluate(item, puzzleState);
     $('step-count').textContent = 'Check complete';
     log(result.message, result.success ? 'success' : 'error');
-    if (result.success) win(); else tone(false);
+    if (result.success) win(); else { tone(false); reveal(outcomePanel()); }
     running = false;
     controls();
     if (animated) renderArena();

@@ -1,5 +1,6 @@
 // Signal City: the interface for the networking build mode. The model lives in
 // city.js; this file draws the map and collects what the player lays down.
+import {reveal} from './ui.js';
 import {grid, districts, technologies, scenarios, scenarioDistricts, referenceDesigns, evaluateCity, blocksBetween} from './city.js';
 
 const saveKey = 'signal-quest-city-v1';
@@ -27,22 +28,34 @@ const band = utilisation => utilisation >= 0.85 ? 'hot' : utilisation >= 0.6 ? '
 
 export function mountCity(container) {
   let index = 0;
-  let links = [];
+  let designs = {};            // contract id -> the cables laid for it
+  let links = [];              // the cables for the contract on screen
   let tech = 'fibre';
   let selected = null;
   let verdict = null;
   let completed = [];
+  const contractId = () => scenarios[index].id;
   try {
     const saved = JSON.parse(localStorage.getItem(saveKey) || 'null');
     if (saved) {
-      evaluateCity({links:saved.links ?? []}, saved.index ?? 0);
-      index = saved.index ?? 0;
-      links = saved.links ?? [];
+      index = Number.isInteger(saved.index) && scenarios[saved.index] ? saved.index : 0;
+      // A stored city is kept only if it still validates against its own
+      // contract, so a change to the map cannot leave a broken one behind.
+      const stored = saved.designs ?? (Array.isArray(saved.links) ? {[scenarios[index].id]:saved.links} : {});
+      for (const [id, city] of Object.entries(stored)) {
+        const position = scenarios.findIndex(scenario => scenario.id === id);
+        if (position < 0 || !Array.isArray(city)) continue;
+        try { evaluateCity({links:city}, position); designs[id] = city; } catch { /* dropped */ }
+      }
+      links = designs[contractId()] ?? [];
       tech = technologies.some(technology => technology.id === saved.tech) ? saved.tech : 'fibre';
       completed = Array.isArray(saved.completed) ? saved.completed.filter(entry => Number.isInteger(entry) && scenarios[entry]) : [];
     }
   } catch { /* a stored city that no longer validates is discarded */ }
-  const persist = () => { try { localStorage.setItem(saveKey, JSON.stringify({index, links, tech, completed})); } catch { /* play continues without saved progress */ } };
+  const persist = () => {
+    designs[contractId()] = links;
+    try { localStorage.setItem(saveKey, JSON.stringify({index, designs, tech, completed})); } catch { /* play continues without saved progress */ }
+  };
 
   const available = () => scenarioDistricts(scenarios[index]);
   const canLink = (a, b) => {
@@ -162,7 +175,17 @@ export function mountCity(container) {
           <div class="segmented">${technologies.map(item => `<button class="component-option ${item.id === tech ? 'chosen' : ''}" data-tech="${item.id}" aria-pressed="${item.id === tech}"><span>${item.name}</span><span>${rate(item.capacityMbps)} · ${item.costPerBlock}/block</span></button>`).join('')}</div>
         </div>
         <div class="city-canvas"></div>
-        <p class="model-note">${technology.note} It reaches ${technology.reachBlocks} blocks, and a block of it costs ${technology.costPerBlock} credits. Click a cable to remove it, or use the list.</p>
+        <div class="city-legend">
+          <span class="city-key"><i class="city-swatch is-fibre"></i>Fibre</span>
+          <span class="city-key"><i class="city-swatch is-copper"></i>Copper</span>
+          <span class="city-key"><i class="city-swatch is-microwave"></i>Microwave</span>
+          <span class="city-key"><i class="city-swatch is-cool"></i>Under 60% loaded</span>
+          <span class="city-key"><i class="city-swatch is-warm"></i>60–85%</span>
+          <span class="city-key"><i class="city-swatch is-hot"></i>Over 85%</span>
+          <span class="city-key"><i class="city-swatch is-starved"></i>Short of traffic</span>
+          <span class="city-key"><i class="city-swatch is-offline"></i>No route out</span>
+        </div>
+        <p class="model-note">${technology.note} It reaches ${technology.reachBlocks} blocks, and a block of it costs ${technology.costPerBlock} credits. Click a cable to remove it, or use the list. Cables show their load once you run the city.</p>
       </section>
 
       <section class="panel-block city-build">
@@ -225,8 +248,9 @@ export function mountCity(container) {
 
     container.querySelector('.city-canvas').append(map(shown));
     container.querySelector('#city-contract').addEventListener('change', event => {
+      designs[contractId()] = links;
       index = Number(event.target.value);
-      links = [];
+      links = (designs[contractId()] ?? []).map(link => ({...link}));
       selected = null;
       verdict = null;
       persist();
@@ -256,6 +280,7 @@ export function mountCity(container) {
       if (verdict?.success && !completed.includes(index)) completed.push(index);
       persist();
       render();
+      reveal(container.querySelector('#city-result'));
     });
     container.querySelector('#city-reference').addEventListener('click', () => {
       links = referenceDesigns[scenarios[index].id].map(link => ({...link}));

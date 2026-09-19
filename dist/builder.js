@@ -1,5 +1,6 @@
 // The architecture lab: the second game mode. The model lives in systems.js;
 // this file is only the interface for it.
+import {reveal} from './ui.js';
 import {catalog, scenarios, shardOptions, replicaOptions, regionOptions, maxServers, maxWorkers, modelConstants, defaultDesign, evaluateArchitecture, search} from './systems.js';
 
 const saveKey = 'signal-quest-architecture-v1';
@@ -172,6 +173,7 @@ export function mountBuilder(container) {
       if (verdict.success && !completed.includes(index)) completed.push(index);
       persist();
       render();
+      reveal(container.querySelector('#benchmark-result'));
     });
     container.querySelector('#reference').addEventListener('click', () => {
       const best = search(index);
