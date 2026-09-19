@@ -55,7 +55,7 @@ function tone(success = true) {
 const slug = text => text.toLowerCase().replace(/[^a-z0-9]+/g, '-');
 const chevron = '<svg class="chapter-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>';
 
-// The rail groups 44 missions into four collapsible chapters, each showing how
+// The rail groups 49 missions into four collapsible chapters, each showing how
 // much of it is finished. The chapter you are in is always open.
 function navigation() {
   const container = $('missions');

@@ -1,7 +1,7 @@
 # Signal Quest
 
 A game that teaches programming, computer science, networking, and system design by making you
-do each of them. Forty-four missions across four chapters, plus an architecture lab where you
+do each of them. Forty-nine missions across four chapters, plus an architecture lab where you
 design a service against a latency, availability, and cost target.
 
 ## Play
@@ -31,10 +31,28 @@ The chapter closes by reading the same function in JavaScript, Python, Ruby, Go,
 missions carry a read-only **language panel** showing the same idea in all five, with a note on
 what each language makes you declare. Only the JavaScript subset runs; the rest is for reading.
 
-**Chapter 2 — Computer science** (8 missions). Binary, bytes and hexadecimal, two's-complement
+**Chapter 2 — Computer science** (13 missions). Binary, bytes and hexadecimal, two's-complement
 signed integers, sorting by adjacent swaps, hash tables and collisions, growth rates, and shortest
 paths on unweighted and weighted graphs. The missions that ask you to *write* an algorithm moved
-to Chapter 1; what is left is the ideas, taught through models you manipulate directly.
+to Chapter 1; what is left is the ideas, taught through models you manipulate directly. Five of
+them are about the machine underneath rather than the algorithm on top:
+
+- **floating point** — a till that is a few cents out every evening, with nothing broken and the
+  arithmetic correct. Single precision makes it worse and adding smallest first makes it smaller;
+  only counting whole minor units makes it exact. The panel prints 0.1 to its last digit;
+- **character encoding** — a name field that has to hold every crew member's name. A string has
+  three lengths that disagree, a byte-wise cut can stop halfway through a character, and a field
+  counted in bytes quietly discriminates against names that need more of them;
+- **locality** — two transposes with identical arithmetic, identical output, and four and a half
+  times the memory traffic between them. Tiling fixes it, and only while the tile still fits in
+  the cache;
+- **error correction** — a word that came back from memory with one bit wrong. Three parity
+  checks over overlapping positions spell out which one, in binary. Flip it back, and only it;
+- **trees and balance** — a catalogue index built by loading keys in the order they were
+  catalogued, which was sorted, so it is a linked list with extra pointers.
+
+The first and the fourth are diagnosis missions; the third is the same
+correct-but-wrong-shaped-answer idea as Chapter 1's refactor mission, in hardware terms.
 
 **Chapter 3 — Networking** (11 missions). Protocol layering and the maximum segment size, CIDR
 addressing, variable-length subnet planning inside a single /24, longest-prefix-match forwarding,
@@ -125,7 +143,7 @@ mission on a 1366×768 screen changed nothing visible at all.
 The colour scheme follows the operating system and can be overridden with the toggle in the
 header, which is then remembered. Text meets WCAG AA contrast in both schemes, icon-only
 controls on small screens keep their labels in the accessibility tree, and everything honours
-`prefers-reduced-motion`. The 44 missions are grouped into four collapsible chapters, each
+`prefers-reduced-motion`. The 49 missions are grouped into four collapsible chapters, each
 carrying its own progress and accent colour; on a phone the rail becomes a drawer over the
 mission it is currently on.
 
@@ -195,6 +213,12 @@ and so does this list:
 - **Estimation.** The estimators use powers of ten for storage and bandwidth and ignore the
   ~7% difference from powers of two, because an estimate scored on its order of magnitude cannot
   tell the difference.
+- **The cache.** Fully associative with least-recently-used eviction, one level, no prefetching,
+  no write-back traffic and no set conflicts. Real caches are set-associative, which adds conflict
+  misses the model cannot show, and real hardware prefetches sequential lines, which makes the
+  good order look better still. The floating-point arithmetic in the same chapter is not a model
+  at all: it is IEEE 754 running on the same hardware as everything else, and `exactValue` prints
+  what is actually stored.
 - **Graph missions.** Link weights are fixed delays. Real packet delay also depends on
   transmission, processing, and queueing.
 - **Signal City.** Routing is shortest-path on an OSPF-style metric (a reference bandwidth over
@@ -208,18 +232,24 @@ and the tests check them against independent implementations.
 
 ## Validation
 
-Run `npm test` and `npm run check`. 119 tests across ten files:
+Run `npm test` and `npm run check`. 127 tests across eleven files:
 
 - `tests/lang.test.mjs` — 30 programs run in both the interpreter and real JavaScript via
   `node:vm` and compared, plus the refusals, the deliberate deviations, and the bounds.
 - `tests/engine.test.mjs` — collisions, native argument rules, lesson requirements, bit encodings,
   and the algorithm harness.
 - `tests/net.test.mjs` — subnet arithmetic against a binary-string implementation, longest prefix
-  match against an independent prefix search, every host count from 1 to 1,000, and the transfer
-  simulation against its closed-form models at both ends of the window range.
+  match against an independent prefix search, every host count from 1 to 1,000, the transfer
+  simulation against its closed-form models at both ends of the window range, local delivery
+  recomputed on masked integers, and the congestion window against the bandwidth-delay product.
 - `tests/systems.test.mjs` — every contract solved by exhaustive search, the techniques each
-  contract requires, the availability and cost arithmetic, and the 99th-percentile formula checked
-  against a simulated M/M/1 queue.
+  contract requires, the availability and cost arithmetic, the 99th-percentile formula checked
+  against a simulated M/M/1 queue, each estimator against the arithmetic done by hand, and the
+  error budget against a worked month.
+- `tests/machine.test.mjs` — the exact decimal expansion of a double rebuilt from its bit pattern
+  with BigInt, UTF-8 output compared byte for byte against `TextEncoder`, cache misses against
+  the compulsory floor, every four-bit message with every single-bit error in all seven positions,
+  and tree heights recomputed by walking the tree the model built.
 - `tests/missions.test.mjs` — every mission's shipped solution wins, no mission starts solved,
   every mission carries its teaching material, and the concept requirements hold.
 - `tests/city.test.mjs` — the city's routing checked against an enumeration of every simple
@@ -237,7 +267,7 @@ Run `npm test` and `npm run check`. 119 tests across ten files:
   against path enumeration, and every puzzle's whole option space enumerated to prove it is
   winnable, not winnable by accident, and solved by the answer it ships.
 
-A browser pass was run with Playwright against the development server: all 44 missions complete
+A browser pass was run with Playwright against the development server: all 49 missions complete
 from their own "show a solution" button, all 5 architecture contracts and all 5 city contracts
 are met, a city built by clicking the map passes its contract and fails again when cables are
 removed, and the page reports no script errors. Outcomes were checked to land on screen at 1440×960,

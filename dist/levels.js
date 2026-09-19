@@ -5,6 +5,13 @@ const row = (x, y, n) => Array.from({length:n}, (_, i) => [x + i, y]);
 const column = (x, y, n) => Array.from({length:n}, (_, i) => [x, y + i]);
 const ramp = (n, step) => Array.from({length:n}, (_, i) => i * step);
 
+// One shift's takings: a lot of small amounts and a few large ones, which is the
+// shape that makes floating-point drift visible rather than theoretical.
+const tillAmounts = [
+  ...Array.from({length:600}, () => 0.01),
+  ...Array.from({length:120}, () => 0.07),
+  19.99, 4.5, 133.28, 0.03
+];
 const crateCodes = Array.from({length:120}, (_, i) => `QZ-${i}`);
 const numberToken = value => ({kind:'number', value});
 const operatorToken = text => ({kind:'operator', text});
@@ -42,6 +49,11 @@ const refs = {
   estimation:{label:'Reference: numbers every engineer should know', url:'https://static.googleusercontent.com/media/research.google.com/en//people/jeff/stanford-295-talk.pdf'},
   errorBudget:{label:'Reference: Google SRE — error budgets', url:'https://sre.google/workbook/error-budget-policy/'},
   incident:{label:'Reference: Google SRE — managing incidents', url:'https://sre.google/sre-book/managing-incidents/'},
+  floats:{label:'Reference: what every computer scientist should know about floating point', url:'https://docs.oracle.com/cd/E19957-01/806-3568/ncg_goldberg.html'},
+  unicode:{label:'Reference: the absolute minimum about Unicode', url:'https://www.joelonsoftware.com/2003/10/08/the-absolute-minimum-every-software-developer-absolutely-positively-must-know-about-unicode-and-character-sets-no-excuses/'},
+  locality:{label:'Reference: what every programmer should know about memory', url:'https://people.freebsd.org/~lstewart/articles/cpumemory.pdf'},
+  hamming:{label:'Reference: Hamming codes', url:'https://en.wikipedia.org/wiki/Hamming_code'},
+  trees:{label:'Reference: NIST — binary search tree', url:'https://xlinux.nist.gov/dads/HTML/binarySearchTree.html'},
   records:{label:'Reference: MDN — working with objects', url:'https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Working_with_objects'},
   offByOne:{label:'Reference: the off-by-one error', url:'https://en.wikipedia.org/wiki/Off-by-one_error'},
   nested:{label:'Reference: MDN — indexing nested arrays', url:'https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Indexed_collections'},
@@ -516,6 +528,154 @@ export const levels = [
     edges:[['uplink','relay-a',9],['relay-a','archive',9],['uplink','relay-b',3],['relay-b','relay-c',4],['relay-c','archive',3]], source:'uplink', target:'archive', budget:12,
     hints:['The two-hop route takes 18 ms in this model. Add the delays on the three-hop route.','The lower route costs 3 + 4 + 3 = 10 ms.'], solution:[2,3,4],
     takeaway:'The minimum-weight path costs 10 ms here, despite using more hops. Costs are summed along the chosen route, not across every enabled cable.', reference:refs.graph
+  },
+
+  {
+    id:'count-the-cents', kind:'money', chapter:'Computer science', concept:'Floating point', name:'Count the cents', location:'Commissary till',
+    objective:'Add up a day of takings so the total is exact, not nearly right.',
+    intro:'The commissary till has been out by a few cents every evening for a month. Nothing is broken, nobody is stealing, and the arithmetic is correct.',
+    lesson:'A binary fraction can only represent sums of halves, quarters, eighths and so on. A tenth is not one of them, so 0.1 is stored as 0.1000000000000000055511151231257827…, and every amount in cents carries a similar error. Add seven hundred of them and the errors accumulate into something a human can see. Reducing the precision makes it worse and adding the small amounts first makes it smaller, but neither makes it go away, because the problem is the representation and not the order. The fix is to leave the fractions behind: count in whole minor units, so every value is an integer, every sum is exact, and the decimal point is put back once, at the end, when the receipt is printed.',
+    amounts:tillAmounts,
+    dials:[{id:'method', label:'What the till counts in', help:'The representation, and the order it adds in', value:'float64:given', options:[
+      {value:'float64:given', label:'Double precision, as they come'},
+      {value:'float64:ascending', label:'Double precision, smallest first'},
+      {value:'float32:given', label:'Single precision'},
+      {value:'cents:given', label:'Whole cents, as integers'}
+    ]}],
+    artifact:{
+      title:'What a number actually holds',
+      note:'Every line below is real output. The first one is the reason the till is wrong, and it is also the reason nobody believes it at first.',
+      panes:[
+        {label:'the classic', code:'> 0.1 + 0.2\n0.30000000000000004\n> 0.1 + 0.2 === 0.3\nfalse\n> 0.1 + 0.2 - 0.3\n5.551115123125783e-17', note:'Not a bug in the language. Every language with IEEE 754 doubles prints this, including the one you would rewrite it in.'},
+        {label:'0.1 in full', code:'0.1 is stored as\n0.1000000000000000055511151231257827\n021181583404541015625\n\nsign 0  exponent 01111111011\nfraction 1001100110011001100110011…', note:'The fraction is 1100 repeating forever, cut off at 52 bits. A tenth in binary is what a third is in decimal.'},
+        {label:'what survives', code:'exactly representable: 0.5 0.25 0.125\n  0.75 3.5 1024 -2.5\nnot representable:     0.1 0.2 0.3\n  0.7 1.1 19.99', note:'Halves, quarters and eighths are exact. Tenths are not, which is unfortunate, because money is counted in tenths.'},
+        {label:'the fix', code:'cents = 1999          // an integer\ntotal += cents        // exact\nprint(total / 100)    // once, at the end\n\n17220 cents → "172.20"', note:'Integers up to 2^53 are exact in a double, so counting minor units keeps you inside the range where nothing is rounded.'}
+      ]
+    },
+    solution:{dials:{method:'cents:given'}},
+    hints:['Try single precision first and watch the error get larger. That tells you the problem is how many bits the fraction has, not the order of the additions.','Adding smallest first shrinks the error without removing it. Nothing that keeps the amounts as fractions will remove it.'],
+    takeaway:'Money, and anything else counted in exact units, does not belong in a binary fraction. Store the integer and format it for display — the decimal point is a presentation decision, not a storage one.', reference:refs.floats
+  },
+  {
+    id:'bytes-not-letters', kind:'text', chapter:'Computer science', concept:'Character encoding', name:'Bytes, not letters', location:'Crew registry',
+    objective:'Size the crew registry’s name field so every name survives whole.',
+    intro:'The registry truncates names to fit a fixed field. Half the crew are showing up with a black diamond at the end of their name, and one of them is showing up as two.',
+    lesson:'A string has at least three different lengths and they disagree. UTF-8 stores a character in one to four bytes — one below U+0080, two for most European letters with accents, three for most of the CJK range, four for emoji — so a name’s byte length depends on what is in it. String.length in JavaScript counts neither bytes nor characters: it counts UTF-16 code units, which is why anything above U+FFFF counts as two. A field measured in bytes and cut in bytes will eventually stop halfway through a character and leave a fragment that is not valid UTF-8, which is what the replacement character is telling you. Cutting by code points cannot split a character, but then the field has to be sized for the worst case rather than the average, because the same twelve characters can be twelve bytes or forty-eight.',
+    names:['Ada Okonkwo', 'José Ramírez', 'Zoë Müller-Grün', 'アレクサンドラ ヤマモト', 'Ng Wai-Yin'],
+    dials:[
+      {id:'limit', label:'Field size', help:'How much the registry stores per name', value:12, options:[
+        {value:12, label:'12 units'},
+        {value:16, label:'16 units'},
+        {value:24, label:'24 units'},
+        {value:32, label:'32 units'}
+      ]},
+      {id:'unit', label:'What the field counts', help:'Bytes on disk, or characters', value:'bytes', options:[
+        {value:'bytes', label:'Bytes'},
+        {value:'codePoints', label:'Code points'}
+      ]}
+    ],
+    artifact:{
+      title:'The same name, four ways to measure it',
+      note:'Everything here is one name. The disagreement between these numbers is the whole bug.',
+      panes:[
+        {label:'hexdump', code:'$ printf \'Zoë Müller\' | hexdump -C\n5a 6f c3 ab 20 4d c3 bc\n6c 6c 65 72\n\n10 characters, 12 bytes', note:'ë and ü are two bytes each. A field of ten bytes stops in the middle of one of them.'},
+        {label:'three lengths', code:'"Zoë Müller"  bytes 12  chars 10  length 10\n"東京 たかし"  bytes 16  chars  6  length  6\n"👨‍👩‍👧"        bytes 18  chars  5  length  8', note:'The family emoji is one thing on screen, five code points, eight UTF-16 units and eighteen bytes. Every number is correct and none of them is "how many characters".'},
+        {label:'a bad cut', code:'bytes:  5a 6f c3 ab 20 4d c3 | bc 6c…\ncut at 7 bytes ──────────┘\nresult: "Zoë M\\xc3"  → "Zoë M�"', note:'The leading byte of ü promised a continuation byte that never arrived, so the decoder substitutes U+FFFD. That diamond is a report, not a glyph.'},
+        {label:'why UTF-8 wins', code:'ASCII text is byte-identical\nno byte of a multi-byte character\n  is ever mistaken for ASCII\nthe leading byte says how many\n  bytes follow — so a bad cut is\n  detectable rather than silent', note:'The encoding is self-synchronising by design. It cannot stop a byte-wise truncation, but it can make the damage visible instead of producing a different valid character.'}
+      ]
+    },
+    solution:{dials:{limit:16, unit:'codePoints'}},
+    hints:['Look at the byte column. The longest name is twelve characters and thirty-four bytes, so no field counted in bytes is wide enough for it — and widening it further punishes everyone whose name is ASCII.','Counting code points cannot split a character, and the field only has to hold the longest name: fifteen characters. The registry pays for every unit it reserves, so take the smallest size that fits.'],
+    takeaway:'“Length” is not a property of text; it is a question about a representation. Decide which one a limit means before you write it down, because the answer changes what your users are allowed to be called.', reference:refs.unicode
+  },
+  {
+    id:'the-loop-that-misses', kind:'cache', chapter:'Computer science', concept:'Locality', name:'The loop that misses', location:'Sensor array',
+    objective:'Transpose the sensor grid with the same arithmetic and a quarter of the memory traffic.',
+    intro:'Two loops, identical arithmetic, identical output. One of them moves four and a half megabytes and the other moves one. Nothing about the code says which.',
+    lesson:'Memory does not arrive one value at a time. A miss fetches a whole cache line — sixty-four bytes, eight values here — on the assumption that the next thing you ask for will be next to it. A loop that walks along a row makes that assumption true and pays one miss for every eight values. A loop that walks down a column makes it false and pays one miss for each value, because it uses one value out of every line it fetches and the line is long gone before it comes back. A transpose is the awkward case: it reads along rows and writes down columns, so one of the two sides is always against the grain. Tiling fixes it by working on a square small enough that both sides fit in the cache at once — which is also why a bigger tile is not a better tile. Past the point where the working set fits, the lines start evicting each other and the traffic goes straight back up.',
+    grid:{rows:256, columns:256, mode:'transpose', lineBytes:64, elementBytes:8, cacheLines:16},
+    plans:[
+      {id:'row', label:'Row by row', order:'row'},
+      {id:'column', label:'Column by column', order:'column'},
+      {id:'tile4', label:'4×4 tiles', tile:4},
+      {id:'tile8', label:'8×8 tiles', tile:8},
+      {id:'tile16', label:'16×16 tiles', tile:16},
+      {id:'tile64', label:'64×64 tiles', tile:64}
+    ],
+    target:{misses:20000},
+    dials:[{id:'plan', label:'How the loop walks the grid', help:'The arithmetic is the same in every one of these', value:'row', options:[
+      {value:'row', label:'Row by row'},
+      {value:'column', label:'Column by column'},
+      {value:'tile4', label:'4×4 tiles'},
+      {value:'tile8', label:'8×8 tiles'},
+      {value:'tile16', label:'16×16 tiles'},
+      {value:'tile64', label:'64×64 tiles'}
+    ]}],
+    artifact:{
+      title:'The same function, measured',
+      note:'Two builds of one program, no algorithmic change, no compiler flags. Only the loop order differs.',
+      panes:[
+        {label:'perf stat', code:'naive transpose\n  1,743,452 cache-misses\n      0.412 s elapsed\n\ntiled transpose\n    398,110 cache-misses\n      0.094 s elapsed', note:'Four times fewer misses, four times faster. The instruction counts are within a percent of each other.'},
+        {label:'the two loops', code:'for (r…) for (c…)\n    b[c][r] = a[r][c];\n\nfor (rb…) for (cb…)\n  for (r = rb; r < rb+T; r++)\n    for (c = cb; c < cb+T; c++)\n      b[c][r] = a[r][c];', note:'The second one is the first one with the iteration space cut into squares. Every element is still visited exactly once, in a different order.'},
+        {label:'the numbers', code:'line            64 B  = 8 doubles\nL1 cache      1,024 B = 16 lines\nrow of a        256 doubles = 32 lines\n8×8 tile   8 lines of a + 8 of b = 16', note:'A whole row does not fit. An 8×8 tile fits exactly, which is why it is the one that works and 16×16 is not.'},
+        {label:'the latency wall', code:'L1 hit        ~1 ns\nL2 hit        ~4 ns\nmain memory ~100 ns\n\n100× is not a constant factor you\ncan ignore in an inner loop', note:'This is why locality is an algorithmic concern and not a micro-optimisation: the difference between hitting and missing is two orders of magnitude.'}
+      ]
+    },
+    solution:{dials:{plan:'tile8'}},
+    hints:['Row order and column order cost the same here, which is the clue: a transpose is against the grain on one side whichever way round you write it.','A tile helps only while both of its sides fit in the cache at once. Work out how many lines an N×N tile needs from each grid, and compare that with the sixteen lines available.'],
+    takeaway:'Two programs with the same instruction count can differ by four times in running time, and nothing in the source says so. Where your data is, and in what order you touch it, is part of the algorithm.', reference:refs.locality
+  },
+  {
+    id:'find-the-flipped-bit', kind:'ecc', chapter:'Computer science', concept:'Error correction', name:'Find the flipped bit', location:'Memory bank',
+    objective:'A word came back from memory with one bit wrong. Work out which, and flip it back.',
+    intro:'Cosmic rays flip bits, and a station gets more of them than a basement does. This memory does not merely notice; it can tell you exactly which bit went.',
+    lesson:'A parity bit over a whole word tells you something is wrong and nothing about what. Hamming’s idea was to use several parity bits, each covering a different, overlapping set of positions, chosen so that the pattern of failures is the answer. Number the bits from one. Put the parity bits at the powers of two — 1, 2, 4 — and let each one cover the positions whose number has that bit set: p1 covers 1, 3, 5, 7; p2 covers 2, 3, 6, 7; p4 covers 4, 5, 6, 7. Now flip any single bit and read the three checks as a binary number, least significant first. That number is the position of the bit that changed. Three extra bits over four data bits buy you not detection but correction, and the same construction scaled up is what ECC memory runs.',
+    bits:{width:7, labels:['position 1 · p1', 'position 2 · p2', 'position 3 · d1', 'position 4 · p4', 'position 5 · d2', 'position 6 · d3', 'position 7 · d4']},
+    received:[0, 1, 1, 0, 0, 0, 1],
+    artifact:{
+      title:'How three checks name one position',
+      note:'The layout is not a convention you have to memorise. It is chosen so that the failures spell out the answer.',
+      panes:[
+        {label:'the layout', code:'position  1  2  3  4  5  6  7\nrole     p1 p2 d1 p4 d2 d3 d4\n\np1 covers 1 3 5 7  (bit 1 set)\np2 covers 2 3 6 7  (bit 2 set)\np4 covers 4 5 6 7  (bit 4 set)', note:'Position 5 is 101 in binary, so it is covered by p1 and p4 and not by p2. Every position has its own combination.'},
+        {label:'reading the syndrome', code:'p1 ok    p2 wrong  p4 wrong\n 0        1         1\n\nsyndrome = c4 c2 c1 = 110 = 6\n→ position 6 is the flipped bit', note:'The checks that fail are exactly the ones covering the bad position, so their pattern is its number.'},
+        {label:'what it cannot do', code:'one bit flipped  → located, corrected\ntwo bits flipped → syndrome points at\n  a third, innocent position\n\nadd an overall parity bit and two\nerrors become detectable (SECDED)', note:'Single error correcting, double error detecting. Beyond that you need a longer code, which is why storage uses Reed–Solomon rather than Hamming.'},
+        {label:'the real thing', code:'$ edac-util -v\nmc0: csrow0: ce_count 1\n  corrected error: bank 2, row 41123\n\nECC DIMM: 72 bits stored per 64', note:'Eight check bits per sixty-four of data, correcting one error in every word, silently, millions of times a day in every server rack.'}
+      ]
+    },
+    solution:[0, 1, 1, 0, 0, 1, 1],
+    hints:['Work out each parity check on the word as it arrived: p1 over positions 1,3,5,7; p2 over 2,3,6,7; p4 over 4,5,6,7. Each should be even.','Write the failing checks as a binary number with p4 as the most significant bit. That number is the position to flip — and flip only that one.'],
+    takeaway:'Redundancy chosen carelessly tells you that something is wrong. Redundancy chosen well tells you what. The difference is a few bits and the arrangement.', reference:refs.hamming
+  },
+  {
+    id:'the-tree-that-became-a-list', kind:'tree', chapter:'Computer science', concept:'Trees & balance', name:'The tree that became a list', location:'Catalogue index',
+    objective:'Insert seven catalogue keys so no lookup costs more than three comparisons.',
+    intro:'The catalogue index is a binary search tree, and it was built by loading the keys in the order they were catalogued — which was sorted. Every lookup now walks the whole thing.',
+    lesson:'A binary search tree promises logarithmic lookup, and that promise is about its height, not its size. But a tree has no shape of its own: each key goes below the first one it compares against, so the insertion order decides the shape entirely. Insert in sorted order and every key goes down the same side — a linked list with two pointers per node and none of the benefit. Insert the median first, then the medians of each half, and each insert splits the remaining range, so seven keys fit in three levels and a thousand fit in ten. This is why real implementations do not trust the caller: red-black and AVL trees rebalance on every insert, paying a little each time to keep the guarantee, and a B-tree does the same thing with wider nodes so that each level is one disk page.',
+    keys:[1, 2, 3, 4, 5, 6, 7],
+    items:[
+      {id:'1', name:'Key 1', note:'first catalogued'},
+      {id:'2', name:'Key 2', note:''},
+      {id:'3', name:'Key 3', note:''},
+      {id:'4', name:'Key 4', note:'the median'},
+      {id:'5', name:'Key 5', note:''},
+      {id:'6', name:'Key 6', note:''},
+      {id:'7', name:'Key 7', note:'last catalogued'}
+    ],
+    target:{height:3},
+    artifact:{
+      title:'The same seven keys, twice',
+      note:'Identical contents, identical comparisons per level, identical code. Only the order they arrived in differs.',
+      panes:[
+        {label:'sorted input', code:'insert 1,2,3,4,5,6,7\n\n1\\\n  2\\\n    3\\\n      4\\\n        5\\\n          6\\\n            7', note:'Every key is larger than everything before it, so every insert goes right. Seven levels, and a lookup for 7 costs seven comparisons.'},
+        {label:'median first', code:'insert 4,2,6,1,3,5,7\n\n        4\n      /   \\\n     2     6\n    / \\   / \\\n   1   3 5   7', note:'Three levels. The same lookup costs three comparisons, and a thousand keys would cost ten.'},
+        {label:'why it matters', code:'        depth   lookups\n   n    sorted  balanced\n   7       7        3\n 1000    1000       10\n 10^6     10^6      20', note:'The gap is the difference between a data structure and a list. At a million keys it is fifty thousand times.'},
+        {label:'what real trees do', code:'red-black: recolour and rotate on\n  insert; height <= 2·log2(n+1)\nAVL:       stricter, taller cost to\n  insert, shorter trees\nB-tree:    wider nodes so one level\n  is one page of disk', note:'All three pay something on every insert to avoid ever being handed sorted input. Nobody relies on the caller shuffling first.'}
+      ]
+    },
+    order:['4', '2', '6', '1', '3', '5', '7'],
+    solution:{order:['4', '2', '6', '1', '3', '5', '7']},
+    hints:['Sorted input is the worst case, and the catalogue handed you exactly that. The first key you insert becomes the root, so choose it deliberately.','Put the median first, then the median of each remaining half: 4, then 2 and 6, then 1, 3, 5 and 7.'],
+    takeaway:'Logarithmic lookup is a property of a tree’s shape, and the shape is a property of how it was built. A structure that guarantees its own balance is worth the cost of rebalancing, because the alternative is trusting your input to be unsorted.', reference:refs.trees
   },
 
   // ----------------------------------------------------- chapter 3: networking

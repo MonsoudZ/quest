@@ -235,7 +235,7 @@ test('every mission that ships evidence ships all of it', () => {
   // A language panel and an artifact panel are the same panel: read-only
   // material beside the lesson, never a control and never the answer.
   const panels = levels.filter(level => level.artifact).map(level => ({level, panel:level.artifact, key:'panes'}));
-  assert.ok(panels.length >= 4, `only ${panels.length} missions carry an artifact panel`);
+  assert.ok(panels.length >= 9, `only ${panels.length} missions carry an artifact panel`);
   for (const {level, panel} of panels) {
     assert.ok(panel.title.length > 8 && panel.note.length > 30, `${level.id} panel needs a title and a note`);
     assert.ok(panel.panes.length >= 3, `${level.id} shows only ${panel.panes.length} panes`);
@@ -248,8 +248,8 @@ test('every mission that ships evidence ships all of it', () => {
       assert.ok(pane.code.split('\n').length <= 10, `${level.id}/${pane.label} is too tall for the panel`);
     }
   }
-  // Both chapters that were built out carry evidence, not just Programming.
-  for (const chapter of ['Networking', 'System design']) {
+  // Every chapter that was built out carries evidence, not just Programming.
+  for (const chapter of ['Computer science', 'Networking', 'System design']) {
     assert.ok(levels.some(level => level.chapter === chapter && level.artifact), `${chapter} has no mission with an artifact panel`);
   }
 });
@@ -288,4 +288,40 @@ test('the diagnosis missions hand over something broken and accept only the repa
   assert.equal(rows.success, true);
   assert.deepEqual(solutionState(estimate).choices, rows.rows.map(row => row.answer),
     'the shipped answers are the ones the estimators compute');
+});
+
+test('the machine-level missions hand over something wrong and accept only the repair', () => {
+  const byId = id => levels.find(level => level.id === id);
+
+  // The codeword mission starts from the word as it arrived, not from zero.
+  const ecc = byId('find-the-flipped-bit');
+  assert.deepEqual(initialState(ecc).bits, ecc.received, 'the player is repairing, not building');
+  assert.equal(evaluate(ecc, initialState(ecc)).success, false);
+  // Exactly one flip, and exactly the right one.
+  let winners = 0;
+  for (let index = 0; index < ecc.received.length; index++) {
+    const bits = [...ecc.received];
+    bits[index] ^= 1;
+    if (evaluate(ecc, {...initialState(ecc), bits}).success) winners++;
+  }
+  assert.equal(winners, 1, 'only one single-bit repair is accepted');
+  // Flipping two is refused as a guess rather than accepted by luck.
+  const twice = [...ecc.received];
+  twice[0] ^= 1;
+  twice[5] ^= 1;
+  assert.match(evaluate(ecc, {...initialState(ecc), bits:twice}).message, /changed 2 bits|locate one flip/);
+
+  // The tree mission is handed sorted input, which is the worst case.
+  const tree = byId('the-tree-that-became-a-list');
+  const start = evaluate(tree, initialState(tree));
+  assert.equal(start.success, false);
+  assert.equal(start.tree.height, tree.keys.length, 'sorted input is a list');
+  assert.equal(evaluate(tree, solutionState(tree)).success, true);
+
+  // The locality mission changes no arithmetic: every plan touches the same cells.
+  const cache = byId('the-loop-that-misses');
+  const touches = cache.plans.map(plan => evaluate(cache, {...initialState(cache), dials:{plan:plan.id}}).result.touches);
+  assert.equal(new Set(touches).size, 1, 'the work is identical; only the order differs');
+  const missCounts = cache.plans.map(plan => evaluate(cache, {...initialState(cache), dials:{plan:plan.id}}).result.misses);
+  assert.ok(Math.max(...missCounts) > Math.min(...missCounts) * 4, 'and the traffic differs by more than four times');
 });

@@ -7,6 +7,7 @@
 import {evaluatePuzzle, evaluateNetwork, bitValue, toHex} from './engine.js';
 import {subnet, smallestPrefixFor, allocate, longestPrefixMatch, encapsulate, transfer, timeline, reachability, translate, congestion} from './net.js';
 import {evaluateArchitecture, estimators, nearestEstimate, errorBudget, catalog} from './systems.js';
+import {accumulate, exactValue, measure, truncate, traverse, hammingCheck, buildTree, representations} from './machine.js';
 
 const clone = value => Array.isArray(value) ? [...value] : value;
 const percent = value => `${(value * 100).toFixed(1)}%`;
@@ -18,7 +19,9 @@ export const isPuzzle = level => level.kind !== 'code' && !algoKinds.has(level.k
 
 export function initialState(level) {
   const state = {};
-  if (level.bits) state.bits = new Array(level.bits.width).fill(0);
+  // A codeword mission starts from the word as it arrived, not from zero: the
+  // player is repairing something, not building it.
+  if (level.bits) state.bits = level.received ? [...level.received] : new Array(level.bits.width).fill(0);
   if (level.values) { state.values = [...level.values]; state.swaps = 0; }
   if (level.edges) state.links = [];
   if (level.items) state.order = level.items.map(item => item.id);
@@ -73,7 +76,10 @@ export function widgets(level, state) {
     const places = Array.from({length:level.bits.width}, (_, i) => 2 ** (level.bits.width - 1 - i));
     places.forEach((place, index) => list.push({
       type:'toggle', id:`bit-${index}`, action:{type:'bit', index},
-      label:level.bits.encoding === 'twos' && index === 0 ? `sign bit (−${place})` : `${place}-value bit`,
+      // A mission may name its bits — a codeword's bits are positions and roles,
+      // not place values.
+      label:level.bits.labels ? level.bits.labels[index]
+        : level.bits.encoding === 'twos' && index === 0 ? `sign bit (−${place})` : `${place}-value bit`,
       note:state.bits[index] ? 'On' : 'Off', on:!!state.bits[index]
     }));
   }
@@ -192,6 +198,32 @@ function incidentDesign(level, state) {
     replicas:state.dials.replicas, shards:state.dials.shards ?? 1,
     queue:state.dials.queue === 1, workers:state.dials.workers ?? 0, regions:state.dials.regions ?? 1
   };
+}
+
+
+function tillRun(level, state) {
+  const [representation, order] = String(state.dials.method).split(':');
+  return accumulate(level.amounts, {representation, order:order ?? 'given'});
+}
+
+function columnRun(level, state) {
+  return level.names.map(name => {
+    const size = measure(name);
+    const cut = truncate(name, state.dials.limit, {unit:state.dials.unit});
+    return {name, size, cut, whole:cut.text === name, mangled:cut.mangled};
+  });
+}
+
+function cacheRun(level, state) {
+  const choice = level.plans.find(plan => plan.id === state.dials.plan) ?? level.plans[0];
+  const {id, label, ...plan} = choice;
+  return {choice, result:traverse({...level.grid, ...plan})};
+}
+
+function eccRun(level, state) {
+  const check = hammingCheck(state.bits);
+  const flips = state.bits.reduce((total, bit, index) => total + (bit === level.received[index] ? 0 : 1), 0);
+  return {check, flips, received:hammingCheck(level.received)};
 }
 
 function orderedCorrect(level, state) {
@@ -329,6 +361,50 @@ export function evaluate(level, state) {
         return {success:false, result, message:`The contract is met, but at ${result.cost} credits against the ${level.maxCost} this repair is allowed. Something here is paid for and not doing anything.`};
       }
       return {success:true, result, message:`${result.message} The tier that was saturated is the one that had to change; the rest of the design was never the problem.`};
+    }
+    case 'money': {
+      const run = tillRun(level, state);
+      if (!run.equal) {
+        return {success:false, run, message:`The till says ${run.valueText.slice(0, 24)}… and the takings are ${run.exact.toFixed(2)}. ${representations[run.representation].note} ${run.order === 'ascending' ? 'Adding the small amounts first made the error smaller and did not remove it.' : ''}`.trim()};
+      }
+      return {success:true, run, message:`${run.count} amounts, and the total is exact to the cent. Counting in whole minor units keeps every value an integer, so nothing is ever rounded on the way.`};
+    }
+    case 'text': {
+      const rows = columnRun(level, state);
+      const mangled = rows.find(row => row.mangled);
+      const cut = rows.find(row => !row.whole);
+      if (mangled) return {success:false, rows, message:`“${mangled.name}” is cut in the middle of a character: ${mangled.cut.bytes} of the ${mangled.size.bytes} bytes it needs. A byte-wise cut does not know where a character ends.`};
+      if (cut) return {success:false, rows, message:`“${cut.name}” does not fit: ${cut.size.bytes} bytes and ${cut.size.codePoints} code points, against a limit of ${state.dials.limit} ${state.dials.unit === 'bytes' ? 'bytes' : 'code points'}.`};
+      // The registry pays for every unit it reserves on every row, so a field
+      // that fits but is larger than it needs to be is still the wrong answer.
+      const needed = Math.max(...rows.map(row => state.dials.unit === 'bytes' ? row.size.bytes : row.size.codePoints));
+      const smaller = level.dials.find(dial => dial.id === 'limit').options
+        .map(option => option.value).filter(value => value < state.dials.limit && value >= needed).sort((a, b) => a - b)[0];
+      if (smaller !== undefined) {
+        return {success:false, rows, message:`Every name fits, but the longest needs only ${needed} ${state.dials.unit === 'bytes' ? 'bytes' : 'code points'} and this field reserves ${state.dials.limit} on every row. A field of ${smaller} would do.`};
+      }
+      return {success:true, rows, message:`Every name survives whole. ${state.dials.unit === 'codePoints' ? 'Counting code points never splits a character, and the column has to be sized for the widest one: ' + Math.max(...rows.map(row => row.size.bytes)) + ' bytes here.' : 'Counting bytes works only because this limit is wide enough for the longest name.'}`};
+    }
+    case 'cache': {
+      const {choice, result} = cacheRun(level, state);
+      if (result.misses > level.target.misses) {
+        return {success:false, result, choice, message:`${choice.label} costs ${result.misses.toLocaleString('en-US')} misses and ${(result.bytesFetched / 1048576).toFixed(2)} MiB of traffic, against a budget of ${level.target.misses.toLocaleString('en-US')}. ${result.avoidable > 0 ? `${result.avoidable.toLocaleString('en-US')} of those lines were fetched, evicted, and fetched again.` : ''}`.trim()};
+      }
+      return {success:true, result, choice, message:`${choice.label}: ${result.misses.toLocaleString('en-US')} misses, which is every line fetched exactly once. Same arithmetic, same answer, ${(level.plans[0] ? '' : '')}a quarter of the memory traffic.`};
+    }
+    case 'ecc': {
+      const {check, flips} = eccRun(level, state);
+      if (flips === 0) return {success:false, check, flips, message:`This is the word as it arrived, and its parity does not check out. The syndrome is ${eccRun(level, state).received.syndrome}, which is a bit position, not a yes-or-no.`};
+      if (flips > 1) return {success:false, check, flips, message:`You changed ${flips} bits. A single-error-correcting code can locate one flip; changing more than one is a guess, and this word only had one.`};
+      if (!check.valid) return {success:false, check, flips, message:`That bit was not the one. With bit ${state.bits.findIndex((bit, index) => bit !== level.received[index]) + 1} flipped the syndrome is ${check.syndrome}, which is where the code says the error still is.`};
+      return {success:true, check, flips, message:`Bit ${eccRun(level, state).received.syndrome} was the flipped one, and the syndrome said so directly: the three parity checks read out its position in binary. The data is ${check.data.join('')}.`};
+    }
+    case 'tree': {
+      const tree = buildTree(state.order.map(Number));
+      if (tree.height > level.target.height) {
+        return {success:false, tree, message:`Inserting in this order gives a tree ${tree.height} deep, and the lookup budget allows ${level.target.height}. ${tree.height === level.keys.length ? 'Sorted input gives a linked list with extra pointers: every insert goes down the same side.' : 'Each key goes below one it compares against, so an order that keeps splitting the range in half stays shallow.'}`};
+      }
+      return {success:true, tree, message:`${tree.height} levels for ${level.keys.length} keys, which is the best a binary tree can do. The tree has no shape of its own — the insertion order gave it one.`};
     }
     case 'quiz': {
       if (state.choices.includes(-1)) return {success:false, message:'Answer every question.'};
@@ -527,6 +603,71 @@ export function view(level, state, result = null) {
           {name:'Datastore reads', value:result.utilisation.read, max:1.5, detail:percent(result.utilisation.read), problem:result.utilisation.read >= 1},
           {name:'Datastore writes', value:result.utilisation.write, max:1.5, detail:percent(result.utilisation.write), problem:result.utilisation.write >= 1}
         ]}
+      };
+    }
+    case 'money': {
+      const run = tillRun(level, state);
+      return {
+        instructions:'Add up one day of takings. Choose what the till counts in.',
+        legend:[`${level.amounts.length} transactions`, `Takings ${run.exact.toFixed(2)} credits`, run.equal ? 'Exact' : 'Off by a fraction of a cent'],
+        summary:`${representations[run.representation].label}: ${run.valueText.slice(0, 30)}${run.valueText.length > 30 ? '…' : ''}`,
+        diagram:{type:'table', caption:'What the till reports', columns:['', 'Value'], rows:[
+          ['The till’s total', run.valueText.slice(0, 40)],
+          ['Rounded for the receipt', run.value.toFixed(2)],
+          ['What was actually taken', run.exact.toFixed(2)],
+          ['Difference', run.errorText.slice(0, 28)],
+          ['Exactly equal?', run.equal ? 'yes' : 'no']
+        ], problems:[false, false, false, !run.equal, !run.equal]}
+      };
+    }
+    case 'text': {
+      const rows = columnRun(level, state);
+      return {
+        instructions:`Every crew name has to survive a ${state.dials.limit}-unit field. Choose the size and what the field counts.`,
+        legend:['String.length counts UTF-16 units, not characters', 'A byte-wise cut can split a character in half'],
+        summary:`${rows.filter(row => row.whole).length} of ${rows.length} names survive whole`,
+        diagram:{type:'table', caption:'Three lengths for the same name', columns:['Name', 'Bytes', 'Code points', 'String.length', 'Stored as'],
+          rows:rows.map(row => [row.name, String(row.size.bytes), String(row.size.codePoints), String(row.size.utf16Units), row.mangled ? `${row.cut.text}\uFFFD` : row.cut.text]),
+          problems:rows.map(row => !row.whole)}
+      };
+    }
+    case 'cache': {
+      const {choice, result} = cacheRun(level, state);
+      const worst = Math.max(...level.plans.map(plan => traverse({...level.grid, ...plan}).misses));
+      return {
+        instructions:`Transpose a ${level.grid.rows}×${level.grid.columns} grid through a ${(result.cacheBytes / 1024).toFixed(0)} KB cache. Same arithmetic every time; only the order changes.`,
+        legend:[`A line holds ${result.elementsPerLine} values`, `${result.compulsory.toLocaleString('en-US')} lines have to be fetched at least once`, `Budget ${level.target.misses.toLocaleString('en-US')} misses`],
+        summary:`${choice.label}: ${result.misses.toLocaleString('en-US')} misses · ${(result.bytesFetched / 1048576).toFixed(2)} MiB fetched`,
+        diagram:{type:'bars', caption:'Cache misses by loop order', rows:level.plans.map(plan => {
+          const measured = traverse({...level.grid, ...plan});
+          return {name:plan.label, value:measured.misses, max:worst, detail:measured.misses.toLocaleString('en-US'), problem:measured.misses > level.target.misses};
+        })}
+      };
+    }
+    case 'ecc': {
+      const {check, flips, received} = eccRun(level, state);
+      return {
+        instructions:'One bit of this word arrived wrong. Flip it back — and only it.',
+        legend:['Parity bits sit at positions 1, 2 and 4', 'Each covers the positions whose number has its bit set', 'The three checks read out the bad position in binary'],
+        summary:`As received: syndrome ${received.syndrome} · now: syndrome ${check.syndrome}, ${flips} bit${flips === 1 ? '' : 's'} changed`,
+        diagram:{type:'table', caption:'Parity checks', columns:['Check', 'Covers', 'Reads'], rows:[
+          ['p1 (position 1)', '1, 3, 5, 7', check.checks.c1 ? 'wrong' : 'ok'],
+          ['p2 (position 2)', '2, 3, 6, 7', check.checks.c2 ? 'wrong' : 'ok'],
+          ['p4 (position 4)', '4, 5, 6, 7', check.checks.c4 ? 'wrong' : 'ok'],
+          ['syndrome', 'c4 c2 c1 as binary', check.syndrome === 0 ? '0 — no error' : `${check.syndrome} — position ${check.syndrome}`]
+        ], problems:[!!check.checks.c1, !!check.checks.c2, !!check.checks.c4, check.syndrome !== 0]}
+      };
+    }
+    case 'tree': {
+      const tree = buildTree(state.order.map(Number));
+      return {
+        instructions:'Reorder the inserts. The keys are the same; the tree they build is not.',
+        legend:[`${level.keys.length} keys`, `A balanced tree of this size is ${tree.perfect} deep`, `Budget ${level.target.height}`],
+        summary:`${tree.height} levels deep · worst lookup ${tree.worstLookup} comparisons`,
+        diagram:{type:'bars', caption:'How deep each key landed', rows:tree.rows.map(row => ({
+          name:`key ${row.key}`, value:row.depth, max:level.keys.length,
+          detail:`level ${row.depth}`, problem:row.depth > level.target.height
+        }))}
       };
     }
     case 'quiz':
