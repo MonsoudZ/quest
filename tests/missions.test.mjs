@@ -342,3 +342,18 @@ test('the machine-level missions hand over something wrong and accept only the r
   const missCounts = cache.plans.map(plan => evaluate(cache, {...initialState(cache), dials:{plan:plan.id}}).result.misses);
   assert.ok(Math.max(...missCounts) > Math.min(...missCounts) * 4, 'and the traffic differs by more than four times');
 });
+
+test('every mission kind is complete: it both judges and draws', async () => {
+  // The two halves used to live in switches far apart and could drift out of
+  // step. They are one entry each now, and this is what keeps them that way.
+  const {kinds} = await import('../dist/puzzles.js');
+  const used = new Set(levels.filter(isPuzzle).map(level => level.kind));
+  for (const kind of used) {
+    assert.ok(kinds[kind], `no entry for the kind “${kind}”, which ${levels.filter(level => level.kind === kind).length} missions use`);
+    assert.equal(typeof kinds[kind].evaluate, 'function', `${kind} does not judge`);
+    assert.equal(typeof kinds[kind].view, 'function', `${kind} does not draw`);
+  }
+  // And nothing in the table is there for a kind no mission has.
+  for (const kind of Object.keys(kinds)) assert.ok(used.has(kind), `the table carries “${kind}”, which no mission uses`);
+  assert.throws(() => evaluate({kind:'nonesuch'}, {}), /Unknown puzzle kind/);
+});

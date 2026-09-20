@@ -118,7 +118,7 @@ export function widgets(level, state) {
 
 const label = id => String(id).replace(/-/g, ' ').replace(/\b\w/g, character => character.toUpperCase());
 
-// ------------------------------------------------------------ evaluation
+// ------------------------------------------- what each kind works out
 
 function hashTable(level, state) {
   const size = state.dials.size;
@@ -230,202 +230,22 @@ function orderedCorrect(level, state) {
   return level.order.every((id, index) => state.order[index] === id);
 }
 
-export function evaluate(level, state) {
-  switch (level.kind) {
-    case 'bits': case 'sort':
-      return evaluatePuzzle(level, level.kind === 'bits' ? state.bits : state.values);
-    case 'network':
-      return evaluateNetwork(level, state.links);
-    case 'layers': {
-      const headers = state.order.map(id => level.items.find(item => item.id === id));
-      const frame = encapsulate(headers, state.dials.payload);
-      const ordered = orderedCorrect(level, state);
-      const fits = frame.frameBytes - level.linkOverhead <= level.mtu;
-      const filled = frame.frameBytes - level.linkOverhead === level.mtu;
-      if (!ordered) return {success:false, message:'Those headers are not in the order a packet acquires them. The application payload is wrapped first, and the frame the cable carries is outermost.', frame};
-      if (!fits) return {success:false, message:`A ${frame.frameBytes - level.linkOverhead}-byte packet is larger than the ${level.mtu}-byte MTU, so it would be fragmented. Reduce the payload.`, frame};
-      if (!filled) return {success:false, message:`This packet is ${level.mtu - (frame.frameBytes - level.linkOverhead)} bytes short of the ${level.mtu}-byte MTU. A larger payload carries the same headers more efficiently.`, frame};
-      return {success:true, message:`Headers in order, payload ${state.dials.payload} bytes, frame ${frame.frameBytes} bytes on the wire, ${percent(frame.efficiency)} of it your data. That payload is the maximum segment size for this link.`, frame};
-    }
-    case 'subnet': {
-      const block = subnet(level.base, state.dials.prefix);
-      const tightest = smallestPrefixFor(level.hosts);
-      if (block.usable < level.hosts) return {success:false, message:`A /${state.dials.prefix} holds ${block.usable} usable addresses, and this deck needs ${level.hosts}.`, block};
-      if (state.dials.prefix !== tightest) return {success:false, message:`A /${state.dials.prefix} works but wastes ${block.usable - level.hosts} addresses. A longer prefix is a smaller block: find the smallest block that still holds ${level.hosts} hosts.`, block};
-      return {success:true, message:`${block.cidr} holds ${block.usable} usable addresses for ${level.hosts} hosts: ${block.firstHost} through ${block.lastHost}, broadcast ${block.broadcast}, mask ${block.maskText}.`, block};
-    }
-    case 'vlsm': {
-      const requests = level.requests.map(request => ({...request, prefix:state.dials[request.id]}));
-      const plan = allocate(level.base, level.basePrefix, requests);
-      const short = plan.blocks.find(block => !block.enough);
-      const outside = plan.blocks.find(block => !block.fits);
-      if (short) return {success:false, message:`${short.name} needs ${short.needs} addresses but a /${short.prefix} only has ${short.usable} usable.`, plan};
-      if (outside) return {success:false, message:`${outside.name} does not fit: the blocks you chose run past the end of ${plan.parent.cidr}. Larger blocks first waste less space.`, plan};
-      return {success:true, message:`All four decks fit inside ${plan.parent.cidr} with ${plan.free} addresses left over. Each block starts on a boundary that matches its own size.`, plan};
-    }
-    case 'routing': {
-      const rows = level.questions.map((question, index) => {
-        const match = longestPrefixMatch(level.table, question.destination);
-        return {destination:question.destination, chosen:state.choices[index], correct:match.index, prefix:match.route.prefix, via:match.route.via};
-      });
-      const wrong = rows.find(row => row.chosen !== row.correct);
-      if (state.choices.includes(-1)) return {success:false, message:'Choose an outgoing route for every destination.', rows};
-      if (wrong) return {success:false, message:`${wrong.destination} does not leave by ${level.table[wrong.chosen].via}. Two routes can both contain an address; the router uses the one with the longest prefix.`, rows};
-      return {success:true, message:'Every destination leaves by its most specific route. That rule, longest prefix match, is how a router forwards without knowing the whole internet.', rows};
-    }
-    case 'transport': {
-      const result = transfer(level.link, {window:state.dials.window, protocol:state.dials.protocol ?? 'selective-repeat', bytes:level.bytes});
-      const late = result.seconds > level.target.seconds;
-      const wasteful = level.target.wasted !== undefined && result.wasted > level.target.wasted;
-      if (late) return {success:false, message:`The dump took ${result.seconds} s against a ${level.target.seconds} s deadline, using ${percent(result.utilisation)} of the link. One bandwidth-delay product is ${result.bdpPackets} packets; a window smaller than that leaves the link idle waiting for acknowledgements.`, result};
-      if (wasteful) return {success:false, message:`Delivered in ${result.seconds} s, but ${percent(result.wasted)} of transmissions were retransmissions against a ${percent(level.target.wasted)} limit. Resending data that already arrived is paid for twice.`, result};
-      return {success:true, message:`Delivered ${(level.bytes / 1048576).toFixed(0)} MiB in ${result.seconds} s at ${result.throughputMbps} Mbps, ${percent(result.utilisation)} of the link, with ${percent(result.wasted)} of transmissions wasted.`, result};
-    }
-    case 'sequence': {
-      const steps = state.order.map(id => level.items.find(item => item.id === id));
-      const skipped = new Set(level.skipWhen && state.dials?.[level.skipWhen.dial] === level.skipWhen.value ? level.skipWhen.skip : []);
-      const active = steps.filter(step => !skipped.has(step.id));
-      const path = timeline(active.map(step => ({id:step.id, name:step.name, ms:step.ms})));
-      const ordered = orderedCorrect(level, state);
-      if (!ordered) return {success:false, message:level.orderHint, path, skipped:[...skipped]};
-      if (level.target?.ms !== undefined && path.totalMs > level.target.ms) {
-        return {success:false, message:`The order is right, but this takes ${path.totalMs} ms and the target is ${level.target.ms} ms. Removing a round trip is the only thing that helps: extra bandwidth does not.`, path, skipped:[...skipped]};
-      }
-      return {success:true, message:`${path.rows.length} steps, ${path.totalMs} ms before the first byte of the answer arrives.${skipped.size ? ` ${skipped.size} steps were skipped because the answer was already cached.` : ''}`, path, skipped:[...skipped]};
-    }
-    case 'hash': {
-      const table = hashTable(level, state);
-      if (table.size > level.maxSlots) return {success:false, message:`A ${table.size}-slot table is larger than the ${level.maxSlots} slots this memory bank has.`, table};
-      if (table.longest > level.maxChain) return {success:false, message:`The longest chain holds ${table.longest} keys and this lookup budget allows ${level.maxChain}. ${table.collisions} slot${table.collisions === 1 ? '' : 's'} hold more than one key. A table size that shares factors with your keys stacks them together.`, table};
-      return {success:true, message:`${level.keys.length} keys in ${table.size} slots, longest chain ${table.longest}, load factor ${table.load.toFixed(2)}. Every lookup is one probe.`, table};
-    }
-    case 'reach': {
-      const rows = deliveries(level, state);
-      const wrong = rows.find(row => !row.correct);
-      if (wrong) {
-        return {success:false, rows, message:wrong.delivery === 'invalid'
-          ? wrong.reason
-          : `${wrong.name} should be reached ${wrong.expect === 'direct' ? 'directly, on this deck' : 'through the gateway'}, and this configuration ${wrong.delivery === 'none' ? 'cannot reach it at all' : wrong.delivery === 'direct' ? 'tries to reach it directly' : 'sends it to the gateway'}. ${wrong.reason}`};
-      }
-      const block = rows[0].block;
-      return {success:true, rows, message:`${level.host}/${state.dials.prefix} puts this deck in ${block.cidr}. Its neighbours are reached directly and everything else leaves through ${state.dials.gateway}. The mask, not the destination, is what decides.`};
-    }
-    case 'nat': {
-      const run = natRun(level, state);
-      const wrong = run.rows.find(row => !row.correct);
-      if (wrong) {
-        return {success:false, run, message:wrong.want
-          ? `${wrong.name} should get through and does not. ${wrong.reason}`
-          : `${wrong.name} should be dropped and is not. Publishing a port exposes it to everyone, not only to the hosts you had in mind.`};
-      }
-      return {success:true, run, message:`${run.table.length} inside hosts share ${level.publicAddress}, told apart by port. Replies find their way home from the table; the only unsolicited traffic that gets in is the port you chose to publish.`};
-    }
-    case 'congestion': {
-      const runs = congestionRuns(level, state);
-      const late = runs.find(entry => !entry.onTime);
-      const dirty = runs.find(entry => !entry.clean);
-      if (late) {
-        return {success:false, runs, message:`On the ${late.link.name} this took ${late.result.seconds} s against a ${late.link.target.seconds} s target, using ${percent(late.result.utilisation)} of the link. One bandwidth-delay product there is ${late.result.bdpPackets} packets.`};
-      }
-      if (dirty) {
-        return {success:false, runs, message:`On the ${dirty.link.name} the deadline is met, but ${percent(dirty.result.wasted)} of transmissions were retransmissions against a ${percent(dirty.link.target.wasted)} limit. A window past what the path holds does not go faster; it just fills a buffer until it overflows.`};
-      }
-      return {success:true, runs, message:`Both links are met: ${runs.map(entry => `${entry.link.name} in ${entry.result.seconds} s at ${percent(entry.result.utilisation)}`).join(', ')}. ${String(state.dials.sender).startsWith('fixed') ? 'One fixed window happened to suit both paths.' : 'Slow start found each path’s capacity without being told it.'}`};
-    }
-    case 'estimate': {
-      const rows = estimateRows(level, state);
-      if (state.choices.includes(-1)) return {success:false, rows, message:'Work out every figure before checking.'};
-      const wrong = rows.findIndex(row => !row.correct);
-      if (wrong >= 0) {
-        const row = rows[wrong];
-        return {success:false, rows, wrong, message:`The ${row.estimator.label} is not right yet. ${row.estimator.explain(level.givens)}`};
-      }
-      return {success:true, rows, message:`Every figure is the right order of magnitude. ${level.quizSuccess ?? ''}`.trim()};
-    }
-    case 'budget': {
-      const run = budgetRun(level, state);
-      if (!run.minutesCorrect) {
-        return {success:false, run, message:`That is not what is left. The objective allows ${run.report.allowedMinutes} minutes of downtime in this window, and the incidents spent ${run.report.spentMinutes}.`};
-      }
-      if (!run.actionCorrect) {
-        const advice = {ship:'there is budget left, so a risky change can go out', 'slow-down':'three quarters of the budget is gone, so the risky change waits and the reliability work goes first', freeze:'the budget is spent, so nothing risky ships until the window rolls over'};
-        return {success:false, run, message:`The arithmetic is right; the decision is not. With ${run.report.remainingMinutes} minutes left of ${run.report.allowedMinutes}, ${advice[run.report.verdict]}.`};
-      }
-      return {success:true, run, message:`${run.report.spentMinutes} minutes spent of ${run.report.allowedMinutes} allowed, ${run.report.remainingMinutes} left. The month achieved ${run.report.achievedText}, and the budget — not the last outage — decides what ships.`};
-    }
-    case 'incident': {
-      const design = incidentDesign(level, state);
-      const result = evaluateArchitecture(design, level.scenario);
-      if (!result.success) return {success:false, result, message:result.message};
-      if (level.maxCost !== undefined && result.cost > level.maxCost) {
-        return {success:false, result, message:`The contract is met, but at ${result.cost} credits against the ${level.maxCost} this repair is allowed. Something here is paid for and not doing anything.`};
-      }
-      return {success:true, result, message:`${result.message} The tier that was saturated is the one that had to change; the rest of the design was never the problem.`};
-    }
-    case 'money': {
-      const run = tillRun(level, state);
-      if (!run.equal) {
-        return {success:false, run, message:`The till says ${run.valueText.slice(0, 24)}… and the takings are ${run.exact.toFixed(2)}. ${representations[run.representation].note} ${run.order === 'ascending' ? 'Adding the small amounts first made the error smaller and did not remove it.' : ''}`.trim()};
-      }
-      return {success:true, run, message:`${run.count} amounts, and the total is exact to the cent. Counting in whole minor units keeps every value an integer, so nothing is ever rounded on the way.`};
-    }
-    case 'text': {
-      const rows = columnRun(level, state);
-      const mangled = rows.find(row => row.mangled);
-      const cut = rows.find(row => !row.whole);
-      if (mangled) return {success:false, rows, message:`“${mangled.name}” is cut in the middle of a character: ${mangled.cut.bytes} of the ${mangled.size.bytes} bytes it needs. A byte-wise cut does not know where a character ends.`};
-      if (cut) return {success:false, rows, message:`“${cut.name}” does not fit: ${cut.size.bytes} bytes and ${cut.size.codePoints} code points, against a limit of ${state.dials.limit} ${state.dials.unit === 'bytes' ? 'bytes' : 'code points'}.`};
-      // The registry pays for every unit it reserves on every row, so a field
-      // that fits but is larger than it needs to be is still the wrong answer.
-      const needed = Math.max(...rows.map(row => state.dials.unit === 'bytes' ? row.size.bytes : row.size.codePoints));
-      const smaller = level.dials.find(dial => dial.id === 'limit').options
-        .map(option => option.value).filter(value => value < state.dials.limit && value >= needed).sort((a, b) => a - b)[0];
-      if (smaller !== undefined) {
-        return {success:false, rows, message:`Every name fits, but the longest needs only ${needed} ${state.dials.unit === 'bytes' ? 'bytes' : 'code points'} and this field reserves ${state.dials.limit} on every row. A field of ${smaller} would do.`};
-      }
-      return {success:true, rows, message:`Every name survives whole. ${state.dials.unit === 'codePoints' ? 'Counting code points never splits a character, and the column has to be sized for the widest one: ' + Math.max(...rows.map(row => row.size.bytes)) + ' bytes here.' : 'Counting bytes works only because this limit is wide enough for the longest name.'}`};
-    }
-    case 'cache': {
-      const {choice, result} = cacheRun(level, state);
-      if (result.misses > level.target.misses) {
-        return {success:false, result, choice, message:`${choice.label} costs ${result.misses.toLocaleString('en-US')} misses and ${(result.bytesFetched / 1048576).toFixed(2)} MiB of traffic, against a budget of ${level.target.misses.toLocaleString('en-US')}. ${result.avoidable > 0 ? `${result.avoidable.toLocaleString('en-US')} of those lines were fetched, evicted, and fetched again.` : ''}`.trim()};
-      }
-      return {success:true, result, choice, message:`${choice.label}: ${result.misses.toLocaleString('en-US')} misses, which is every line fetched exactly once. Same arithmetic, same answer, ${(level.plans[0] ? '' : '')}a quarter of the memory traffic.`};
-    }
-    case 'ecc': {
-      const {check, flips} = eccRun(level, state);
-      if (flips === 0) return {success:false, check, flips, message:`This is the word as it arrived, and its parity does not check out. The syndrome is ${eccRun(level, state).received.syndrome}, which is a bit position, not a yes-or-no.`};
-      if (flips > 1) return {success:false, check, flips, message:`You changed ${flips} bits. A single-error-correcting code can locate one flip; changing more than one is a guess, and this word only had one.`};
-      if (!check.valid) return {success:false, check, flips, message:`That bit was not the one. With bit ${state.bits.findIndex((bit, index) => bit !== level.received[index]) + 1} flipped the syndrome is ${check.syndrome}, which is where the code says the error still is.`};
-      return {success:true, check, flips, message:`Bit ${eccRun(level, state).received.syndrome} was the flipped one, and the syndrome said so directly: the three parity checks read out its position in binary. The data is ${check.data.join('')}.`};
-    }
-    case 'tree': {
-      const tree = buildTree(state.order.map(Number));
-      if (tree.height > level.target.height) {
-        return {success:false, tree, message:`Inserting in this order gives a tree ${tree.height} deep, and the lookup budget allows ${level.target.height}. ${tree.height === level.keys.length ? 'Sorted input gives a linked list with extra pointers: every insert goes down the same side.' : 'Each key goes below one it compares against, so an order that keeps splitting the range in half stays shallow.'}`};
-      }
-      return {success:true, tree, message:`${tree.height} levels for ${level.keys.length} keys, which is the best a binary tree can do. The tree has no shape of its own — the insertion order gave it one.`};
-    }
-    case 'quiz': {
-      if (state.choices.includes(-1)) return {success:false, message:'Answer every question.'};
-      const wrong = level.questions.findIndex((question, index) => state.choices[index] !== question.answer);
-      if (wrong >= 0) return {success:false, message:`Question ${wrong + 1} is not right yet. ${level.questions[wrong].why ?? ''}`.trim(), wrong};
-      return {success:true, message:level.quizSuccess ?? 'Every answer is right.'};
-    }
-    default:
-      throw new Error(`Unknown puzzle kind “${level.kind}”.`);
-  }
-}
+// ------------------------------------------------------------- the kinds
 
-// ---------------------------------------------------------------- views
-
-// A diagram description the UI renders with generic pieces: no mission-specific
-// markup, so adding a mission does not mean adding a renderer. A kind that has
-// an isometric scene has no diagram: the scene is its picture, and describing it
-// twice meant one of the two was never read.
-export function view(level, state, result = null) {
-  switch (level.kind) {
-    case 'bits': {
+// Every mission kind in one place: whether a configuration is right, and what
+// the interface draws for it. These two used to be cases in two switches four
+// hundred lines apart, so adding a kind meant two edits and the two could drift.
+//
+// A view returns the instructions, the legend, a one-line summary, and — only
+// for the kinds without an isometric scene — a diagram description the UI draws
+// with generic pieces. No mission-specific markup, so adding a mission does not
+// mean adding a renderer.
+export const kinds = {
+  bits:{
+    evaluate(level, state) {
+      return evaluatePuzzle(level, state.bits);
+    },
+    view(level, state) {
       const places = Array.from({length:level.bits.width}, (_, i) => 2 ** (level.bits.width - 1 - i));
       const value = bitValue(level, state.bits);
       return {
@@ -436,13 +256,24 @@ export function view(level, state, result = null) {
         summary:`${state.bits.map((bit, index) => bit * places[index]).filter(Boolean).join(' + ') || '0'} = ${value}`
       };
     }
-    case 'sort':
+  },
+  sort:{
+    evaluate(level, state) {
+      return evaluatePuzzle(level, state.values);
+    },
+    view(level, state) {
       return {
         instructions:'Exchange two neighbouring entries. Compare their values before choosing a swap.',
         legend:['Array indices start at 0', 'Put the smallest value on the left'],
         summary:`${state.swaps ?? 0} swaps made`
       };
-    case 'network': {
+    }
+  },
+  network:{
+    evaluate(level, state) {
+      return evaluateNetwork(level, state.links);
+    },
+    view(level, state) {
       const path = evaluateNetwork(level, state.links);
       return {
         instructions:'Choose cables on the map or use the switches below.',
@@ -450,7 +281,20 @@ export function view(level, state, result = null) {
         summary:`${state.links.length} links enabled · ${path.path.length ? `${path.hops} hops${level.budget ? ` / ${path.cost} ms on the fastest route` : ''}` : 'No complete route'}`
       };
     }
-    case 'layers': {
+  },
+  layers:{
+    evaluate(level, state) {
+      const headers = state.order.map(id => level.items.find(item => item.id === id));
+      const frame = encapsulate(headers, state.dials.payload);
+      const ordered = orderedCorrect(level, state);
+      const fits = frame.frameBytes - level.linkOverhead <= level.mtu;
+      const filled = frame.frameBytes - level.linkOverhead === level.mtu;
+      if (!ordered) return {success:false, message:'Those headers are not in the order a packet acquires them. The application payload is wrapped first, and the frame the cable carries is outermost.', frame};
+      if (!fits) return {success:false, message:`A ${frame.frameBytes - level.linkOverhead}-byte packet is larger than the ${level.mtu}-byte MTU, so it would be fragmented. Reduce the payload.`, frame};
+      if (!filled) return {success:false, message:`This packet is ${level.mtu - (frame.frameBytes - level.linkOverhead)} bytes short of the ${level.mtu}-byte MTU. A larger payload carries the same headers more efficiently.`, frame};
+      return {success:true, message:`Headers in order, payload ${state.dials.payload} bytes, frame ${frame.frameBytes} bytes on the wire, ${percent(frame.efficiency)} of it your data. That payload is the maximum segment size for this link.`, frame};
+    },
+    view(level, state) {
       const headers = state.order.map(id => level.items.find(item => item.id === id));
       const frame = encapsulate(headers, state.dials.payload);
       return {
@@ -459,7 +303,16 @@ export function view(level, state, result = null) {
         summary:`${state.dials.payload} B payload + ${frame.overheadBytes} B headers = ${frame.frameBytes} B frame`
       };
     }
-    case 'subnet': {
+  },
+  subnet:{
+    evaluate(level, state) {
+      const block = subnet(level.base, state.dials.prefix);
+      const tightest = smallestPrefixFor(level.hosts);
+      if (block.usable < level.hosts) return {success:false, message:`A /${state.dials.prefix} holds ${block.usable} usable addresses, and this deck needs ${level.hosts}.`, block};
+      if (state.dials.prefix !== tightest) return {success:false, message:`A /${state.dials.prefix} works but wastes ${block.usable - level.hosts} addresses. A longer prefix is a smaller block: find the smallest block that still holds ${level.hosts} hosts.`, block};
+      return {success:true, message:`${block.cidr} holds ${block.usable} usable addresses for ${level.hosts} hosts: ${block.firstHost} through ${block.lastHost}, broadcast ${block.broadcast}, mask ${block.maskText}.`, block};
+    },
+    view(level, state) {
       const block = subnet(level.base, state.dials.prefix);
       return {
         instructions:`Choose the prefix length for a deck that needs ${level.hosts} host addresses.`,
@@ -476,7 +329,18 @@ export function view(level, state, result = null) {
         ], highlight:block.usable >= level.hosts ? 6 : -1}
       };
     }
-    case 'vlsm': {
+  },
+  vlsm:{
+    evaluate(level, state) {
+      const requests = level.requests.map(request => ({...request, prefix:state.dials[request.id]}));
+      const plan = allocate(level.base, level.basePrefix, requests);
+      const short = plan.blocks.find(block => !block.enough);
+      const outside = plan.blocks.find(block => !block.fits);
+      if (short) return {success:false, message:`${short.name} needs ${short.needs} addresses but a /${short.prefix} only has ${short.usable} usable.`, plan};
+      if (outside) return {success:false, message:`${outside.name} does not fit: the blocks you chose run past the end of ${plan.parent.cidr}. Larger blocks first waste less space.`, plan};
+      return {success:true, message:`All four decks fit inside ${plan.parent.cidr} with ${plan.free} addresses left over. Each block starts on a boundary that matches its own size.`, plan};
+    },
+    view(level, state) {
       const plan = allocate(level.base, level.basePrefix, level.requests.map(request => ({...request, prefix:state.dials[request.id]})));
       return {
         instructions:`Give each deck a prefix. Blocks are allocated in this order inside ${plan.parent.cidr}.`,
@@ -487,7 +351,19 @@ export function view(level, state, result = null) {
         ]), problems:plan.blocks.map(block => !block.enough || !block.fits)}
       };
     }
-    case 'routing': {
+  },
+  routing:{
+    evaluate(level, state) {
+      const rows = level.questions.map((question, index) => {
+        const match = longestPrefixMatch(level.table, question.destination);
+        return {destination:question.destination, chosen:state.choices[index], correct:match.index, prefix:match.route.prefix, via:match.route.via};
+      });
+      const wrong = rows.find(row => row.chosen !== row.correct);
+      if (state.choices.includes(-1)) return {success:false, message:'Choose an outgoing route for every destination.', rows};
+      if (wrong) return {success:false, message:`${wrong.destination} does not leave by ${level.table[wrong.chosen].via}. Two routes can both contain an address; the router uses the one with the longest prefix.`, rows};
+      return {success:true, message:'Every destination leaves by its most specific route. That rule, longest prefix match, is how a router forwards without knowing the whole internet.', rows};
+    },
+    view(level, state) {
       const rows = level.table.map((route, index) => [route.prefix, route.via, `${subnet(route.prefix.split('/')[0], Number(route.prefix.split('/')[1])).usable} addresses`, `/${route.prefix.split('/')[1]}`]);
       return {
         instructions:'For each destination, choose the route the router would use.',
@@ -496,7 +372,17 @@ export function view(level, state, result = null) {
         diagram:{type:'table', caption:'Forwarding table', columns:['Destination prefix', 'Out via', 'Block size', 'Prefix length'], rows}
       };
     }
-    case 'transport': {
+  },
+  transport:{
+    evaluate(level, state) {
+      const result = transfer(level.link, {window:state.dials.window, protocol:state.dials.protocol ?? 'selective-repeat', bytes:level.bytes});
+      const late = result.seconds > level.target.seconds;
+      const wasteful = level.target.wasted !== undefined && result.wasted > level.target.wasted;
+      if (late) return {success:false, message:`The dump took ${result.seconds} s against a ${level.target.seconds} s deadline, using ${percent(result.utilisation)} of the link. One bandwidth-delay product is ${result.bdpPackets} packets; a window smaller than that leaves the link idle waiting for acknowledgements.`, result};
+      if (wasteful) return {success:false, message:`Delivered in ${result.seconds} s, but ${percent(result.wasted)} of transmissions were retransmissions against a ${percent(level.target.wasted)} limit. Resending data that already arrived is paid for twice.`, result};
+      return {success:true, message:`Delivered ${(level.bytes / 1048576).toFixed(0)} MiB in ${result.seconds} s at ${result.throughputMbps} Mbps, ${percent(result.utilisation)} of the link, with ${percent(result.wasted)} of transmissions wasted.`, result};
+    },
+    view(level, state) {
       const result = transfer(level.link, {window:state.dials.window, protocol:state.dials.protocol ?? 'selective-repeat', bytes:level.bytes});
       return {
         instructions:`Size the window for a ${level.link.capacityMbps} Mbps link with ${level.link.rttMs} ms round-trip time.`,
@@ -504,7 +390,21 @@ export function view(level, state, result = null) {
         summary:`${result.seconds} s · ${result.throughputMbps} Mbps · ${percent(result.utilisation)} of link · ${percent(result.wasted)} wasted`
       };
     }
-    case 'sequence': {
+  },
+  sequence:{
+    evaluate(level, state) {
+      const steps = state.order.map(id => level.items.find(item => item.id === id));
+      const skipped = new Set(level.skipWhen && state.dials?.[level.skipWhen.dial] === level.skipWhen.value ? level.skipWhen.skip : []);
+      const active = steps.filter(step => !skipped.has(step.id));
+      const path = timeline(active.map(step => ({id:step.id, name:step.name, ms:step.ms})));
+      const ordered = orderedCorrect(level, state);
+      if (!ordered) return {success:false, message:level.orderHint, path, skipped:[...skipped]};
+      if (level.target?.ms !== undefined && path.totalMs > level.target.ms) {
+        return {success:false, message:`The order is right, but this takes ${path.totalMs} ms and the target is ${level.target.ms} ms. Removing a round trip is the only thing that helps: extra bandwidth does not.`, path, skipped:[...skipped]};
+      }
+      return {success:true, message:`${path.rows.length} steps, ${path.totalMs} ms before the first byte of the answer arrives.${skipped.size ? ` ${skipped.size} steps were skipped because the answer was already cached.` : ''}`, path, skipped:[...skipped]};
+    },
+    view(level, state) {
       const skipped = new Set(level.skipWhen && state.dials?.[level.skipWhen.dial] === level.skipWhen.value ? level.skipWhen.skip : []);
       const steps = state.order.map(id => level.items.find(item => item.id === id)).filter(step => !skipped.has(step.id));
       const path = timeline(steps.map(step => ({id:step.id, name:step.name, ms:step.ms})));
@@ -515,7 +415,15 @@ export function view(level, state, result = null) {
         diagram:{type:'timeline', caption:'Elapsed time', total:path.totalMs, rows:path.rows.map(row => ({name:row.name, value:row.ms, at:row.elapsed, detail:`${row.ms} ms · at ${row.elapsed} ms`}))}
       };
     }
-    case 'hash': {
+  },
+  hash:{
+    evaluate(level, state) {
+      const table = hashTable(level, state);
+      if (table.size > level.maxSlots) return {success:false, message:`A ${table.size}-slot table is larger than the ${level.maxSlots} slots this memory bank has.`, table};
+      if (table.longest > level.maxChain) return {success:false, message:`The longest chain holds ${table.longest} keys and this lookup budget allows ${level.maxChain}. ${table.collisions} slot${table.collisions === 1 ? '' : 's'} hold more than one key. A table size that shares factors with your keys stacks them together.`, table};
+      return {success:true, message:`${level.keys.length} keys in ${table.size} slots, longest chain ${table.longest}, load factor ${table.load.toFixed(2)}. Every lookup is one probe.`, table};
+    },
+    view(level, state) {
       const table = hashTable(level, state);
       return {
         instructions:`Store ${level.keys.length} station IDs so every lookup takes at most ${level.maxChain} probe${level.maxChain === 1 ? '' : 's'}.`,
@@ -526,7 +434,20 @@ export function view(level, state, result = null) {
         }))}
       };
     }
-    case 'reach': {
+  },
+  reach:{
+    evaluate(level, state) {
+      const rows = deliveries(level, state);
+      const wrong = rows.find(row => !row.correct);
+      if (wrong) {
+        return {success:false, rows, message:wrong.delivery === 'invalid'
+          ? wrong.reason
+          : `${wrong.name} should be reached ${wrong.expect === 'direct' ? 'directly, on this deck' : 'through the gateway'}, and this configuration ${wrong.delivery === 'none' ? 'cannot reach it at all' : wrong.delivery === 'direct' ? 'tries to reach it directly' : 'sends it to the gateway'}. ${wrong.reason}`};
+      }
+      const block = rows[0].block;
+      return {success:true, rows, message:`${level.host}/${state.dials.prefix} puts this deck in ${block.cidr}. Its neighbours are reached directly and everything else leaves through ${state.dials.gateway}. The mask, not the destination, is what decides.`};
+    },
+    view(level, state) {
       const rows = deliveries(level, state);
       const block = rows[0]?.block;
       const arrow = {direct:'on this deck', gateway:'via the gateway', none:'nowhere', invalid:'—'};
@@ -539,7 +460,19 @@ export function view(level, state, result = null) {
           problems:rows.map(row => !row.correct)}
       };
     }
-    case 'nat': {
+  },
+  nat:{
+    evaluate(level, state) {
+      const run = natRun(level, state);
+      const wrong = run.rows.find(row => !row.correct);
+      if (wrong) {
+        return {success:false, run, message:wrong.want
+          ? `${wrong.name} should get through and does not. ${wrong.reason}`
+          : `${wrong.name} should be dropped and is not. Publishing a port exposes it to everyone, not only to the hosts you had in mind.`};
+      }
+      return {success:true, run, message:`${run.table.length} inside hosts share ${level.publicAddress}, told apart by port. Replies find their way home from the table; the only unsolicited traffic that gets in is the port you chose to publish.`};
+    },
+    view(level, state) {
       const run = natRun(level, state);
       return {
         instructions:'One public address serves the whole station. Decide which port, if any, is published to the outside.',
@@ -550,7 +483,21 @@ export function view(level, state, result = null) {
           problems:run.rows.map(row => !row.correct)}
       };
     }
-    case 'congestion': {
+  },
+  congestion:{
+    evaluate(level, state) {
+      const runs = congestionRuns(level, state);
+      const late = runs.find(entry => !entry.onTime);
+      const dirty = runs.find(entry => !entry.clean);
+      if (late) {
+        return {success:false, runs, message:`On the ${late.link.name} this took ${late.result.seconds} s against a ${late.link.target.seconds} s target, using ${percent(late.result.utilisation)} of the link. One bandwidth-delay product there is ${late.result.bdpPackets} packets.`};
+      }
+      if (dirty) {
+        return {success:false, runs, message:`On the ${dirty.link.name} the deadline is met, but ${percent(dirty.result.wasted)} of transmissions were retransmissions against a ${percent(dirty.link.target.wasted)} limit. A window past what the path holds does not go faster; it just fills a buffer until it overflows.`};
+      }
+      return {success:true, runs, message:`Both links are met: ${runs.map(entry => `${entry.link.name} in ${entry.result.seconds} s at ${percent(entry.result.utilisation)}`).join(', ')}. ${String(state.dials.sender).startsWith('fixed') ? 'One fixed window happened to suit both paths.' : 'Slow start found each path’s capacity without being told it.'}`};
+    },
+    view(level, state) {
       const runs = congestionRuns(level, state);
       return {
         instructions:'The same transfer runs over both links. Choose how the sender decides its window.',
@@ -562,7 +509,19 @@ export function view(level, state, result = null) {
         ])}
       };
     }
-    case 'estimate': {
+  },
+  estimate:{
+    evaluate(level, state) {
+      const rows = estimateRows(level, state);
+      if (state.choices.includes(-1)) return {success:false, rows, message:'Work out every figure before checking.'};
+      const wrong = rows.findIndex(row => !row.correct);
+      if (wrong >= 0) {
+        const row = rows[wrong];
+        return {success:false, rows, wrong, message:`The ${row.estimator.label} is not right yet. ${row.estimator.explain(level.givens)}`};
+      }
+      return {success:true, rows, message:`Every figure is the right order of magnitude. ${level.quizSuccess ?? ''}`.trim()};
+    },
+    view(level, state) {
       const rows = estimateRows(level, state);
       return {
         instructions:level.instructions ?? 'Work each figure out from the numbers given, then pick the closest.',
@@ -571,7 +530,20 @@ export function view(level, state, result = null) {
         diagram:{type:'table', caption:'What you were told', columns:['Quantity', 'Value'], rows:level.given.map(entry => [entry.label, entry.text])}
       };
     }
-    case 'budget': {
+  },
+  budget:{
+    evaluate(level, state) {
+      const run = budgetRun(level, state);
+      if (!run.minutesCorrect) {
+        return {success:false, run, message:`That is not what is left. The objective allows ${run.report.allowedMinutes} minutes of downtime in this window, and the incidents spent ${run.report.spentMinutes}.`};
+      }
+      if (!run.actionCorrect) {
+        const advice = {ship:'there is budget left, so a risky change can go out', 'slow-down':'three quarters of the budget is gone, so the risky change waits and the reliability work goes first', freeze:'the budget is spent, so nothing risky ships until the window rolls over'};
+        return {success:false, run, message:`The arithmetic is right; the decision is not. With ${run.report.remainingMinutes} minutes left of ${run.report.allowedMinutes}, ${advice[run.report.verdict]}.`};
+      }
+      return {success:true, run, message:`${run.report.spentMinutes} minutes spent of ${run.report.allowedMinutes} allowed, ${run.report.remainingMinutes} left. The month achieved ${run.report.achievedText}, and the budget — not the last outage — decides what ships.`};
+    },
+    view(level, state) {
       const run = budgetRun(level, state);
       return {
         instructions:`The objective is ${(level.objectiveTarget * 100).toFixed(3)}% over ${Math.round(level.windowMinutes / 1440)} days. Work out what is left, then decide.`,
@@ -581,7 +553,18 @@ export function view(level, state, result = null) {
           rows:level.incidents.map(incident => [incident.date, incident.name, `${incident.minutes} min`, `${Math.round((incident.share ?? 1) * 100)}%`])}
       };
     }
-    case 'incident': {
+  },
+  incident:{
+    evaluate(level, state) {
+      const design = incidentDesign(level, state);
+      const result = evaluateArchitecture(design, level.scenario);
+      if (!result.success) return {success:false, result, message:result.message};
+      if (level.maxCost !== undefined && result.cost > level.maxCost) {
+        return {success:false, result, message:`The contract is met, but at ${result.cost} credits against the ${level.maxCost} this repair is allowed. Something here is paid for and not doing anything.`};
+      }
+      return {success:true, result, message:`${result.message} The tier that was saturated is the one that had to change; the rest of the design was never the problem.`};
+    },
+    view(level, state) {
       const result = evaluateArchitecture(incidentDesign(level, state), level.scenario);
       const target = result.scenario.slo;
       return {
@@ -595,7 +578,16 @@ export function view(level, state, result = null) {
         ]}
       };
     }
-    case 'money': {
+  },
+  money:{
+    evaluate(level, state) {
+      const run = tillRun(level, state);
+      if (!run.equal) {
+        return {success:false, run, message:`The till says ${run.valueText.slice(0, 24)}… and the takings are ${run.exact.toFixed(2)}. ${representations[run.representation].note} ${run.order === 'ascending' ? 'Adding the small amounts first made the error smaller and did not remove it.' : ''}`.trim()};
+      }
+      return {success:true, run, message:`${run.count} amounts, and the total is exact to the cent. Counting in whole minor units keeps every value an integer, so nothing is ever rounded on the way.`};
+    },
+    view(level, state) {
       const run = tillRun(level, state);
       return {
         instructions:'Add up one day of takings. Choose what the till counts in.',
@@ -610,7 +602,25 @@ export function view(level, state, result = null) {
         ], problems:[false, false, false, !run.equal, !run.equal]}
       };
     }
-    case 'text': {
+  },
+  text:{
+    evaluate(level, state) {
+      const rows = columnRun(level, state);
+      const mangled = rows.find(row => row.mangled);
+      const cut = rows.find(row => !row.whole);
+      if (mangled) return {success:false, rows, message:`“${mangled.name}” is cut in the middle of a character: ${mangled.cut.bytes} of the ${mangled.size.bytes} bytes it needs. A byte-wise cut does not know where a character ends.`};
+      if (cut) return {success:false, rows, message:`“${cut.name}” does not fit: ${cut.size.bytes} bytes and ${cut.size.codePoints} code points, against a limit of ${state.dials.limit} ${state.dials.unit === 'bytes' ? 'bytes' : 'code points'}.`};
+      // The registry pays for every unit it reserves on every row, so a field
+      // that fits but is larger than it needs to be is still the wrong answer.
+      const needed = Math.max(...rows.map(row => state.dials.unit === 'bytes' ? row.size.bytes : row.size.codePoints));
+      const smaller = level.dials.find(dial => dial.id === 'limit').options
+        .map(option => option.value).filter(value => value < state.dials.limit && value >= needed).sort((a, b) => a - b)[0];
+      if (smaller !== undefined) {
+        return {success:false, rows, message:`Every name fits, but the longest needs only ${needed} ${state.dials.unit === 'bytes' ? 'bytes' : 'code points'} and this field reserves ${state.dials.limit} on every row. A field of ${smaller} would do.`};
+      }
+      return {success:true, rows, message:`Every name survives whole. ${state.dials.unit === 'codePoints' ? 'Counting code points never splits a character, and the column has to be sized for the widest one: ' + Math.max(...rows.map(row => row.size.bytes)) + ' bytes here.' : 'Counting bytes works only because this limit is wide enough for the longest name.'}`};
+    },
+    view(level, state) {
       const rows = columnRun(level, state);
       return {
         instructions:`Every crew name has to survive a ${state.dials.limit}-unit field. Choose the size and what the field counts.`,
@@ -621,7 +631,16 @@ export function view(level, state, result = null) {
           problems:rows.map(row => !row.whole)}
       };
     }
-    case 'cache': {
+  },
+  cache:{
+    evaluate(level, state) {
+      const {choice, result} = cacheRun(level, state);
+      if (result.misses > level.target.misses) {
+        return {success:false, result, choice, message:`${choice.label} costs ${result.misses.toLocaleString('en-US')} misses and ${(result.bytesFetched / 1048576).toFixed(2)} MiB of traffic, against a budget of ${level.target.misses.toLocaleString('en-US')}. ${result.avoidable > 0 ? `${result.avoidable.toLocaleString('en-US')} of those lines were fetched, evicted, and fetched again.` : ''}`.trim()};
+      }
+      return {success:true, result, choice, message:`${choice.label}: ${result.misses.toLocaleString('en-US')} misses, which is every line fetched exactly once. Same arithmetic, same answer, ${(level.plans[0] ? '' : '')}a quarter of the memory traffic.`};
+    },
+    view(level, state) {
       const {choice, result} = cacheRun(level, state);
       const worst = Math.max(...level.plans.map(plan => traverse({...level.grid, ...plan}).misses));
       return {
@@ -634,7 +653,16 @@ export function view(level, state, result = null) {
         })}
       };
     }
-    case 'ecc': {
+  },
+  ecc:{
+    evaluate(level, state) {
+      const {check, flips} = eccRun(level, state);
+      if (flips === 0) return {success:false, check, flips, message:`This is the word as it arrived, and its parity does not check out. The syndrome is ${eccRun(level, state).received.syndrome}, which is a bit position, not a yes-or-no.`};
+      if (flips > 1) return {success:false, check, flips, message:`You changed ${flips} bits. A single-error-correcting code can locate one flip; changing more than one is a guess, and this word only had one.`};
+      if (!check.valid) return {success:false, check, flips, message:`That bit was not the one. With bit ${state.bits.findIndex((bit, index) => bit !== level.received[index]) + 1} flipped the syndrome is ${check.syndrome}, which is where the code says the error still is.`};
+      return {success:true, check, flips, message:`Bit ${eccRun(level, state).received.syndrome} was the flipped one, and the syndrome said so directly: the three parity checks read out its position in binary. The data is ${check.data.join('')}.`};
+    },
+    view(level, state) {
       const {check, flips, received} = eccRun(level, state);
       return {
         instructions:'One bit of this word arrived wrong. Flip it back — and only it.',
@@ -648,7 +676,16 @@ export function view(level, state, result = null) {
         ], problems:[!!check.checks.c1, !!check.checks.c2, !!check.checks.c4, check.syndrome !== 0]}
       };
     }
-    case 'tree': {
+  },
+  tree:{
+    evaluate(level, state) {
+      const tree = buildTree(state.order.map(Number));
+      if (tree.height > level.target.height) {
+        return {success:false, tree, message:`Inserting in this order gives a tree ${tree.height} deep, and the lookup budget allows ${level.target.height}. ${tree.height === level.keys.length ? 'Sorted input gives a linked list with extra pointers: every insert goes down the same side.' : 'Each key goes below one it compares against, so an order that keeps splitting the range in half stays shallow.'}`};
+      }
+      return {success:true, tree, message:`${tree.height} levels for ${level.keys.length} keys, which is the best a binary tree can do. The tree has no shape of its own — the insertion order gave it one.`};
+    },
+    view(level, state) {
       const tree = buildTree(state.order.map(Number));
       return {
         instructions:'Reorder the inserts. The keys are the same; the tree they build is not.',
@@ -660,7 +697,15 @@ export function view(level, state, result = null) {
         }))}
       };
     }
-    case 'quiz':
+  },
+  quiz:{
+    evaluate(level, state) {
+      if (state.choices.includes(-1)) return {success:false, message:'Answer every question.'};
+      const wrong = level.questions.findIndex((question, index) => state.choices[index] !== question.answer);
+      if (wrong >= 0) return {success:false, message:`Question ${wrong + 1} is not right yet. ${level.questions[wrong].why ?? ''}`.trim(), wrong};
+      return {success:true, message:level.quizSuccess ?? 'Every answer is right.'};
+    },
+    view(level, state) {
       return {
         instructions:level.instructions ?? 'Choose the best answer for each question.',
         legend:[`${state.choices.filter(choice => choice >= 0).length} of ${level.questions.length} answered`],
@@ -672,7 +717,23 @@ export function view(level, state, result = null) {
           data:question.data ?? null
         }))}
       };
-    default:
-      throw new Error(`Unknown puzzle kind “${level.kind}”.`);
+    }
   }
-}
+};
+
+
+// ---------------------------------------------------------------- dispatch
+
+const dispatch = (name, level, state) => {
+  const kind = kinds[level.kind];
+  if (!kind) throw new Error(`Unknown puzzle kind “${level.kind}”.`);
+  return kind[name](level, state);
+};
+
+// Is this configuration right, and why not if it is not?
+export const evaluate = (level, state) => dispatch('evaluate', level, state);
+
+// What the interface draws: the instructions, the legend, a one-line summary,
+// and a diagram description for the kinds that do not have an isometric scene.
+export const view = (level, state) => dispatch('view', level, state);
+
