@@ -20,6 +20,9 @@ export const causes = {
   notComputed:{id:'notComputed', label:'The function gives back the same answer whatever it is given'},
   unchanged:{id:'unchanged', label:'It returns its input without working on it'},
   boundary:{id:'boundary', label:'It is wrong only at the edge of the range'},
+  wrongOrder:{id:'wrongOrder', label:'The right values come back in the wrong order'},
+  firstThingBack:{id:'firstThingBack', label:'It hands back the first thing it was given'},
+  someInputsOnly:{id:'someInputsOnly', label:'Some inputs are handled and others are not'},
   negatives:{id:'negatives', label:'Negative values are not handled'},
   tooSlow:{id:'tooSlow', label:'The answers are right and it does far too much work'},
   wrongShape:{id:'wrongShape', label:'The answers are right and the shape is not what was asked for'},
@@ -57,6 +60,37 @@ const sameEverywhere = results => {
 };
 const isEmpty = value => (Array.isArray(value) && !value.length) || value === '' || value === 0;
 
+// The same values in a different order — a container taken from the wrong end,
+// a comparison the wrong way round, a sort that is not stable.
+const sameMembers = entry => {
+  if (!Array.isArray(entry.actual) || !Array.isArray(entry.expect)) return false;
+  if (entry.actual.length !== entry.expect.length || entry.actual.length < 2) return false;
+  const key = list => list.map(value => JSON.stringify(value)).sort().join('\u0001');
+  return key(entry.actual) === key(entry.expect) && JSON.stringify(entry.actual) !== JSON.stringify(entry.expect);
+};
+
+// An accumulator that was never updated hands back whatever it was seeded with.
+const handsBackTheFirst = entry => {
+  const first = entry.args[0];
+  if (!Array.isArray(first) || !first.length) return false;
+  return JSON.stringify(entry.actual) === JSON.stringify(first[0]);
+};
+
+const numbersIn = entry => entry.args.flat(Infinity).filter(value => typeof value === 'number');
+const hasNegative = entry => numbersIn(entry).some(value => value < 0);
+
+// The edge of the range, meant literally: the shortest or longest input among
+// the cases, or the one holding the smallest or largest number any case uses.
+const atAnEdge = (entry, cases) => {
+  const lengths = cases.map(other => (Array.isArray(other.args[0]) || typeof other.args[0] === 'string' ? other.args[0].length : null));
+  const here = Array.isArray(entry.args[0]) || typeof entry.args[0] === 'string' ? entry.args[0].length : null;
+  const sized = lengths.filter(value => value !== null);
+  if (here !== null && sized.length > 1 && (here === Math.min(...sized) || here === Math.max(...sized))) return true;
+  const all = cases.flatMap(numbersIn);
+  const mine = numbersIn(entry);
+  return all.length > 1 && mine.some(value => value === Math.min(...all) || value === Math.max(...all));
+};
+
 // What actually went wrong, or null when the run did not fail in a way this
 // knows how to name — in which case nothing is asked and the error is shown.
 export function diagnose(level, result, thrown = null) {
@@ -90,8 +124,17 @@ export function diagnose(level, result, thrown = null) {
     if (failed.args.some(isEmpty)) return causes.emptyInput;
     if (sameEverywhere(result.cases)) return causes.notComputed;
     if (JSON.stringify(failed.actual) === JSON.stringify(failed.args[0])) return causes.unchanged;
-    if (failed.args.flat().some(value => typeof value === 'number' && value < 0)) return causes.negatives;
-    return causes.boundary;
+    // From here on a cause is claimed only where every failing case shows it.
+    // A pattern that holds for one case and not the rest is a coincidence, and
+    // naming it would teach the player to read one line and stop.
+    const broken = result.cases.filter(entry => !entry.passed || entry.overGate);
+    if (broken.every(sameMembers)) return causes.wrongOrder;
+    if (broken.every(handsBackTheFirst)) return causes.firstThingBack;
+    if (broken.every(hasNegative) && result.cases.some(entry => entry.passed && !hasNegative(entry))) return causes.negatives;
+    if (broken.every(entry => atAnEdge(entry, result.cases))) return causes.boundary;
+    // Nothing recognisable. That some inputs work and others do not is still
+    // true and still worth committing to; when none of them work, it is not.
+    return result.cases.some(entry => entry.passed && !entry.overGate) ? causes.someInputsOnly : null;
   }
   return null;
 }
@@ -105,7 +148,8 @@ const poolFor = level => level.kind === 'code'
     ? [causes.weakSuite, causes.wrongExpectation, causes.willNotRun, causes.wrongFunction, causes.notComputed]
     : [causes.pastTheEnd, causes.emptyInput, causes.boundary, causes.negatives, causes.notComputed, causes.unchanged,
        causes.wrongType, causes.neverEnds, causes.noBaseCase, causes.tooSlow, causes.mutates, causes.dividedByZero,
-       causes.missingField, causes.wrongShape, causes.willNotRun, causes.wrongFunction, causes.notRecursive];
+       causes.missingField, causes.wrongShape, causes.willNotRun, causes.wrongFunction, causes.notRecursive,
+       causes.wrongOrder, causes.firstThingBack, causes.someInputsOnly];
 
 const seedOf = text => [...text].reduce((total, character) => (total * 31 + character.codePointAt(0)) % 2147483647, 11);
 
