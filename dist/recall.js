@@ -73,14 +73,25 @@ const distinct = list => {
 
 // Every question is built from what the mission already ships and the tests
 // already check, so a review can never ask something the game does not know.
-export function recallQuestion(level) {
-  if (level.kind === 'code' && level.solution) {
+// Each asker knows one shape of mission and the one question that shape can be
+// asked about. They are tried in order and the first that can ask, asks. An
+// asker whose shape fits but whose mission has too little to build a question
+// from — a one-line program with nothing to tell it apart from — returns nothing
+// and the next one gets its turn.
+//
+// The name of the question is on the asker rather than buried in what it
+// returns, so what a mission gets asked is readable from the list alone.
+const askers = [
+  {
+    kind:'line',
     // One line of the program you wrote, taken back out. The distractors are
     // other lines of the same program plus the near misses — turning the wrong
     // way, moving one tile too far — which is what these missions are about.
     // Indentation is kept, because reading a block is part of the question.
-    const lines = level.solution.split('\n').filter(line => line.trim() && !line.trim().startsWith('//'));
-    if (lines.length >= 1) {
+    when:level => level.kind === 'code' && Boolean(level.solution),
+    ask(level) {
+      const lines = level.solution.split('\n').filter(line => line.trim() && !line.trim().startsWith('//'));
+      if (!lines.length) return null;
       const index = seedOf(level.id) % lines.length;
       const line = lines[index].trim();
       const near = [
@@ -96,113 +107,134 @@ export function recallQuestion(level) {
         ...near.filter(text => text !== line).map(value => ({value, label:value})),
         ...lines.filter((_, position) => position !== index).map(entry => ({value:entry.trim(), label:entry.trim()}))
       ]).slice(0, 4);
-      if (options.length >= 2) {
-        const shown = lines.map((entry, position) => position === index ? entry.replace(/\S.*/, '▁▁▁▁▁▁▁▁') : entry).join('\n');
-        return {
-          kind:'line',
-          prompt:`${level.name}: which line belongs in the gap?\n\n${shown}`,
-          options:shuffle(options, seedOf(level.id)),
-          answer:line,
-          why:level.takeaway
-        };
-      }
-    }
-  }
-  if (level.mutants?.length) {
-    // Test design, recalled as the reason a case has to exist.
-    const index = seedOf(level.id) % level.mutants.length;
-    const target = level.mutants[index];
-    return {
-      kind:'mutant',
-      prompt:`${level.subject.name}(): one broken version ${target.name}. What has to be in a suite to catch it?`,
-      options:shuffle(level.mutants.map(mutant => ({value:mutant.name, label:mutant.why})), seedOf(level.id)),
-      answer:target.name,
-      why:'A suite is worth what it rejects, and what rejects things lives at the boundaries and the edges.'
-    };
-  }
-  if (level.received && Array.isArray(level.solution)) {
-    const flipped = level.solution.findIndex((bit, index) => bit !== level.received[index]) + 1;
-    return {
-      kind:'position',
-      prompt:`${level.name}: the word arrived as ${level.received.join('')}. Which position was flipped?`,
-      options:shuffle(level.received.map((_, index) => ({value:index + 1, label:`position ${index + 1}`})), seedOf(level.id)).slice(0, 4)
-        .some(option => option.value === flipped)
-        ? shuffle(level.received.map((_, index) => ({value:index + 1, label:`position ${index + 1}`})), seedOf(level.id)).slice(0, 4)
-        : [{value:flipped, label:`position ${flipped}`}, ...shuffle(level.received.map((_, index) => ({value:index + 1, label:`position ${index + 1}`})), seedOf(level.id)).filter(option => option.value !== flipped).slice(0, 3)],
-      answer:flipped,
-      why:'The three parity checks read out the bad position in binary.'
-    };
-  }
-  if (level.edges?.length && Array.isArray(level.solution)) {
-    const best = evaluateNetwork(level, level.solution);
-    const measured = level.budget ? best.cost : best.hops;
-    const unit = level.budget ? ' ms' : ' hops';
-    const wrong = [measured + 1, measured - 1, Math.round(measured * 1.5)].filter(value => value !== measured && value > 0);
-    return {
-      kind:'route',
-      prompt:`${level.name}: what did the best route cost?`,
-      options:shuffle(distinct([{value:measured, label:`${measured}${unit}`}, ...wrong.map(value => ({value, label:`${value}${unit}`}))]).slice(0, 4), seedOf(level.id)),
-      answer:measured,
-      why:level.takeaway
-    };
-  }
-  if (level.cases?.length && level.fn) {
-    // Retrieval of the procedure: run the function in your head on one case.
-    const index = seedOf(level.id) % level.cases.length;
-    const target = level.cases[index];
-    const answers = distinct([
-      {value:target.expect, label:describe(target.expect)},
-      ...level.cases.filter((_, other) => other !== index).map(entry => ({value:entry.expect, label:describe(entry.expect)}))
-    ]).slice(0, 4);
-    if (answers.length >= 2) {
+      if (options.length < 2) return null;
+      const shown = lines.map((entry, position) => position === index ? entry.replace(/\S.*/, '▁▁▁▁▁▁▁▁') : entry).join('\n');
       return {
-        kind:'call',
+        prompt:`${level.name}: which line belongs in the gap?\n\n${shown}`,
+        options:shuffle(options, seedOf(level.id)),
+        answer:line,
+        why:level.takeaway
+      };
+    }
+  },
+  {
+    kind:'mutant',
+    // Test design, recalled as the reason a case has to exist.
+    when:level => Boolean(level.mutants?.length),
+    ask(level) {
+      const target = level.mutants[seedOf(level.id) % level.mutants.length];
+      return {
+        prompt:`${level.subject.name}(): one broken version ${target.name}. What has to be in a suite to catch it?`,
+        options:shuffle(level.mutants.map(mutant => ({value:mutant.name, label:mutant.why})), seedOf(level.id)),
+        answer:target.name,
+        why:'A suite is worth what it rejects, and what rejects things lives at the boundaries and the edges.'
+      };
+    }
+  },
+  {
+    kind:'position',
+    when:level => Boolean(level.received) && Array.isArray(level.solution),
+    ask(level) {
+      const flipped = level.solution.findIndex((bit, index) => bit !== level.received[index]) + 1;
+      const positions = shuffle(level.received.map((_, index) => ({value:index + 1, label:`position ${index + 1}`})), seedOf(level.id));
+      // Four positions at random need not include the answer; when they do not,
+      // the answer takes the first place and three others fill in behind it.
+      const four = positions.slice(0, 4);
+      return {
+        prompt:`${level.name}: the word arrived as ${level.received.join('')}. Which position was flipped?`,
+        options:four.some(option => option.value === flipped)
+          ? four
+          : [{value:flipped, label:`position ${flipped}`}, ...positions.filter(option => option.value !== flipped).slice(0, 3)],
+        answer:flipped,
+        why:'The three parity checks read out the bad position in binary.'
+      };
+    }
+  },
+  {
+    kind:'route',
+    when:level => Boolean(level.edges?.length) && Array.isArray(level.solution),
+    ask(level) {
+      const best = evaluateNetwork(level, level.solution);
+      const measured = level.budget ? best.cost : best.hops;
+      const unit = level.budget ? ' ms' : ' hops';
+      const wrong = [measured + 1, measured - 1, Math.round(measured * 1.5)].filter(value => value !== measured && value > 0);
+      return {
+        prompt:`${level.name}: what did the best route cost?`,
+        options:shuffle(distinct([{value:measured, label:`${measured}${unit}`}, ...wrong.map(value => ({value, label:`${value}${unit}`}))]).slice(0, 4), seedOf(level.id)),
+        answer:measured,
+        why:level.takeaway
+      };
+    }
+  },
+  {
+    kind:'call',
+    // Retrieval of the procedure: run the function in your head on one case.
+    when:level => Boolean(level.cases?.length) && Boolean(level.fn),
+    ask(level) {
+      const index = seedOf(level.id) % level.cases.length;
+      const target = level.cases[index];
+      const answers = distinct([
+        {value:target.expect, label:describe(target.expect)},
+        ...level.cases.filter((_, other) => other !== index).map(entry => ({value:entry.expect, label:describe(entry.expect)}))
+      ]).slice(0, 4);
+      if (answers.length < 2) return null;
+      return {
         prompt:`What does ${level.fn}(${target.args.map(describe).join(', ')}) return?`,
         options:shuffle(answers, seedOf(level.id)),
         answer:target.expect,
         why:level.takeaway
       };
     }
-  }
-  if (level.questions?.length && (Array.isArray(level.solution) || Array.isArray(level.solution?.choices))) {
+  },
+  {
+    kind:'quiz',
     // Quizzes and estimates already ask a question with a stated reason.
-    const index = seedOf(level.id) % level.questions.length;
-    const asked = level.questions[index];
-    return {
-      kind:'quiz',
-      prompt:asked.prompt,
-      options:asked.options.map((option, position) => ({value:position, label:option.label ?? option})),
-      answer:(Array.isArray(level.solution) ? level.solution : level.solution.choices)[index],
-      why:asked.why ?? level.estimatorNote ?? level.takeaway
-    };
-  }
-  if (level.dials?.length) {
+    when:level => Boolean(level.questions?.length) && (Array.isArray(level.solution) || Array.isArray(level.solution?.choices)),
+    ask(level) {
+      const index = seedOf(level.id) % level.questions.length;
+      const asked = level.questions[index];
+      return {
+        prompt:asked.prompt,
+        options:asked.options.map((option, position) => ({value:position, label:option.label ?? option})),
+        answer:(Array.isArray(level.solution) ? level.solution : level.solution.choices)[index],
+        why:asked.why ?? level.estimatorNote ?? level.takeaway
+      };
+    }
+  },
+  {
+    kind:'dial',
     // Which setting met the target — the decision the mission was about.
-    const answer = solutionState(level).dials;
-    const dial = level.dials.find(entry => answer[entry.id] !== initialState(level).dials[entry.id]) ?? level.dials[0];
-    return {
-      kind:'dial',
-      prompt:`${level.name}: which ${dial.label.toLowerCase()} met the target?`,
-      options:shuffle(dial.options.map(option => ({value:option.value, label:option.label ?? String(option.value)})), seedOf(level.id)),
-      answer:answer[dial.id],
-      why:level.takeaway
-    };
-  }
-  if (level.bits && Number.isInteger(level.target)) {
-    const places = Array.from({length:level.bits.width}, (_, i) => 2 ** (level.bits.width - 1 - i));
-    const bits = solutionState(level).bits;
-    const wrong = [level.target + 1, level.target - 1, -level.target].filter(value => value !== level.target);
-    return {
-      kind:'bits',
-      prompt:`Which value do these bits encode? ${bits.join('')}${level.bits.encoding === 'twos' ? ' (two’s complement)' : ''}`,
-      options:shuffle(distinct([{value:level.target, label:String(level.target)}, ...wrong.map(value => ({value, label:String(value)}))]).slice(0, 4), seedOf(level.id)),
-      answer:level.target,
-      why:`Place values, left to right: ${places.join(', ')}.`
-    };
-  }
-  if (level.values && Array.isArray(level.solution)) {
-    return {
-      kind:'order',
+    when:level => Boolean(level.dials?.length),
+    ask(level) {
+      const answer = solutionState(level).dials;
+      const dial = level.dials.find(entry => answer[entry.id] !== initialState(level).dials[entry.id]) ?? level.dials[0];
+      return {
+        prompt:`${level.name}: which ${dial.label.toLowerCase()} met the target?`,
+        options:shuffle(dial.options.map(option => ({value:option.value, label:option.label ?? String(option.value)})), seedOf(level.id)),
+        answer:answer[dial.id],
+        why:level.takeaway
+      };
+    }
+  },
+  {
+    kind:'bits',
+    when:level => Boolean(level.bits) && Number.isInteger(level.target),
+    ask(level) {
+      const places = Array.from({length:level.bits.width}, (_, i) => 2 ** (level.bits.width - 1 - i));
+      const bits = solutionState(level).bits;
+      const wrong = [level.target + 1, level.target - 1, -level.target].filter(value => value !== level.target);
+      return {
+        prompt:`Which value do these bits encode? ${bits.join('')}${level.bits.encoding === 'twos' ? ' (two’s complement)' : ''}`,
+        options:shuffle(distinct([{value:level.target, label:String(level.target)}, ...wrong.map(value => ({value, label:String(value)}))]).slice(0, 4), seedOf(level.id)),
+        answer:level.target,
+        why:`Place values, left to right: ${places.join(', ')}.`
+      };
+    }
+  },
+  {
+    kind:'order',
+    when:level => Boolean(level.values) && Array.isArray(level.solution),
+    ask:level => ({
       prompt:`${level.name}: what is the finished order?`,
       options:shuffle([
         {value:level.solution.join(','), label:level.solution.join(', ')},
@@ -211,23 +243,34 @@ export function recallQuestion(level) {
       ], seedOf(level.id)),
       answer:level.solution.join(','),
       why:level.takeaway
-    };
+    })
+  },
+  {
+    kind:'sequence',
+    when:level => Boolean(level.items) && Array.isArray(level.order),
+    ask(level) {
+      const right = level.order.map(id => level.items.find(item => item.id === id).name);
+      const swapped = [...right];
+      [swapped[0], swapped[1]] = [swapped[1], swapped[0]];
+      return {
+        prompt:`${level.name}: which order is right?`,
+        options:shuffle([
+          {value:right.join(' → '), label:right.join(' → ')},
+          {value:swapped.join(' → '), label:swapped.join(' → ')},
+          {value:[...right].reverse().join(' → '), label:[...right].reverse().join(' → ')}
+        ], seedOf(level.id)),
+        answer:right.join(' → '),
+        why:level.takeaway
+      };
+    }
   }
-  if (level.items && Array.isArray(level.order)) {
-    const right = level.order.map(id => level.items.find(item => item.id === id).name);
-    const swapped = [...right];
-    [swapped[0], swapped[1]] = [swapped[1], swapped[0]];
-    return {
-      kind:'sequence',
-      prompt:`${level.name}: which order is right?`,
-      options:shuffle([
-        {value:right.join(' → '), label:right.join(' → ')},
-        {value:swapped.join(' → '), label:swapped.join(' → ')},
-        {value:[...right].reverse().join(' → '), label:[...right].reverse().join(' → ')}
-      ], seedOf(level.id)),
-      answer:right.join(' → '),
-      why:level.takeaway
-    };
+];
+
+export function recallQuestion(level) {
+  for (const asker of askers) {
+    if (!asker.when(level)) continue;
+    const asked = asker.ask(level);
+    if (asked) return {kind:asker.kind, ...asked};
   }
   return null;
 }
