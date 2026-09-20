@@ -78,6 +78,27 @@ test('mission ordering introduces each concept before it is required', () => {
   assert.ok(index('total-the-readings') < index('divide-and-conquer'));
   assert.ok(index('one-routine-twice') < index('call-yourself'), 'functions come before recursion');
   assert.ok(index('speak-in-bits') < index('negative-space'));
+  // Computer science reads as three movements: how a machine writes a value
+  // down, how data is arranged once it has, and what the machine actually is.
+  // Floating point and character encoding used to sit six places after the
+  // other three representation missions, which made the chapter a shuffle.
+  const science = levels.filter(level => level.chapter === 'Computer science').map(level => level.id);
+  const movement = id => {
+    const position = science.indexOf(id);
+    assert.ok(position >= 0, `${id} is not a Computer science mission`);
+    return position;
+  };
+  const written = ['speak-in-bits', 'one-byte-code', 'negative-space', 'count-the-cents', 'bytes-not-letters'];
+  const arranged = ['restore-the-order', 'how-it-scales', 'hash-it-out', 'the-tree-that-became-a-list', 'fewest-hops', 'latency-matters'];
+  const machine = ['the-loop-that-misses', 'find-the-flipped-bit', 'both-consoles-at-once'];
+  assert.deepEqual([...written, ...arranged, ...machine], science, 'the three movements have drifted');
+  assert.ok(Math.max(...written.map(movement)) < Math.min(...arranged.map(movement)));
+  assert.ok(Math.max(...arranged.map(movement)) < Math.min(...machine.map(movement)));
+  // Complexity is the lens the rest of the middle movement is read through, so
+  // it comes after the first sort and before the structures it is used to judge.
+  assert.ok(movement('restore-the-order') < movement('how-it-scales'));
+  assert.ok(movement('how-it-scales') < movement('hash-it-out'));
+  assert.ok(movement('how-it-scales') < movement('the-tree-that-became-a-list'));
   assert.ok(index('address-the-station') < index('carve-the-block'));
   assert.ok(index('window-of-opportunity') < index('lost-in-transit'));
 });

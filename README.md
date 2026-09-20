@@ -1,7 +1,7 @@
 # Signal Quest
 
 A game that teaches programming, computer science, networking, and system design by making you
-do each of them. Sixty missions across four chapters, plus an architecture lab where you
+do each of them. Sixty-one missions across four chapters, plus an architecture lab where you
 design a service against a latency, availability, and cost target.
 
 ## Play
@@ -53,28 +53,40 @@ The chapter closes by reading the same function in JavaScript, Python, Ruby, Go,
 missions carry a read-only **language panel** showing the same idea in all five, with a note on
 what each language makes you declare. Only the JavaScript subset runs; the rest is for reading.
 
-**Chapter 2 — Computer science** (13 missions). Binary, bytes and hexadecimal, two's-complement
-signed integers, sorting by adjacent swaps, hash tables and collisions, growth rates, and shortest
-paths on unweighted and weighted graphs. The missions that ask you to *write* an algorithm moved
-to Chapter 1; what is left is the ideas, taught through models you manipulate directly. Five of
-them are about the machine underneath rather than the algorithm on top:
+**Chapter 2 — Computer science** (14 missions, in three movements). *How a machine writes a value
+down*: binary, bytes and hexadecimal, two's-complement negatives, floating point, and UTF-8 text.
+*How data is arranged*: sorting, complexity, hash tables, binary search trees, and shortest paths
+on unweighted and weighted graphs. *What the machine actually is*: cache locality, error
+correction, and concurrency. The missions that ask you to *write* an algorithm moved to chapter 1;
+what is left is the ideas underneath, each one a model you configure rather than a function you
+write.
 
-- **floating point** — a till that is a few cents out every evening, with nothing broken and the
-  arithmetic correct. Single precision makes it worse and adding smallest first makes it smaller;
-  only counting whole minor units makes it exact. The panel prints 0.1 to its last digit;
-- **character encoding** — a name field that has to hold every crew member's name. A string has
-  three lengths that disagree, a byte-wise cut can stop halfway through a character, and a field
-  counted in bytes quietly discriminates against names that need more of them;
-- **locality** — two transposes with identical arithmetic, identical output, and four and a half
-  times the memory traffic between them. Tiling fixes it, and only while the tile still fits in
-  the cache;
-- **error correction** — a word that came back from memory with one bit wrong. Three parity
-  checks over overlapping positions spell out which one, in binary. Flip it back, and only it;
-- **trees and balance** — a catalogue index built by loading keys in the order they were
-  catalogued, which was sorted, so it is a linked list with extra pointers.
+Four of them are worth calling out:
 
-The first and the fourth are diagnosis missions; the third is the same
-correct-but-wrong-shaped-answer idea as Chapter 1's refactor mission, in hardware terms.
+- **Count the cents** adds up a day's takings. Doubles drift, singles drift faster, and counting
+  in whole integers is only half the answer: the commissary meters water below a cent, so a till
+  counting in cents rounds every one of those charges on the way in and comes out wrong by a
+  clean, confident number. The unit has to be as small as the smallest thing you charge for,
+  and no smaller.
+- **Somewhere to put it** is a hash table judged by its worst lookup rather than by whether
+  anything collided. The size decides how often keys land together — six of the seven IDs are
+  multiples of ten — and the collision strategy decides what that costs. Chaining degrades
+  gently; open addressing is faster until the table fills, and then the runs of two keys merge
+  into one and the walks get longer than the collisions can explain.
+- **The loop that misses** transposes a 256×256 grid. The arithmetic is identical in all fifteen
+  loop orders on offer; the traffic runs from 4.5 MiB down to 1 MiB and back up again, and the
+  tile that works is the one whose two sides both fit in the sixteen cache lines at once.
+- **Both consoles at once** is about the thing every other mission assumes away. Two engineers
+  add repairs to one shared total, and you arrange one console's routine: read, add, write, take
+  the lock, give it back, write the log line. The model runs every interleaving of two consoles
+  executing it — 504 of them for the routine as shipped, 396 ending at the wrong number — and
+  shows you one that loses an update, step by step. A routine is right only when every schedule
+  agrees, and the lock has to cover the read, the add and the write without covering the slow
+  part, because whatever is inside it is time the other console spends waiting.
+
+Every mission with dials has exactly one setting that wins, and a test enforces it: several right
+answers would make the shipped solution one of many and leave "which setting met the target?"
+unanswerable when the mission comes back for review.
 
 **Chapter 3 — Networking** (11 missions). Protocol layering and the maximum segment size, CIDR
 addressing, variable-length subnet planning inside a single /24, longest-prefix-match forwarding,
@@ -253,7 +265,7 @@ mission on a 1366×768 screen changed nothing visible at all.
 The colour scheme follows the operating system and can be overridden with the toggle in the
 header, which is then remembered. Text meets WCAG AA contrast in both schemes, icon-only
 controls on small screens keep their labels in the accessibility tree, and everything honours
-`prefers-reduced-motion`. The 60 missions are grouped into four collapsible chapters, each
+`prefers-reduced-motion`. The 61 missions are grouped into four collapsible chapters, each
 carrying its own progress and accent colour; on a phone the rail becomes a drawer over the
 mission it is currently on.
 

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {exactValue, accumulate, representations, encodeUtf8, measure, truncate, traverse, hammingEncode, hammingCheck, buildTree, MachineError} from '../dist/machine.js';
+import {exactValue, accumulate, finestUnit, representations, encodeUtf8, measure, truncate, traverse, hammingEncode, hammingCheck, buildTree, MachineError} from '../dist/machine.js';
 
 test('a double is printed in full, not in the shortest string that round-trips', () => {
   // The exact expansion, worked out independently: 0.1 is the 53-bit integer
@@ -26,11 +26,11 @@ test('a double is printed in full, not in the shortest string that round-trips',
   }
 });
 
-test('only integer minor units add up exactly', () => {
+test('only integer minor units add up exactly, and only in a fine enough unit', () => {
   const amounts = Array.from({length:1000}, () => 0.01);
   const doubles = accumulate(amounts, {representation:'float64'});
   const singles = accumulate(amounts, {representation:'float32'});
-  const cents = accumulate(amounts, {representation:'cents'});
+  const cents = accumulate(amounts, {representation:'whole', scale:100});
 
   assert.equal(doubles.equal, false);
   assert.equal(singles.equal, false);
@@ -38,6 +38,20 @@ test('only integer minor units add up exactly', () => {
   assert.equal(cents.value, 10);
   // Fewer bits of significand, a larger error: the fault is the representation.
   assert.ok(Math.abs(singles.error) > Math.abs(doubles.error) * 100, `${singles.error} vs ${doubles.error}`);
+
+  // An integer counter is exact about its own unit and says nothing about the
+  // amounts that do not fit in one. Counting a half-cent charge in cents rounds
+  // every one of them before a single addition happens.
+  const metered = [...Array.from({length:200}, () => 0.005), 1.5];
+  assert.equal(finestUnit(metered), 1000);
+  assert.equal(accumulate(metered, {representation:'whole', scale:100}).equal, false, 'cents cannot write down half a cent');
+  assert.equal(accumulate(metered, {representation:'whole', scale:100}).rounded, 200);
+  assert.equal(accumulate(metered, {representation:'whole', scale:1000}).equal, true);
+  assert.equal(accumulate(metered, {representation:'whole', scale:1000}).tight, true, 'mills is the smallest unit that fits');
+  assert.equal(accumulate(metered, {representation:'whole', scale:10000}).equal, true);
+  assert.equal(accumulate(metered, {representation:'whole', scale:10000}).tight, false, 'exact, and finer than it needs to be');
+  // No unit rescues a binary fraction.
+  assert.equal(accumulate(metered, {representation:'float64', scale:1000}).equal, false);
 
   // Adding smallest first keeps small amounts from being rounded away against a
   // total that has already grown, so the error shrinks. It is not a fix: on some
@@ -51,8 +65,8 @@ test('only integer minor units add up exactly', () => {
   assert.equal(accumulate(awkward, {representation:'float64', order:'given'}).equal, false);
   assert.equal(accumulate(awkward, {representation:'float64', order:'ascending'}).equal, false, 'reordering is not a fix');
   // Order never rescues integers or breaks them.
-  assert.equal(accumulate(mixed, {representation:'cents', order:'ascending'}).equal, true);
-  assert.equal(accumulate(mixed, {representation:'cents', order:'given'}).equal, true);
+  assert.equal(accumulate(mixed, {representation:'whole', scale:100, order:'ascending'}).equal, true);
+  assert.equal(accumulate(mixed, {representation:'whole', scale:100, order:'given'}).equal, true);
 
   assert.throws(() => accumulate([1], {representation:'decimal128'}), /no representation/);
   assert.throws(() => accumulate([1], {order:'random'}), /as they come or smallest first/);

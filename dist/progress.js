@@ -23,7 +23,7 @@ export const sections = [
     id:'reactor', name:'Reactor', deck:'Deck 1',
     blurb:'The thing that has to come back before anything else can.',
     at:[0, 2.1], size:[1.8, 1.8], height:2.2,
-    rooms:['Reactor access', 'Reactor control', 'Thermal array', 'Thermal grid', 'Thermal monitor', 'Diagnostics bay']
+    rooms:['Reactor access', 'Reactor control', 'Thermal array', 'Thermal grid', 'Thermal monitor', 'Diagnostics bay', 'Repair log']
   },
   {
     id:'sensors', name:'Sensor array', deck:'Deck 3',

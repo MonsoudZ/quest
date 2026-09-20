@@ -49,6 +49,7 @@ export const representations = {
   float64:{
     label:'Double-precision floating point',
     note:'What a JavaScript number is. 53 bits of significand, and no exact tenth anywhere in it.',
+    exact:false,
     add:(total, amount) => total + amount,
     start:0,
     toNumber:total => total
@@ -56,39 +57,71 @@ export const representations = {
   float32:{
     label:'Single-precision floating point',
     note:'Half the significand, so the same error arrives about twice as fast.',
+    exact:false,
     add:(total, amount) => Math.fround(Math.fround(total) + Math.fround(amount)),
     start:0,
     toNumber:total => Math.fround(total)
   },
-  cents:{
-    label:'Integer minor units',
-    note:'Count cents, not dollars. Every amount is a whole number, so every sum is exact.',
-    add:(total, amount) => total + Math.round(amount * 100),
+  whole:{
+    label:'Whole minor units',
+    note:'Count in whole units of the smallest amount you charge in, so every value is an integer and every sum is exact.',
+    exact:true,
+    // An integer representation is only as exact as its unit is small. Rounding
+    // each amount to the chosen unit is what a till actually does, and what
+    // makes too coarse a unit wrong rather than merely approximate.
+    add:(total, amount, scale) => total + Math.round(amount * scale),
     start:0,
-    toNumber:total => total / 100
+    toNumber:(total, scale) => total / scale
   }
 };
 
-// Adds a list of decimal amounts in the chosen representation and reports how
-// far the answer drifts from the exact total.
-export function accumulate(amounts, {representation = 'float64', order = 'given'} = {}) {
+// The smallest power of ten that writes every one of these amounts as a whole
+// number. Anything coarser rounds something away; anything finer is a wider
+// counter for no benefit.
+export function finestUnit(amounts) {
+  let scale = 1;
+  for (const amount of amounts) {
+    while (scale <= 1e9 && Math.abs(amount * scale - Math.round(amount * scale)) > 1e-9) scale *= 10;
+  }
+  return scale;
+}
+
+export function accumulate(amounts, {representation = 'float64', order = 'given', scale = 100} = {}) {
   const model = representations[representation];
   if (!model) fail(`There is no representation called “${representation}”.`);
   if (!['given', 'ascending'].includes(order)) fail('Add the amounts as they come or smallest first.');
+  if (!(scale >= 1 && Number.isInteger(scale))) fail('A minor unit is a whole number of units to the major one.');
   // Adding the small amounts first keeps them from being rounded away against a
   // total that has already grown large. It shrinks the error; it does not remove it.
   const list = order === 'ascending' ? [...amounts].sort((a, b) => a - b) : amounts;
   let total = model.start;
-  for (const amount of list) total = model.add(total, amount);
-  const value = model.toNumber(total);
-  // The exact total, computed in integer minor units so it cannot itself drift.
-  const exactCents = amounts.reduce((sum, amount) => sum + Math.round(amount * 100), 0);
-  const exact = exactCents / 100;
+  for (const amount of list) total = model.add(total, amount, scale);
+  const value = model.toNumber(total, scale);
+  // The exact total, computed in units fine enough for every amount in the list,
+  // so the thing being compared against cannot itself have rounded anything.
+  const needed = finestUnit(amounts);
+  const exactUnits = amounts.reduce((sum, amount) => sum + Math.round(amount * needed), 0);
+  const exact = exactUnits / needed;
   const error = value - exact;
+  // How many amounts this unit cannot write down, which is how many the till
+  // rounds before it has added anything at all.
+  const rounded = model.exact
+    ? amounts.filter(amount => Math.abs(amount * scale - Math.round(amount * scale)) > 1e-9).length
+    : 0;
   return {
-    representation, order, value, exact,
-    valueText:exactValue(value),
-    exactText:exactValue(exact),
+    representation, order, scale, value, exact,
+    needed,
+    // An integer counter is exact when its unit is fine enough for every amount,
+    // and tight when it is no finer than it has to be.
+    representable:model.exact && scale >= needed,
+    tight:model.exact && scale === needed,
+    rounded,
+    // A float is shown in full, because what it actually holds is the lesson.
+    // An integer counter is shown as the decimal it means, for the same reason.
+    valueText:model.exact ? (total / scale).toFixed(Math.round(Math.log10(scale))) : exactValue(value),
+    // The takings are a decimal quantity, not a double: writing them out as a
+    // binary expansion would be answering a question nobody asked.
+    exactText:(exactUnits / needed).toFixed(Math.round(Math.log10(needed))),
     error, errorText:exactValue(error),
     centsOff:Math.round(error * 100) + 0,
     equal:value === exact,
@@ -281,5 +314,91 @@ export function buildTree(keys) {
     // How much worse than a perfectly balanced tree of the same size.
     overhead:height - perfect,
     rows:[...nodes.entries()].map(([key, node]) => ({key, depth:node.depth})).sort((a, b) => a.depth - b.depth || a.key - b.key)
+  };
+}
+
+// ------------------------------------------------- two hands, one counter
+//
+// A routine is a list of step kinds, in the order the player put them. Two
+// workers run that same routine against one shared total, and every way their
+// steps can interleave is tried. A routine is correct when every one of those
+// schedules ends at the same total — not when one of them happens to.
+const stepKinds = {
+  acquire:{shared:false, holds:true, cost:1},
+  read:{shared:true, holds:false, cost:1},
+  add:{shared:false, holds:false, cost:1},
+  write:{shared:true, holds:false, cost:1},
+  release:{shared:false, holds:false, cost:1},
+  format:{shared:false, holds:false, cost:8}
+};
+
+// Reasons a routine is nonsense before any schedule is considered: a step that
+// depends on one that has not happened yet. These are about the routine alone,
+// so they are reported without running anything.
+export function routineFaults(routine) {
+  const at = kind => routine.indexOf(kind);
+  const faults = [];
+  if (at('read') > at('add')) faults.push({id:'addBeforeRead', text:'It adds one to a total it has not read yet.'});
+  if (at('add') > at('write')) faults.push({id:'writeBeforeAdd', text:'It writes the total back before adding anything to it.'});
+  if (at('read') > at('write')) faults.push({id:'writeBeforeRead', text:'It writes the total back before reading it.'});
+  if (at('acquire') > at('release')) faults.push({id:'releaseFirst', text:'It releases the lock before it takes it.'});
+  if (at('format') >= 0 && at('add') > at('format')) faults.push({id:'formatEarly', text:'It writes the log line before the total it is meant to report has been worked out.'});
+  return faults;
+}
+
+// Every interleaving of two runs of the same routine. Both workers are trying
+// to add one, so a correct routine can only ever end at start + 2.
+export function schedules(routine, {start = 0} = {}) {
+  const held = routine.filter(kind => stepKinds[kind]?.holds).length > 0;
+  const results = new Map();
+  let blocked = 0;
+  // One schedule that ends at the wrong total, kept step by step. A count of
+  // lost updates persuades nobody; the trace that lost one persuades everybody.
+  let witness = null;
+
+  const walk = (a, b, state) => {
+    if (a === routine.length && b === routine.length) {
+      results.set(state.total, (results.get(state.total) ?? 0) + 1);
+      if (state.total !== start + 2 && (!witness || state.total < witness.total)) {
+        witness = {total:state.total, steps:state.trace};
+      }
+      return;
+    }
+    for (const [who, index] of [['a', a], ['b', b]]) {
+      if (index === routine.length) continue;
+      const kind = routine[index];
+      // A lock is a lock: while one worker holds it the other cannot pass its
+      // own acquire, and that is the only thing stopping the two of them.
+      if (kind === 'acquire' && state.lock && state.lock !== who) { blocked++; continue; }
+      const next = {...state, local:{...state.local}};
+      if (kind === 'acquire') next.lock = who;
+      if (kind === 'release' && state.lock === who) next.lock = null;
+      if (kind === 'read') next.local[who] = state.total;
+      if (kind === 'add') next.local[who] = (state.local[who] ?? 0) + 1;
+      if (kind === 'write') next.total = state.local[who] ?? state.total;
+      next.trace = [...state.trace, {who, kind, total:next.total, held:next.local[who]}];
+      walk(who === 'a' ? index + 1 : a, who === 'b' ? index + 1 : b, next);
+    }
+  };
+  walk(0, 0, {total:start, lock:null, local:{}, trace:[]});
+
+  const totals = [...results.keys()].sort((first, second) => first - second);
+  // How long the lock is held, counted in the steps inside it: the part of the
+  // routine that cannot overlap with the other worker.
+  const inside = held
+    ? routine.slice(routine.indexOf('acquire') + 1, routine.indexOf('release') < 0 ? routine.length : routine.indexOf('release'))
+    : [];
+  return {
+    routine,
+    guarded:held,
+    totals,
+    schedules:[...results.values()].reduce((sum, count) => sum + count, 0),
+    lost:[...results.entries()].filter(([total]) => total !== start + 2).reduce((sum, [, count]) => sum + count, 0),
+    correct:totals.length === 1 && totals[0] === start + 2,
+    expected:start + 2,
+    witness,
+    blocked,
+    heldFor:inside.reduce((sum, kind) => sum + (stepKinds[kind]?.cost ?? 1), 0),
+    heldSteps:inside
   };
 }

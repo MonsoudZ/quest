@@ -52,7 +52,7 @@ export function createConsole({level, feats, persist, log}) {
     $('polyglot-note').textContent = source.note;
     $('polyglot-caveat').textContent = item.polyglot
       ? 'Read-only. These samples are for comparison; only the JavaScript subset above runs here.'
-      : 'Read-only. This is evidence to read, not a control — the mission is changed with the dials.';
+      : 'Read-only. This is evidence to read, not a control — the mission is changed with the controls beside it.';
     const tabs = $('polyglot-tabs');
     tabs.replaceChildren(...panes.map((pane, index) => {
       const tab = document.createElement('button');
