@@ -283,9 +283,11 @@ export const kinds = {
     }
   },
   layers:{
-    evaluate(level, state) {
+    derive(level, state) {
       const headers = state.order.map(id => level.items.find(item => item.id === id));
-      const frame = encapsulate(headers, state.dials.payload);
+      return {headers, frame:encapsulate(headers, state.dials.payload)};
+    },
+    evaluate(level, state, {frame}) {
       const ordered = orderedCorrect(level, state);
       const fits = frame.frameBytes - level.linkOverhead <= level.mtu;
       const filled = frame.frameBytes - level.linkOverhead === level.mtu;
@@ -294,9 +296,7 @@ export const kinds = {
       if (!filled) return {success:false, message:`This packet is ${level.mtu - (frame.frameBytes - level.linkOverhead)} bytes short of the ${level.mtu}-byte MTU. A larger payload carries the same headers more efficiently.`, frame};
       return {success:true, message:`Headers in order, payload ${state.dials.payload} bytes, frame ${frame.frameBytes} bytes on the wire, ${percent(frame.efficiency)} of it your data. That payload is the maximum segment size for this link.`, frame};
     },
-    view(level, state) {
-      const headers = state.order.map(id => level.items.find(item => item.id === id));
-      const frame = encapsulate(headers, state.dials.payload);
+    view(level, state, {frame}) {
       return {
         instructions:'Order the headers from the first one added to the last, then size the payload so the packet exactly fills the link MTU.',
         legend:[`MTU ${level.mtu} bytes`, `Frame ${frame.frameBytes} bytes`, `${percent(frame.efficiency)} payload`],
@@ -305,15 +305,14 @@ export const kinds = {
     }
   },
   subnet:{
-    evaluate(level, state) {
-      const block = subnet(level.base, state.dials.prefix);
+    derive: (level, state) => ({block:subnet(level.base, state.dials.prefix)}),
+    evaluate(level, state, {block}) {
       const tightest = smallestPrefixFor(level.hosts);
       if (block.usable < level.hosts) return {success:false, message:`A /${state.dials.prefix} holds ${block.usable} usable addresses, and this deck needs ${level.hosts}.`, block};
       if (state.dials.prefix !== tightest) return {success:false, message:`A /${state.dials.prefix} works but wastes ${block.usable - level.hosts} addresses. A longer prefix is a smaller block: find the smallest block that still holds ${level.hosts} hosts.`, block};
       return {success:true, message:`${block.cidr} holds ${block.usable} usable addresses for ${level.hosts} hosts: ${block.firstHost} through ${block.lastHost}, broadcast ${block.broadcast}, mask ${block.maskText}.`, block};
     },
-    view(level, state) {
-      const block = subnet(level.base, state.dials.prefix);
+    view(level, state, {block}) {
       return {
         instructions:`Choose the prefix length for a deck that needs ${level.hosts} host addresses.`,
         legend:['A longer prefix is a smaller block', 'Network and broadcast are not usable hosts'],
@@ -331,17 +330,18 @@ export const kinds = {
     }
   },
   vlsm:{
-    evaluate(level, state) {
+    derive(level, state) {
       const requests = level.requests.map(request => ({...request, prefix:state.dials[request.id]}));
-      const plan = allocate(level.base, level.basePrefix, requests);
+      return {requests, plan:allocate(level.base, level.basePrefix, requests)};
+    },
+    evaluate(level, state, {plan}) {
       const short = plan.blocks.find(block => !block.enough);
       const outside = plan.blocks.find(block => !block.fits);
       if (short) return {success:false, message:`${short.name} needs ${short.needs} addresses but a /${short.prefix} only has ${short.usable} usable.`, plan};
       if (outside) return {success:false, message:`${outside.name} does not fit: the blocks you chose run past the end of ${plan.parent.cidr}. Larger blocks first waste less space.`, plan};
       return {success:true, message:`All four decks fit inside ${plan.parent.cidr} with ${plan.free} addresses left over. Each block starts on a boundary that matches its own size.`, plan};
     },
-    view(level, state) {
-      const plan = allocate(level.base, level.basePrefix, level.requests.map(request => ({...request, prefix:state.dials[request.id]})));
+    view(level, state, {plan}) {
       return {
         instructions:`Give each deck a prefix. Blocks are allocated in this order inside ${plan.parent.cidr}.`,
         legend:[`${plan.parent.total} addresses in the parent block`, `${plan.free} still free`],
@@ -374,16 +374,15 @@ export const kinds = {
     }
   },
   transport:{
-    evaluate(level, state) {
-      const result = transfer(level.link, {window:state.dials.window, protocol:state.dials.protocol ?? 'selective-repeat', bytes:level.bytes});
+    derive: (level, state) => ({result:transfer(level.link, {window:state.dials.window, protocol:state.dials.protocol ?? 'selective-repeat', bytes:level.bytes})}),
+    evaluate(level, state, {result}) {
       const late = result.seconds > level.target.seconds;
       const wasteful = level.target.wasted !== undefined && result.wasted > level.target.wasted;
       if (late) return {success:false, message:`The dump took ${result.seconds} s against a ${level.target.seconds} s deadline, using ${percent(result.utilisation)} of the link. One bandwidth-delay product is ${result.bdpPackets} packets; a window smaller than that leaves the link idle waiting for acknowledgements.`, result};
       if (wasteful) return {success:false, message:`Delivered in ${result.seconds} s, but ${percent(result.wasted)} of transmissions were retransmissions against a ${percent(level.target.wasted)} limit. Resending data that already arrived is paid for twice.`, result};
       return {success:true, message:`Delivered ${(level.bytes / 1048576).toFixed(0)} MiB in ${result.seconds} s at ${result.throughputMbps} Mbps, ${percent(result.utilisation)} of the link, with ${percent(result.wasted)} of transmissions wasted.`, result};
     },
-    view(level, state) {
-      const result = transfer(level.link, {window:state.dials.window, protocol:state.dials.protocol ?? 'selective-repeat', bytes:level.bytes});
+    view(level, state, {result}) {
       return {
         instructions:`Size the window for a ${level.link.capacityMbps} Mbps link with ${level.link.rttMs} ms round-trip time.`,
         legend:[`One bandwidth-delay product ≈ ${result.bdpPackets} packets`, `${result.packets} packets to send`, `${result.retransmissions} retransmitted`],
@@ -392,11 +391,14 @@ export const kinds = {
     }
   },
   sequence:{
-    evaluate(level, state) {
-      const steps = state.order.map(id => level.items.find(item => item.id === id));
+    derive(level, state) {
+      // The steps a dial has switched off are still in the order; they simply do
+      // not happen. The timeline is of the ones that do.
       const skipped = new Set(level.skipWhen && state.dials?.[level.skipWhen.dial] === level.skipWhen.value ? level.skipWhen.skip : []);
-      const active = steps.filter(step => !skipped.has(step.id));
-      const path = timeline(active.map(step => ({id:step.id, name:step.name, ms:step.ms})));
+      const active = state.order.map(id => level.items.find(item => item.id === id)).filter(step => !skipped.has(step.id));
+      return {skipped, active, path:timeline(active.map(step => ({id:step.id, name:step.name, ms:step.ms})))};
+    },
+    evaluate(level, state, {skipped, active, path}) {
       const ordered = orderedCorrect(level, state);
       if (!ordered) return {success:false, message:level.orderHint, path, skipped:[...skipped]};
       if (level.target?.ms !== undefined && path.totalMs > level.target.ms) {
@@ -404,10 +406,7 @@ export const kinds = {
       }
       return {success:true, message:`${path.rows.length} steps, ${path.totalMs} ms before the first byte of the answer arrives.${skipped.size ? ` ${skipped.size} steps were skipped because the answer was already cached.` : ''}`, path, skipped:[...skipped]};
     },
-    view(level, state) {
-      const skipped = new Set(level.skipWhen && state.dials?.[level.skipWhen.dial] === level.skipWhen.value ? level.skipWhen.skip : []);
-      const steps = state.order.map(id => level.items.find(item => item.id === id)).filter(step => !skipped.has(step.id));
-      const path = timeline(steps.map(step => ({id:step.id, name:step.name, ms:step.ms})));
+    view(level, state, {active:steps, path}) {
       return {
         instructions:level.instructions ?? 'Put the steps in the order they happen.',
         legend:[`${path.rows.length} steps`, `${path.totalMs} ms total`],
@@ -417,14 +416,13 @@ export const kinds = {
     }
   },
   hash:{
-    evaluate(level, state) {
-      const table = hashTable(level, state);
+    derive: (level, state) => ({table:hashTable(level, state)}),
+    evaluate(level, state, {table}) {
       if (table.size > level.maxSlots) return {success:false, message:`A ${table.size}-slot table is larger than the ${level.maxSlots} slots this memory bank has.`, table};
       if (table.longest > level.maxChain) return {success:false, message:`The longest chain holds ${table.longest} keys and this lookup budget allows ${level.maxChain}. ${table.collisions} slot${table.collisions === 1 ? '' : 's'} hold more than one key. A table size that shares factors with your keys stacks them together.`, table};
       return {success:true, message:`${level.keys.length} keys in ${table.size} slots, longest chain ${table.longest}, load factor ${table.load.toFixed(2)}. Every lookup is one probe.`, table};
     },
-    view(level, state) {
-      const table = hashTable(level, state);
+    view(level, state, {table}) {
       return {
         instructions:`Store ${level.keys.length} station IDs so every lookup takes at most ${level.maxChain} probe${level.maxChain === 1 ? '' : 's'}.`,
         legend:[`slot = (key × ${table.multiplier}) mod ${table.size}`, `load factor ${table.load.toFixed(2)}`],
@@ -436,8 +434,8 @@ export const kinds = {
     }
   },
   reach:{
-    evaluate(level, state) {
-      const rows = deliveries(level, state);
+    derive: (level, state) => ({rows:deliveries(level, state)}),
+    evaluate(level, state, {rows}) {
       const wrong = rows.find(row => !row.correct);
       if (wrong) {
         return {success:false, rows, message:wrong.delivery === 'invalid'
@@ -447,8 +445,7 @@ export const kinds = {
       const block = rows[0].block;
       return {success:true, rows, message:`${level.host}/${state.dials.prefix} puts this deck in ${block.cidr}. Its neighbours are reached directly and everything else leaves through ${state.dials.gateway}. The mask, not the destination, is what decides.`};
     },
-    view(level, state) {
-      const rows = deliveries(level, state);
+    view(level, state, {rows}) {
       const block = rows[0]?.block;
       const arrow = {direct:'on this deck', gateway:'via the gateway', none:'nowhere', invalid:'—'};
       return {
@@ -462,8 +459,8 @@ export const kinds = {
     }
   },
   nat:{
-    evaluate(level, state) {
-      const run = natRun(level, state);
+    derive: (level, state) => ({run:natRun(level, state)}),
+    evaluate(level, state, {run}) {
       const wrong = run.rows.find(row => !row.correct);
       if (wrong) {
         return {success:false, run, message:wrong.want
@@ -472,8 +469,7 @@ export const kinds = {
       }
       return {success:true, run, message:`${run.table.length} inside hosts share ${level.publicAddress}, told apart by port. Replies find their way home from the table; the only unsolicited traffic that gets in is the port you chose to publish.`};
     },
-    view(level, state) {
-      const run = natRun(level, state);
+    view(level, state, {run}) {
       return {
         instructions:'One public address serves the whole station. Decide which port, if any, is published to the outside.',
         legend:[`Public address ${level.publicAddress}`, `${run.table.length} translations in the table`, `${run.delivered} of ${level.flows.length} packets delivered`],
@@ -485,8 +481,8 @@ export const kinds = {
     }
   },
   congestion:{
-    evaluate(level, state) {
-      const runs = congestionRuns(level, state);
+    derive: (level, state) => ({runs:congestionRuns(level, state)}),
+    evaluate(level, state, {runs}) {
       const late = runs.find(entry => !entry.onTime);
       const dirty = runs.find(entry => !entry.clean);
       if (late) {
@@ -497,8 +493,7 @@ export const kinds = {
       }
       return {success:true, runs, message:`Both links are met: ${runs.map(entry => `${entry.link.name} in ${entry.result.seconds} s at ${percent(entry.result.utilisation)}`).join(', ')}. ${String(state.dials.sender).startsWith('fixed') ? 'One fixed window happened to suit both paths.' : 'Slow start found each path’s capacity without being told it.'}`};
     },
-    view(level, state) {
-      const runs = congestionRuns(level, state);
+    view(level, state, {runs}) {
       return {
         instructions:'The same transfer runs over both links. Choose how the sender decides its window.',
         legend:['cwnd doubles each round trip until something is lost', 'Then it halves and climbs by one', 'A window past the path fills a buffer, not the pipe'],
@@ -511,8 +506,8 @@ export const kinds = {
     }
   },
   estimate:{
-    evaluate(level, state) {
-      const rows = estimateRows(level, state);
+    derive: (level, state) => ({rows:estimateRows(level, state)}),
+    evaluate(level, state, {rows}) {
       if (state.choices.includes(-1)) return {success:false, rows, message:'Work out every figure before checking.'};
       const wrong = rows.findIndex(row => !row.correct);
       if (wrong >= 0) {
@@ -521,8 +516,7 @@ export const kinds = {
       }
       return {success:true, rows, message:`Every figure is the right order of magnitude. ${level.quizSuccess ?? ''}`.trim()};
     },
-    view(level, state) {
-      const rows = estimateRows(level, state);
+    view(level, state, {rows}) {
       return {
         instructions:level.instructions ?? 'Work each figure out from the numbers given, then pick the closest.',
         legend:[`${state.choices.filter(choice => choice >= 0).length} of ${level.questions.length} answered`, 'An estimate is right when its order of magnitude is'],
@@ -532,8 +526,8 @@ export const kinds = {
     }
   },
   budget:{
-    evaluate(level, state) {
-      const run = budgetRun(level, state);
+    derive: (level, state) => ({run:budgetRun(level, state)}),
+    evaluate(level, state, {run}) {
       if (!run.minutesCorrect) {
         return {success:false, run, message:`That is not what is left. The objective allows ${run.report.allowedMinutes} minutes of downtime in this window, and the incidents spent ${run.report.spentMinutes}.`};
       }
@@ -543,8 +537,7 @@ export const kinds = {
       }
       return {success:true, run, message:`${run.report.spentMinutes} minutes spent of ${run.report.allowedMinutes} allowed, ${run.report.remainingMinutes} left. The month achieved ${run.report.achievedText}, and the budget — not the last outage — decides what ships.`};
     },
-    view(level, state) {
-      const run = budgetRun(level, state);
+    view(level, state, {run}) {
       return {
         instructions:`The objective is ${(level.objectiveTarget * 100).toFixed(3)}% over ${Math.round(level.windowMinutes / 1440)} days. Work out what is left, then decide.`,
         legend:[`${run.report.allowedMinutes} minutes allowed in the window`, `${level.incidents.length} incidents recorded`],
@@ -555,17 +548,18 @@ export const kinds = {
     }
   },
   incident:{
-    evaluate(level, state) {
+    derive(level, state) {
       const design = incidentDesign(level, state);
-      const result = evaluateArchitecture(design, level.scenario);
+      return {design, result:evaluateArchitecture(design, level.scenario)};
+    },
+    evaluate(level, state, {result}) {
       if (!result.success) return {success:false, result, message:result.message};
       if (level.maxCost !== undefined && result.cost > level.maxCost) {
         return {success:false, result, message:`The contract is met, but at ${result.cost} credits against the ${level.maxCost} this repair is allowed. Something here is paid for and not doing anything.`};
       }
       return {success:true, result, message:`${result.message} The tier that was saturated is the one that had to change; the rest of the design was never the problem.`};
     },
-    view(level, state) {
-      const result = evaluateArchitecture(incidentDesign(level, state), level.scenario);
+    view(level, state, {result}) {
       const target = result.scenario.slo;
       return {
         instructions:level.instructions ?? 'Repair the design. Change only what the numbers say is wrong.',
@@ -580,15 +574,14 @@ export const kinds = {
     }
   },
   money:{
-    evaluate(level, state) {
-      const run = tillRun(level, state);
+    derive: (level, state) => ({run:tillRun(level, state)}),
+    evaluate(level, state, {run}) {
       if (!run.equal) {
         return {success:false, run, message:`The till says ${run.valueText.slice(0, 24)}… and the takings are ${run.exact.toFixed(2)}. ${representations[run.representation].note} ${run.order === 'ascending' ? 'Adding the small amounts first made the error smaller and did not remove it.' : ''}`.trim()};
       }
       return {success:true, run, message:`${run.count} amounts, and the total is exact to the cent. Counting in whole minor units keeps every value an integer, so nothing is ever rounded on the way.`};
     },
-    view(level, state) {
-      const run = tillRun(level, state);
+    view(level, state, {run}) {
       return {
         instructions:'Add up one day of takings. Choose what the till counts in.',
         legend:[`${level.amounts.length} transactions`, `Takings ${run.exact.toFixed(2)} credits`, run.equal ? 'Exact' : 'Off by a fraction of a cent'],
@@ -604,8 +597,8 @@ export const kinds = {
     }
   },
   text:{
-    evaluate(level, state) {
-      const rows = columnRun(level, state);
+    derive: (level, state) => ({rows:columnRun(level, state)}),
+    evaluate(level, state, {rows}) {
       const mangled = rows.find(row => row.mangled);
       const cut = rows.find(row => !row.whole);
       if (mangled) return {success:false, rows, message:`“${mangled.name}” is cut in the middle of a character: ${mangled.cut.bytes} of the ${mangled.size.bytes} bytes it needs. A byte-wise cut does not know where a character ends.`};
@@ -620,8 +613,7 @@ export const kinds = {
       }
       return {success:true, rows, message:`Every name survives whole. ${state.dials.unit === 'codePoints' ? 'Counting code points never splits a character, and the column has to be sized for the widest one: ' + Math.max(...rows.map(row => row.size.bytes)) + ' bytes here.' : 'Counting bytes works only because this limit is wide enough for the longest name.'}`};
     },
-    view(level, state) {
-      const rows = columnRun(level, state);
+    view(level, state, {rows}) {
       return {
         instructions:`Every crew name has to survive a ${state.dials.limit}-unit field. Choose the size and what the field counts.`,
         legend:['String.length counts UTF-16 units, not characters', 'A byte-wise cut can split a character in half'],
@@ -678,15 +670,14 @@ export const kinds = {
     }
   },
   tree:{
-    evaluate(level, state) {
-      const tree = buildTree(state.order.map(Number));
+    derive: (level, state) => ({tree:buildTree(state.order.map(Number))}),
+    evaluate(level, state, {tree}) {
       if (tree.height > level.target.height) {
         return {success:false, tree, message:`Inserting in this order gives a tree ${tree.height} deep, and the lookup budget allows ${level.target.height}. ${tree.height === level.keys.length ? 'Sorted input gives a linked list with extra pointers: every insert goes down the same side.' : 'Each key goes below one it compares against, so an order that keeps splitting the range in half stays shallow.'}`};
       }
       return {success:true, tree, message:`${tree.height} levels for ${level.keys.length} keys, which is the best a binary tree can do. The tree has no shape of its own — the insertion order gave it one.`};
     },
-    view(level, state) {
-      const tree = buildTree(state.order.map(Number));
+    view(level, state, {tree}) {
       return {
         instructions:'Reorder the inserts. The keys are the same; the tree they build is not.',
         legend:[`${level.keys.length} keys`, `A balanced tree of this size is ${tree.perfect} deep`, `Budget ${level.target.height}`],
@@ -724,10 +715,13 @@ export const kinds = {
 
 // ---------------------------------------------------------------- dispatch
 
+// A kind that has a derive() is asked for its model once, and both the verdict
+// and the picture are made from that one answer. They used to each work it out,
+// which was the same code written twice and two chances to disagree.
 const dispatch = (name, level, state) => {
   const kind = kinds[level.kind];
   if (!kind) throw new Error(`Unknown puzzle kind “${level.kind}”.`);
-  return kind[name](level, state);
+  return kind[name](level, state, kind.derive?.(level, state));
 };
 
 // Is this configuration right, and why not if it is not?
