@@ -121,3 +121,11 @@ test('the console chip row survives a mission that has no function to write', as
   assert.match(source, guard, 'commandReference no longer guards against a missing signature');
   assert.ok(levels.some(level => !level.signature && level.kind !== 'code'), 'there are no signature-less missions left to guard against');
 });
+
+test('every game mode is reachable on a phone without a hidden sideways scroller', () => {
+  // The mode row scrolls sideways inside a pill with no scrollbar, so at phone
+  // width the third mode simply looked cut off. It wraps there instead.
+  const phone = styles.slice(styles.indexOf('@media (max-width:640px)'));
+  assert.match(phone, /\.mode-switch \{[^}]*flex-wrap:wrap/, 'the mode row does not wrap at phone width');
+  assert.match(phone, /\.mode-switch \{[^}]*overflow-x:visible/, 'and it must stop being a hidden scroller');
+});
