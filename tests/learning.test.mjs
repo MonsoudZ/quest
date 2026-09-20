@@ -36,6 +36,23 @@ test('every mission can be predicted, and the outcome uses the words the questio
   }
 });
 
+test('a refactor mission is asked about its shape, not about a case that cannot fail', () => {
+  // A refactor starter has to answer every case, so "which case fails first?"
+  // would always be answered "none" — a question worth no thought at all.
+  for (const level of levels.filter(item => item.kind === 'refactor')) {
+    const asked = question(level);
+    const broke = actual(level, evaluateAlgorithm(level, level.starter));
+    const fixed = actual(level, evaluateAlgorithm(level, level.solution));
+    assert.ok(level.shape[broke] !== undefined, `${level.id}: the starter breaks ${broke}, which the mission never declares`);
+    assert.ok(asked.options.some(option => option.value === broke), `${level.id}: ${broke} is not on the list to pick`);
+    assert.equal(fixed, 'none', `${level.id}: the rewrite still breaks ${fixed}`);
+    // A right answer nobody could have got wrong is not a prediction.
+    assert.ok(asked.options.filter(option => !['none', 'error'].includes(option.value)).length >= 3,
+      `${level.id} offers too few rules to choose between`);
+    assert.ok(verdict(level, broke, broke).right && !verdict(level, fixed, broke).right, `${level.id} verdicts`);
+  }
+});
+
 test('a prediction is never scored, only reflected back', () => {
   const level = levels.find(item => item.kind === 'code');
   const right = verdict(level, 'reached', 'reached');
@@ -173,6 +190,21 @@ test('the cause named is the one the mission is actually about', () => {
   assert.equal(causeOf('call-yourself'), 'notRecursive');
   assert.equal(causeOf('write-the-tests'), 'weakSuite', 'one happy path catches nothing');
   assert.equal(causeOf('hold-the-line'), 'notComputed', 'it returns false whatever it is given');
+  assert.equal(causeOf('the-name-that-hides'), 'firstThingBack', 'the shadowed accumulator is never updated');
+  assert.equal(causeOf('first-in-first-served'), 'wrongOrder', 'pop() instead of shift() reverses, it does not lose anything');
+
+  // A cause is claimed only where every failing case shows it. These three
+  // used to be told they were "wrong only at the edge of the range", which was
+  // a claim about evidence the run did not have.
+  for (const id of ['the-name-that-hides', 'first-in-first-served', 'sweep-the-deck']) {
+    const level = byId(id);
+    const {result} = attempt(level, level.starter);
+    const named = diagnose(level, result).id;
+    if (named !== 'boundary') continue;
+    const broken = result.cases.filter(entry => !entry.passed || entry.overGate);
+    assert.ok(broken.length < result.cases.length, `${id}: every case fails, so nothing is at an edge of anything`);
+  }
+  assert.equal(causeOf('sweep-the-deck'), 'someInputsOnly', 'some grids work and some do not, and that is all the run shows');
 
   // Nothing is asked when nothing went wrong, or when it is not a program.
   for (const level of consoleMissions.slice(0, 6)) {

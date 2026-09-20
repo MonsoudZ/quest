@@ -11,25 +11,25 @@ export const sections = [
     id:'docking', name:'Docking bay', deck:'Deck 1',
     blurb:'Where the drone woke up, and where everything that comes aboard is counted.',
     at:[0, 0], size:[2.2, 1.6], height:1.1,
-    rooms:['Docking bay', 'Service corridor', 'Cargo spine', 'Cargo manifest', 'Cargo registry', 'Archive sorter']
+    rooms:['Docking bay', 'Service corridor', 'Repair rota', 'Cargo spine', 'Cargo manifest', 'Cargo registry', 'Cargo scales', 'Archive sorter']
   },
   {
     id:'habitat', name:'Habitat ring', deck:'Deck 2',
     blurb:'Quarters, the commissary, and the registry of everyone aboard.',
     at:[2.7, 0], size:[2.0, 1.6], height:1.5,
-    rooms:['Habitat ring', 'Crew registry', 'Commissary till', 'Environment console', 'Translation desk']
+    rooms:['Habitat ring', 'Crew registry', 'Badge printer', 'Commissary till', 'Environment console', 'Translation desk']
   },
   {
     id:'reactor', name:'Reactor', deck:'Deck 1',
     blurb:'The thing that has to come back before anything else can.',
     at:[0, 2.1], size:[1.8, 1.8], height:2.2,
-    rooms:['Reactor access', 'Reactor control', 'Thermal array', 'Thermal grid', 'Diagnostics bay']
+    rooms:['Reactor access', 'Reactor control', 'Thermal array', 'Thermal grid', 'Thermal monitor', 'Diagnostics bay']
   },
   {
     id:'sensors', name:'Sensor array', deck:'Deck 3',
     blurb:'Everything the station knows about the outside arrives here first.',
     at:[2.3, 2.1], size:[2.0, 1.8], height:1.3,
-    rooms:['Sensor chamber', 'Sensor array', 'Telemetry bay', 'Telemetry archive', 'Telemetry review', 'Telemetry wall']
+    rooms:['Sensor chamber', 'Sensor array', 'Peak monitor', 'Telemetry bay', 'Telemetry archive', 'Telemetry review', 'Telemetry wall']
   },
   {
     id:'core', name:'Computer core', deck:'Deck 2',
@@ -41,7 +41,7 @@ export const sections = [
     id:'command', name:'Command deck', deck:'Deck 4',
     blurb:'Where instructions are read, checked, and turned into something that runs.',
     at:[0, 4.2], size:[2.2, 1.7], height:1.6,
-    rooms:['Command parser', 'Verification bay', 'Access ladder', 'Analysis deck', 'Star catalogue', 'Signal analyser']
+    rooms:['Command parser', 'Verification bay', 'Intake console', 'Access ladder', 'Analysis deck', 'Star catalogue', 'Signal analyser']
   },
   {
     id:'comms', name:'Comms tower', deck:'Deck 5',

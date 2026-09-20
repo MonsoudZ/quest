@@ -1,7 +1,7 @@
 # Signal Quest
 
 A game that teaches programming, computer science, networking, and system design by making you
-do each of them. Fifty-four missions across four chapters, plus an architecture lab where you
+do each of them. Sixty missions across four chapters, plus an architecture lab where you
 design a service against a latency, availability, and cost target.
 
 ## Play
@@ -13,30 +13,41 @@ are stored in this browser; if storage is unavailable, play continues for the se
 
 ## What it teaches
 
-**Chapter 1 — Programming** (24 missions). Sequences, debugging, `for` loops, variables,
-conditionals, `while` loops, and functions, taught by driving a repair drone across a deck. Then
-the function console takes over: arrays and boolean logic, records, nested loops over a grid,
-binary search under a step budget a linear scan cannot meet, recursion via Euclid's algorithm, a
-stack used for bracket matching, and a two-mission capstone that tokenises an expression and then
-evaluates it with `*` binding tighter than `+`. Two missions here are not write-it-from-scratch
-missions at all:
+**Chapter 1 — Programming** (30 missions). Sequences, debugging, variables, `for` loops,
+conditionals, `while` loops, and functions, taught by driving a repair drone across a deck.
+Variables come before loops deliberately: the loop counter is the first `let` a player would
+otherwise meet unexplained. Then the function console takes over: arrays and boolean logic,
+records, strings, nested loops over a grid, binary search under a step budget a linear scan
+cannot meet, recursion via Euclid's algorithm, a stack used for bracket matching and a queue
+contrasted against it, insertion sort by a record's field, and a two-mission capstone that
+tokenises an expression and then evaluates it with `*` binding tighter than `+`.
 
-- a **debug** mission hands you a program that compiles, runs, and is wrong in three separate
-  ways, and asks you to read the failing cases rather than start again;
-- a **refactor** mission hands you a program that passes every case and rejects it anyway,
-  because it walks the data with a loop inside a loop. The console judges the shape of the
-  answer — loop count, loop nesting, calls made — as well as its values. A second one is about
-  readability rather than speed: a decision spelled out inside a loop, which has to be pulled
-  out and given a name;
-- a **spec** mission turns the console around. The code is written and the tests are not: you
+Ten of the thirty are not write-it-from-scratch missions at all, because reading code you did
+not write, judging it, and fixing it is most of the work:
+
+- five **debug** missions hand you a program that compiles, runs, and is wrong. One is wrong in
+  three separate ways and asks you to read the failing cases rather than start again. One is
+  wrong because a `let` inside an `if` shadows the variable it was meant to update, so the
+  answer never changes — legal, silent, and the reason the other three cases fail. One walks a
+  deck plan with `pop()` where it needed `shift()`, which is the whole difference between a
+  stack and a queue and between following one path to its end and finishing the near things
+  first. One returns the right answer and rearranges the caller's log, because an array is
+  passed by reference;
+- three **refactor** missions hand you a program that passes every case and reject it anyway.
+  The console judges the shape of the answer — loop count, loop nesting, statements, calls made
+  — as well as its values. One walks the data with a loop inside a loop; one spells a decision
+  out inside a loop that has to be pulled out and named; one answers four thresholds through
+  five levels of nested `else`, and has to be rewritten so each rule answers and leaves;
+- two **spec** missions turn the console around. The code is written and the tests are not: you
   return a list of cases, and the console runs them against one correct implementation and four
   broken ones. Every expectation has to be right, and every broken version has to be rejected.
-  A suite of happy paths accepts all four, which is the lesson.
+  A suite of happy paths accepts all four, which is the lesson. The second is pointed at a
+  function's guards rather than its answers — a count of zero, a negative where only positives
+  were imagined, a division whose divisor can be zero.
 
-Four more missions go deeper: **memoisation**, where the obvious recursion is correct and
-unusable and the fix is a record; **aliasing**, where a sort returns the right answer and
-rearranges the caller's log, because an array is passed by reference; **merge sort**, under a
-step budget the quadratic version misses by forty-eight times; and the extraction refactor above.
+Three more missions go deeper: **memoisation**, where the obvious recursion is correct and
+unusable and the fix is a record; **merge sort**, under a step budget the quadratic version
+misses by forty-eight times; and the extraction refactor above.
 
 The chapter closes by reading the same function in JavaScript, Python, Ruby, Go, and Rust. Several
 missions carry a read-only **language panel** showing the same idea in all five, with a note on
@@ -242,7 +253,7 @@ mission on a 1366×768 screen changed nothing visible at all.
 The colour scheme follows the operating system and can be overridden with the toggle in the
 header, which is then remembered. Text meets WCAG AA contrast in both schemes, icon-only
 controls on small screens keep their labels in the accessibility tree, and everything honours
-`prefers-reduced-motion`. The 54 missions are grouped into four collapsible chapters, each
+`prefers-reduced-motion`. The 60 missions are grouped into four collapsible chapters, each
 carrying its own progress and accent colour; on a phone the rail becomes a drawer over the
 mission it is currently on.
 

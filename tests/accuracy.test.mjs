@@ -97,6 +97,38 @@ const generators = {
     }
     return [random() < 0.3 ? ` ${text} ` : text];
   },
+  'letter-by-letter':random => {
+    const pool = ['Ada', 'grace', 'ALAN', 'Mathison', 'Hopper', 'jean', 'Q'];
+    const words = Math.floor(random() * 4);
+    // Double spaces and a stray one at each end, because "".split(" ") keeping
+    // an empty entry is exactly the edge this mission is about.
+    const gap = () => (random() < 0.2 ? '  ' : ' ');
+    let name = Array.from({length:words}, () => pool[Math.floor(random() * pool.length)]).join(gap());
+    if (random() < 0.2) name = ` ${name}`;
+    if (random() < 0.2) name = `${name} `;
+    return [name];
+  },
+  // Both of these read values[0] before checking anything, so an empty list is
+  // an error in the sandbox and undefined in JavaScript. It is not a shared case.
+  'the-name-that-hides':random => [Array.from({length:Math.floor(random() * 9) + 1}, () => Math.floor(random() * 200) - 100)],
+  'answer-and-leave':random => [Math.floor(random() * 140) - 20],
+  'first-in-first-served':random => {
+    // A random tree: every compartment after the first hangs off one already
+    // placed, so the plan is connected and nothing is reached twice.
+    const size = Math.floor(random() * 7) + 1;
+    const rooms = {r0:[]};
+    for (let i = 1; i < size; i++) {
+      const parent = `r${Math.floor(random() * i)}`;
+      rooms[`r${i}`] = [];
+      rooms[parent].push(`r${i}`);
+    }
+    return [rooms, 'r0'];
+  },
+  'sort-by-the-field':random => {
+    // A narrow mass range, so ties turn up often enough for stability to be tested.
+    const size = Math.floor(random() * 9);
+    return [Array.from({length:size}, (_, i) => ({code:`C-${i}`, mass:Math.floor(random() * 5)}))];
+  },
   'remember-the-answer':random => [Math.floor(random() * 24) + 1],
   'whose-array-is-it':random => [Array.from({length:Math.floor(random() * 9)}, () => Math.floor(random() * 60) - 30)],
   'split-and-merge':random => [Array.from({length:Math.floor(random() * 14)}, () => Math.floor(random() * 40) - 20)],

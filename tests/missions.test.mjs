@@ -63,8 +63,18 @@ test('every mission carries the teaching material the interface shows', () => {
 
 test('mission ordering introduces each concept before it is required', () => {
   const index = id => levels.findIndex(level => level.id === id);
+  // `let` is explained by the variables mission and used by the loop counter, so
+  // it cannot be the loop that introduces it.
+  assert.ok(index('name-the-distance') < index('repeat-the-route'), 'variables come before the loop that declares one');
   assert.ok(index('repeat-the-route') < index('unknown-corridor'));
   assert.ok(index('unknown-corridor') < index('one-routine-twice'));
+  // Reading a failure is the mission that teaches reading the case list, so no
+  // other mission may hand the player a broken program before it.
+  const firstDebug = levels.findIndex(level => level.kind === 'debug');
+  assert.equal(levels[firstDebug].id, 'the-log-that-lies', 'a debug mission comes before the one that teaches reading failures');
+  assert.ok(index('balance-the-manifest') < index('first-in-first-served'), 'a stack before the queue it is contrasted with');
+  assert.ok(index('letter-by-letter') < index('break-it-into-tokens'), 'strings before the mission that takes one apart');
+  assert.ok(index('write-the-tests') < index('trust-nothing'), 'how to write a suite before what to point one at');
   assert.ok(index('total-the-readings') < index('divide-and-conquer'));
   assert.ok(index('one-routine-twice') < index('call-yourself'), 'functions come before recursion');
   assert.ok(index('speak-in-bits') < index('negative-space'));
@@ -232,7 +242,7 @@ test('the chips beside the console name things that exist in that mission', () =
       const named = chip.match(/^([a-z][\w]*)[.[]/i);
       // Math and Object are the sandbox's own namespaces; the rest are locals a
       // mission's lesson introduces by name.
-      const locals = ['Math', 'Object', 'stack', 'seen', 'report', 'tokens', 'best', 'values', 'digits', 'copy', 'out', 'clamp', 'band', 'args'];
+      const locals = ['Math', 'Object', 'stack', 'queue', 'order', 'seen', 'report', 'tokens', 'words', 'best', 'values', 'digits', 'copy', 'out', 'clamp', 'band', 'args'];
       if (named) assert.ok(parameters.includes(named[1]) || locals.includes(named[1]),
         `${level.id} offers “${chip}”, but it takes ${parameters.join(', ')}`);
       assert.ok(chip.length <= 34, `${level.id} chip “${chip}” is too long for the row`);

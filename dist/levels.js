@@ -64,7 +64,13 @@ const refs = {
   nested:{label:'Reference: MDN — indexing nested arrays', url:'https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Indexed_collections'},
   lexing:{label:'Reference: lexical analysis', url:'https://en.wikipedia.org/wiki/Lexical_analysis'},
   precedence:{label:'Reference: MDN — operator precedence', url:'https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Operator_Precedence'},
-  syntax:{label:'Reference: comparison of programming languages (syntax)', url:'https://en.wikipedia.org/wiki/Comparison_of_programming_languages_(syntax)'}
+  syntax:{label:'Reference: comparison of programming languages (syntax)', url:'https://en.wikipedia.org/wiki/Comparison_of_programming_languages_(syntax)'},
+  strings:{label:'Reference: MDN — string members', url:'https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String'},
+  scope:{label:'Reference: MDN — block scope and shadowing', url:'https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/let'},
+  guard:{label:'Reference: replace nested conditional with guard clauses', url:'https://refactoring.com/catalog/replaceNestedConditionalWithGuardClauses.html'},
+  queue:{label:'Reference: NIST — queue', url:'https://xlinux.nist.gov/dads/HTML/queue.html'},
+  insertion:{label:'Reference: NIST — insertion sort', url:'https://xlinux.nist.gov/dads/HTML/insertionSort.html'},
+  failFast:{label:'Reference: fail fast', url:'https://en.wikipedia.org/wiki/Fail-fast_system'}
 };
 
 const routingTable = [
@@ -101,17 +107,6 @@ export const levels = [
     takeaway:'Debugging means comparing actual behaviour with intended behaviour, then fixing the responsible instruction.', reference:refs.basics
   },
   {
-    id:'repeat-the-route', kind:'code', chapter:'Programming', concept:'Loops', name:'Find the pattern', location:'Thermal array', require:'loop',
-    objective:'Use a for loop to repeat the staircase route.',
-    intro:'Three identical service modules stand between you and the cell. Describe their shared pattern once and repeat it.',
-    lesson:'A for loop repeats its body. let i = 0 initialises the counter; i < 3 is checked before every iteration; i++ adds one after the body. The body runs for i = 0, 1, and 2.',
-    start:[0,6,0], goal:[6,3], tiles:[[0,6],[1,6],[2,6],[2,5],[3,5],[4,5],[4,4],[5,4],[6,4],[6,3]],
-    starter:'for (let i = 0; i < 3; i++) {\n  move(2);\n  // Go north one tile, then face east again.\n}\n',
-    solution:'for (let i = 0; i < 3; i++) {\n  move(2);\n  turnLeft();\n  move();\n  turnRight();\n}',
-    hints:['Each module is two tiles east and one north. Finish each repetition facing east.','Inside the loop: move(2), turnLeft(), move(), then turnRight().'],
-    takeaway:'Your loop repeats the same navigation pattern. The counter belongs to the for loop and is not accessible after it.', reference:refs.loops
-  },
-  {
     id:'name-the-distance', kind:'code', chapter:'Programming', concept:'Variables', name:'Store the answer', location:'Reactor access', require:'variable',
     objective:'Reuse one named distance for both straight corridors.',
     intro:'Both corridors have the same length. Store that distance in a variable and use the name twice.',
@@ -121,6 +116,17 @@ export const levels = [
     solution:'let distance = 4;\nmove(distance);\nturnRight();\nmove(distance);',
     hints:['The starter turns too soon. Both straight corridors require four moves.','Change the stored distance from 2 to 4. Keep using the same name in both move calls.'],
     takeaway:'Reusing a named value avoids repeating a literal. Changing this one declaration changes both movement distances.', reference:refs.variables
+  },
+  {
+    id:'repeat-the-route', kind:'code', chapter:'Programming', concept:'Loops', name:'Find the pattern', location:'Thermal array', require:'loop',
+    objective:'Use a for loop to repeat the staircase route.',
+    intro:'Three identical service modules stand between you and the cell. Describe their shared pattern once and repeat it.',
+    lesson:'A for loop repeats its body. let i = 0 initialises the counter; i < 3 is checked before every iteration; i++ adds one after the body. The body runs for i = 0, 1, and 2.',
+    start:[0,6,0], goal:[6,3], tiles:[[0,6],[1,6],[2,6],[2,5],[3,5],[4,5],[4,4],[5,4],[6,4],[6,3]],
+    starter:'for (let i = 0; i < 3; i++) {\n  move(2);\n  // Go north one tile, then face east again.\n}\n',
+    solution:'for (let i = 0; i < 3; i++) {\n  move(2);\n  turnLeft();\n  move();\n  turnRight();\n}',
+    hints:['Each module is two tiles east and one north. Finish each repetition facing east.','Inside the loop: move(2), turnLeft(), move(), then turnRight().'],
+    takeaway:'Your loop repeats the same navigation pattern. The counter belongs to the for loop and is not accessible after it.', reference:refs.loops
   },
   {
     id:'read-the-room', kind:'code', chapter:'Programming', concept:'Conditionals', name:'Read the room', location:'Sensor chamber', require:'conditional',
@@ -226,6 +232,36 @@ export const levels = [
     takeaway:'A record is how a function returns more than one thing without the caller having to remember an order. Every field you name is a decision the caller no longer has to guess at.', reference:refs.records
   },
   {
+    id:'letter-by-letter', kind:'algo', chapter:'Programming', concept:'Strings', name:'Read it letter by letter', location:'Badge printer',
+    objective:'Write initials(name) so it returns the first letter of each word, in capitals.',
+    intro:'Every badge on this station prints the wearer’s initials. The registry holds full names, and the part that shortens them was never written.',
+    lesson:'A string is a sequence of characters and is read much like an array: name.length is how many it holds, and name[0] is the first one. Two members do most of the work here. split(" ") cuts a string wherever it finds a space and hands back an array, so "Ada Lovelace" becomes ["Ada", "Lovelace"]. toUpperCase() returns a capitalised copy. That word — copy — is the thing to hold on to: a string cannot be changed in place, so every one of these members gives you a new string and leaves the original exactly as it was. Watch the empty entry: "".split(" ") is not an empty array, it is an array holding one empty string, and asking that string for its first character is reading past the end.',
+    toolkit:['return', 'let', 'for', 'name.split(" ")', 'words[i][0]', '.toUpperCase()', 'words.length', 'print()'],
+    signature:'function initials(name)', fn:'initials',
+    cases:[
+      {args:['Ada Lovelace'], expect:'AL'},
+      {args:['grace hopper'], expect:'GH', note:'the registry is careless about capitals'},
+      {args:['Alan Mathison Turing'], expect:'AMT'},
+      {args:['Prime'], expect:'P', note:'one name is still a name'},
+      {args:[''], expect:'', note:'an empty entry has no initials'}
+    ],
+    starter:'function initials(name) {\n  let words = name.split(" ");\n  // Take the first letter of each word.\n  return "";\n}\n',
+    solution:'function initials(name) {\n  let words = name.split(" ");\n  let out = "";\n  for (let i = 0; i < words.length; i++) {\n    if (words[i].length > 0) {\n      out = out + words[i][0].toUpperCase();\n    }\n  }\n  return out;\n}',
+    polyglot:{
+      title:'Taking a string apart in five languages',
+      note:'Splitting on a separator is in every standard library. What differs is whether the result is a list, an iterator, or a view that still points at the original text.',
+      samples:[
+        {language:'JavaScript', code:'let words = name.split(" ");\nlet first = words[0][0].toUpperCase();', note:'split returns a new array of new strings. The original name is untouched, because strings cannot be changed in place.'},
+        {language:'Python', code:'words = name.split()\nfirst = words[0][0].upper()', note:'split() with no argument splits on any run of whitespace, so double spaces do not leave empty entries behind.'},
+        {language:'Go', code:'words := strings.Split(name, " ")\nfirst := strings.ToUpper(words[0][:1])', note:'Indexing a Go string gives you a byte, not a character, so a slice expression is used instead.'},
+        {language:'Rust', code:'let words: Vec<&str> = name.split(\' \').collect();\nlet first = words[0][..1].to_uppercase();', note:'&str is a borrowed view into the original string: splitting copies nothing until you ask it to.'},
+        {language:'Java', code:'String[] words = name.split(" ");\nString first = words[0].substring(0, 1).toUpperCase();', note:'The argument to split is a regular expression, which surprises people the first time a "." fails to work.'}
+      ]
+    },
+    hints:['Split the name into words first, then take character 0 of each one and add it to a string you are building up.','Guard the empty word: "".split(" ") gives [""], and that entry has no character 0 to read.'],
+    takeaway:'A string is a read-only sequence of characters. Every member that looks like it changes one — toUpperCase, slice, split — hands back something new instead, which is why the result has to be assigned somewhere to matter.', reference:refs.strings
+  },
+  {
     id:'the-log-that-lies', kind:'debug', chapter:'Programming', concept:'Reading a failure', name:'The log that lies', location:'Diagnostics bay',
     objective:'average(readings) is already written, and it is wrong. Read the failures and repair it.',
     intro:'This console hands you a program that already compiles. It is still wrong. The test cases below tell you exactly how — your job is to read them rather than to rewrite from scratch.',
@@ -243,6 +279,58 @@ export const levels = [
     solution:'function average(readings) {\n  if (readings.length === 0) {\n    return 0;\n  }\n  let sum = 0;\n  for (let i = 0; i < readings.length; i++) {\n    sum += readings[i];\n  }\n  return sum / readings.length;\n}',
     hints:['Array positions run from 0 to length − 1. Both ends of this loop are one out.','The empty case cannot be fixed inside the loop, because the loop never runs. Decide what to return before dividing.'],
     takeaway:'A failing case is a description of the bug, not an accusation. Off-by-one errors and the empty input are the two mistakes that survive the longest, because a small hand-run rarely covers either.', reference:refs.offByOne
+  },
+  {
+    id:'the-name-that-hides', kind:'debug', chapter:'Programming', concept:'Scope & shadowing', name:'The value that never changed', location:'Peak monitor',
+    objective:'highest(values) is already written, and it always reports the first reading. Find out why.',
+    intro:'This monitor is supposed to report the highest reading of the shift. It reports whatever arrived first. The loop looks right, the comparison looks right, and it still does not work.',
+    lesson:'let has block scope: the variable belongs to the braces it was declared in and vanishes at the closing one. Declaring a name that already exists further out does not change the outer one — it creates a second, separate variable that hides the first for the length of the block. That is called shadowing, and it is legal, which is what makes it hard to see. The giveaway is a let inside a loop or an if that is meant to update something declared outside it. Assignment reaches out; declaration does not.',
+    toolkit:['return', 'let', 'for', 'if', 'values.length', 'values[i]', 'best', 'print()'],
+    signature:'function highest(values)', fn:'highest',
+    cases:[
+      {args:[[3,9,2]], expect:9},
+      {args:[[5]], expect:5, note:'one reading is its own peak'},
+      {args:[[-4,-9,-1]], expect:-1, note:'every reading is below zero'},
+      {args:[[2,2,2]], expect:2},
+      {args:[[1,2,3,4,5]], expect:5, note:'the peak arrives last'}
+    ],
+    starter:'function highest(values) {\n  let best = values[0];\n  for (let i = 1; i < values.length; i++) {\n    if (values[i] > best) {\n      let best = values[i];\n    }\n  }\n  return best;\n}\n',
+    solution:'function highest(values) {\n  let best = values[0];\n  for (let i = 1; i < values.length; i++) {\n    if (values[i] > best) {\n      best = values[i];\n    }\n  }\n  return best;\n}',
+    hints:['Two of the five cases pass. Ask what those two have in common, and what the other three need that they do not.','Look at the line inside the if. It declares something rather than changing something.'],
+    takeaway:'let declares; plain assignment changes. A let inside a block that repeats a name from outside it builds a second variable that is thrown away at the closing brace, and the outer one is never touched.', reference:refs.scope
+  },
+  {
+    id:'answer-and-leave', kind:'refactor', chapter:'Programming', concept:'Guard clauses', name:'Answer and leave', location:'Thermal monitor',
+    objective:'band(reading) already answers every case. Rewrite it so each rule answers and leaves, instead of nesting inside the one before it.',
+    intro:'Four thresholds, four answers, and the code that picks between them is indented five levels deep. Every case passes. That is not the problem.',
+    lesson:'Nested else branches make the reader hold every condition that got them there in their head at once, and the deepest answer is the hardest to see. A guard clause inverts that: test one thing, answer, and return. The next line then knows that the first condition was false without saying so, so each rule is read on its own and the last line is the ordinary case. The cost is that a function has several exits rather than one, which used to be considered a fault and is now considered the point. Note what disappears along with the nesting: the mutable result variable, which existed only to carry an answer to a single return at the bottom.',
+    toolkit:['return', 'if', 'reading < 40', 'print()'],
+    signature:'function band(reading)', fn:'band',
+    shape:{maxStatements:9},
+    cases:[
+      {args:[-3], expect:'invalid'},
+      {args:[12], expect:'cool'},
+      {args:[40], expect:'warm', note:'exactly on a threshold'},
+      {args:[69], expect:'warm'},
+      {args:[70], expect:'hot'},
+      {args:[89], expect:'hot'},
+      {args:[90], expect:'critical', note:'the last band has no upper bound'},
+      {args:[0], expect:'cool'}
+    ],
+    starter:'function band(reading) {\n  let result = "";\n  if (reading < 0) {\n    result = "invalid";\n  } else {\n    if (reading < 40) {\n      result = "cool";\n    } else {\n      if (reading < 70) {\n        result = "warm";\n      } else {\n        if (reading < 90) {\n          result = "hot";\n        } else {\n          result = "critical";\n        }\n      }\n    }\n  }\n  return result;\n}\n',
+    solution:'function band(reading) {\n  if (reading < 0) {\n    return "invalid";\n  }\n  if (reading < 40) {\n    return "cool";\n  }\n  if (reading < 70) {\n    return "warm";\n  }\n  if (reading < 90) {\n    return "hot";\n  }\n  return "critical";\n}',
+    artifact:{
+      title:'The same four thresholds, three ways',
+      note:'All three answer every case. Read them for how much you have to hold in your head to know what a reading of 75 returns.',
+      panes:[
+        {label:'nested', code:'if (r < 0) {\n  result = "invalid";\n} else {\n  if (r < 40) {\n    result = "cool";\n  } else {\n    if (r < 70) { ... }\n  }\n}', note:'To reach the answer for 75 you carry three conditions and their negations down five levels of indentation. The last band is the hardest to find and the most likely to be wrong.'},
+        {label:'guarded', code:'if (r < 0)  { return "invalid"; }\nif (r < 40) { return "cool"; }\nif (r < 70) { return "warm"; }\nif (r < 90) { return "hot"; }\nreturn "critical";', note:'Each line is read alone. Reaching line three already means the first two were false, so the conditions never have to be negated by hand.'},
+        {label:'table', code:'let bands = [\n  {limit: 0,  name: "invalid"},\n  {limit: 40, name: "cool"},\n  {limit: 70, name: "warm"},\n  {limit: 90, name: "hot"}\n];', note:'When the thresholds start changing more often than the logic does, the bands become data and one loop reads them. Four rules is too few to be worth it; forty is not.'},
+        {label:'what it costs', code:'nested   : 1 exit, 5 levels deep\nguarded  : 5 exits, 1 level deep\n\n"single exit" was a rule from an era\nof manual memory and goto. It is\nnot a rule about readability.', note:'The single-return style comes from languages where every path had to free the same resources by hand. Where that is not true, the extra exits cost nothing and the flat reading is worth a lot.'}
+      ]
+    },
+    hints:['Start from the bottom: the last answer needs no condition at all, because everything else has already returned.','Each band becomes one if that returns. The result variable is not needed once nothing has to carry an answer downwards.'],
+    takeaway:'A guard clause answers the easy case and leaves, so the rest of the function is read knowing that case is already handled. Several exits are cheaper to read than several levels of indentation.', reference:refs.guard
   },
   {
     id:'sweep-the-deck', kind:'algo', chapter:'Programming', concept:'Nested loops', name:'Sweep the whole deck', location:'Thermal grid',
@@ -331,6 +419,25 @@ export const levels = [
   },
 
   {
+    id:'first-in-first-served', kind:'debug', chapter:'Programming', concept:'Queues', name:'First in, first served', location:'Repair rota',
+    objective:'sweep(rooms, start) is meant to visit compartments in the order a sweep reaches them. It visits them in the wrong order. Repair it.',
+    intro:'The repair rota walks the deck plan outward from the airlock, finishing everything one door away before going two doors away. This one dives to the far end and works backwards.',
+    lesson:'A stack and a queue hold the same things and differ only in which end comes off. push and pop use one end, so the last item in is the first out — last in, first out. push and shift use opposite ends, so the first item in is the first out — first in, first served. That one choice is the whole difference between the two classic ways to walk a structure: a queue visits everything one step away before anything two steps away, and a stack follows one path as far as it goes before backing up. Neither is more correct; they answer different questions. This deck plan is a tree, so no compartment is reached twice and neither walk needs to remember where it has been.',
+    toolkit:['return', 'let', 'while', 'queue.shift()', 'queue.push(next[i])', 'rooms[room]', 'order.push(room)'],
+    signature:'function sweep(rooms, start)', fn:'sweep',
+    cases:[
+      {args:[{dock:['bay','hold'], bay:['lab'], hold:[], lab:[]}, 'dock'], expect:['dock','bay','hold','lab']},
+      {args:[{a:['b'], b:['c'], c:[]}, 'a'], expect:['a','b','c'], note:'a single corridor: both walks agree'},
+      {args:[{a:['b','c','d'], b:[], c:[], d:[]}, 'a'], expect:['a','b','c','d']},
+      {args:[{a:[]}, 'a'], expect:['a'], note:'one compartment, no doors'},
+      {args:[{a:['b','c'], b:['d','e'], c:['f'], d:[], e:[], f:[]}, 'a'], expect:['a','b','c','d','e','f'], note:'everything one door away comes before anything two doors away'}
+    ],
+    starter:'function sweep(rooms, start) {\n  let queue = [start];\n  let order = [];\n  while (queue.length > 0) {\n    let room = queue.pop();\n    order.push(room);\n    let next = rooms[room];\n    for (let i = 0; i < next.length; i++) {\n      queue.push(next[i]);\n    }\n  }\n  return order;\n}\n',
+    solution:'function sweep(rooms, start) {\n  let queue = [start];\n  let order = [];\n  while (queue.length > 0) {\n    let room = queue.shift();\n    order.push(room);\n    let next = rooms[room];\n    for (let i = 0; i < next.length; i++) {\n      queue.push(next[i]);\n    }\n  }\n  return order;\n}',
+    hints:['The second case passes and the others do not. A single corridor is the one shape where taking from the front and taking from the back give the same answer.','One call is wrong. pop() takes from the end that was pushed last; shift() takes from the end that was pushed first.'],
+    takeaway:'A queue and a stack differ by one call. Which end you take from decides whether you finish the near things first or follow one path to its end, and that decision is the algorithm, not a detail of it.', reference:refs.queue
+  },
+  {
     id:'stop-searching-twice', kind:'refactor', chapter:'Programming', concept:'Lookup tables', name:'Stop searching twice', location:'Cargo registry',
     objective:'duplicate(codes) already answers every case. Rewrite it without a loop inside a loop.',
     intro:'The registry checker works. It also compares every crate code against every other one, and the manifest is getting longer. This console accepts the answer only when the shape is right as well.',
@@ -362,6 +469,26 @@ export const levels = [
     },
     hints:['Keep a record of the codes already seen, and check it before adding the next one.','Object.has(seen, codes[i]) is the test; seen[codes[i]] = true; is how a code gets remembered.'],
     takeaway:'Trading memory for time is the oldest move in the book. A pass that remembers what it has seen turns a quadratic search into a linear one, which is exactly what a hash table does for you.', reference:refs.hash
+  },
+  {
+    id:'sort-by-the-field', kind:'algo', chapter:'Programming', concept:'Sorting by a key', name:'Heaviest last', location:'Cargo scales',
+    objective:'Write byMass(crates) so it returns the crates ordered from lightest to heaviest, without disturbing crates of equal mass.',
+    intro:'The loading order is by mass, lightest first. Crates that weigh the same have already been put in the order the manifest wants, and that order has to survive the sort.',
+    lesson:'Sorting records is sorting by a key: the comparison reads one field and the whole record travels with it. Insertion sort does this plainly — walk the list, and slide each crate left past everything heavier than it. Where it stops decides one thing more than the order. If the loop slides past entries that are heavier, two crates of equal mass never swap and the manifest order between them survives; that property is called stability. If it slides past entries that are merely not lighter, equal crates change places and the order you were given is lost. One comparison operator is the whole difference, which is why the case with three equal masses is the one to read.',
+    toolkit:['return', 'let', 'for', 'while', 'copy[i].mass', 'copy[i] = copy[i - 1]', 'crates.length'],
+    signature:'function byMass(crates)', fn:'byMass',
+    cases:[
+      {args:[[{code:'C', mass:3}, {code:'A', mass:1}, {code:'B', mass:2}]], expect:[{code:'A', mass:1}, {code:'B', mass:2}, {code:'C', mass:3}]},
+      {args:[[{code:'A', mass:5}, {code:'B', mass:5}, {code:'C', mass:5}]], expect:[{code:'A', mass:5}, {code:'B', mass:5}, {code:'C', mass:5}], note:'equal masses keep the manifest order'},
+      {args:[[]], expect:[], note:'an empty pallet'},
+      {args:[[{code:'Z', mass:9}]], expect:[{code:'Z', mass:9}]},
+      {args:[[{code:'C', mass:12}, {code:'A', mass:4}, {code:'B', mass:12}, {code:'D', mass:1}]], expect:[{code:'D', mass:1}, {code:'A', mass:4}, {code:'C', mass:12}, {code:'B', mass:12}], note:'C was manifested before B and still is'},
+      {args:[[{code:'A', mass:2}, {code:'B', mass:1}]], expect:[{code:'B', mass:1}, {code:'A', mass:2}]}
+    ],
+    starter:'function byMass(crates) {\n  let copy = crates.slice(0);\n  // Slide each crate left past everything heavier than it.\n  return copy;\n}\n',
+    solution:'function byMass(crates) {\n  let copy = crates.slice(0);\n  for (let i = 1; i < copy.length; i++) {\n    let moving = copy[i];\n    let j = i;\n    while (j > 0 && copy[j - 1].mass > moving.mass) {\n      copy[j] = copy[j - 1];\n      j = j - 1;\n    }\n    copy[j] = moving;\n  }\n  return copy;\n}',
+    hints:['Copy the array first: crates.slice(0) gives you one you can rearrange without changing the caller’s.','The inner loop slides left while the crate on the left is heavier. Using "heavier" rather than "not lighter" is what keeps equal crates in the order they arrived.'],
+    takeaway:'Sorting by a key compares one field and moves the whole record. A sort is stable when records that compare equal come out in the order they went in, and that is decided by a single > against a >=.', reference:refs.insertion
   },
   {
     id:'break-it-into-tokens', kind:'algo', chapter:'Programming', concept:'Tokenising', name:'Break it into tokens', location:'Command parser',
@@ -545,6 +672,35 @@ export const levels = [
     },
     hints:['One case from the middle of the range is not enough: try each broken version in your head and ask which input would tell it apart from the correct one.','Six cases do it: one inside, one below, one above, one on each bound, and one where the whole range is negative.'],
     takeaway:'Tests are not there to show the code works; they are there to fail when it stops working. A suite is worth what it rejects, and the cases that reject things live at the boundaries and the edges.', reference:refs.testing
+  },
+  {
+    id:'trust-nothing', kind:'spec', chapter:'Programming', concept:'Input validation', name:'Trust nothing', location:'Intake console',
+    objective:'share(part, whole) is written and its guards are not tested. Return a suite that accepts the correct version and rejects all four broken ones.',
+    intro:'Four versions of the same percentage calculator. They agree on every sensible input. They disagree entirely on the inputs nobody thought about.',
+    lesson:'Most of what a function gets wrong, it gets wrong at the edge of what it was told to expect. A count of zero, a negative where only positives were imagined, a division whose divisor can be zero — each one is a branch that exists in the contract and usually has no case against it. The habit that catches them is to read the contract for every sentence that begins with "when", and write one case for each. Note the shape of the guards here. Returning a marker for invalid input is one choice; refusing loudly is another, and this contract makes the choice explicit so a suite can hold it to that. An unguarded division by zero is not a wrong answer, it is an operation with no answer, which is why the guard has to come first rather than the result be corrected afterwards.',
+    signature:'function cases()', fn:'cases',
+    toolkit:['return', '[ ]', '{args: [...], expect: ...}', 'share(part, whole)'],
+    subject:{
+      name:'share', parameters:2,
+      signature:'function share(part, whole)',
+      contract:'share(part, whole)\n\n  returns -1   when either count is negative\n  returns 0    when whole is 0\n  returns the share of whole that part is,\n               as a percentage, rounded down\n               to a whole number, otherwise\n\n  Both are counts of things, so both are\n  whole numbers. The negative check is made\n  before the zero check.'
+    },
+    correct:'function share(part, whole) {\n  if (part < 0 || whole < 0) {\n    return -1;\n  }\n  if (whole === 0) {\n    return 0;\n  }\n  return Math.floor(part / whole * 100);\n}',
+    mutants:[
+      {name:'divides anyway', why:'Nothing in your suite passes a whole of 0, where the division has no answer at all.',
+        code:'function share(part, whole) {\n  if (part < 0 || whole < 0) {\n    return -1;\n  }\n  return Math.floor(part / whole * 100);\n}'},
+      {name:'trusts the counts', why:'Nothing in your suite passes a negative count.',
+        code:'function share(part, whole) {\n  if (whole === 0) {\n    return 0;\n  }\n  return Math.floor(part / whole * 100);\n}'},
+      {name:'checks only the whole', why:'Nothing in your suite passes a negative part alongside a valid whole.',
+        code:'function share(part, whole) {\n  if (whole < 0) {\n    return -1;\n  }\n  if (whole === 0) {\n    return 0;\n  }\n  return Math.floor(part / whole * 100);\n}'},
+      {name:'rounds to nearest', why:'Nothing in your suite uses a part and a whole whose share is not already a whole number.',
+        code:'function share(part, whole) {\n  if (part < 0 || whole < 0) {\n    return -1;\n  }\n  if (whole === 0) {\n    return 0;\n  }\n  return Math.round(part / whole * 100);\n}'}
+    ],
+    minimumCases:5,
+    starter:'function cases() {\n  return [\n    {args: [1, 4], expect: 25}\n  ];\n}\n',
+    solution:'function cases() {\n  return [\n    {args: [1, 4], expect: 25},\n    {args: [3, 0], expect: 0},\n    {args: [-1, 4], expect: -1},\n    {args: [4, -1], expect: -1},\n    {args: [2, 3], expect: 66},\n    {args: [4, 4], expect: 100}\n  ];\n}',
+    hints:['Read the contract one sentence at a time. Three of them begin with "when", and each one is a case nobody has written yet.','Two thirds is 66.66…, so rounding down and rounding to nearest disagree there. A negative part with a positive whole is the case that tells the last two versions apart.'],
+    takeaway:'A contract’s edge cases are the ones its author thought about and its tests usually did not. Every sentence in a contract that starts with "when" is a case waiting to be written.', reference:refs.failFast
   },
   {
     id:'split-and-merge', kind:'algo', chapter:'Programming', concept:'Divide and conquer', name:'Split and merge', location:'Archive sorter',
