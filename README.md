@@ -1,7 +1,7 @@
 # Signal Quest
 
 A game that teaches programming, computer science, networking, and system design by making you
-do each of them. Sixty-five missions across four chapters, plus an architecture lab where you
+do each of them. Sixty-eight missions across four chapters, plus an architecture lab where you
 design a service against a latency, availability, and cost target.
 
 ## Play
@@ -116,151 +116,33 @@ Four of them are worth calling out:
   lets it be plugged in and address itself — so the prefix stopped being a function of how many
   hosts there are, which is the habit the two IPv4 missions before it just finished teaching.
 
-**Chapter 4 — System design** (6 missions plus the lab). Capacity estimation, queueing and tail
-latency, fan-out, redundancy arithmetic, and the trades behind eventual consistency, idempotency,
-and cache invalidation. Three of the six are worked rather than chosen:
+**Chapter 4 — System design** (9 missions plus the lab). The life of one service, in order: estimate
+how big it will be, buy what serves it, live with what you bought, survive a burst, survive a
+failure, pay for the redundancy, budget the downtime, and run the incident when it happens anyway.
+Half this chapter used to be multiple choice; none of it is now. Every mission is a model you
+configure and watch, and a test refuses a quiz here.
 
-- **estimation** — five given numbers and five figures to derive: peak requests per second,
-  storage a day, a year of it with replicas, monthly egress, and servers at 70% headroom. The
-  model computes each answer from the givens, so a mission cannot ship a figure that disagrees
-  with its own arithmetic;
-- **error budgets** — an objective, a month's incident log with one partial outage, and a policy.
-  Work out what is left of the budget, then decide whether the risky change ships;
-- **an incident** — not a blank page but the design that is running, saturated in exactly one
-  tier, with a credit cap tighter than the contract's. One of 192 configurations is a repair.
+Three of them run on the architecture simulator the lab is built on — servers, caches, replicas,
+shards, queues and regions against a real traffic scenario — each exposing only the handful of
+knobs its own lesson is about. **Cheaper than more database** prices a cache against a read replica
+and finds the mix; **Two of everything** buys availability and discovers the third copy is worth
+almost nothing; **What the queue costs you** puts a queue in front of a datastore and reads what it
+did to the meaning of an acknowledgement. Until this round the simulator was reachable only through
+the separate lab, and no campaign mission had ever touched it.
 
-The architecture lab then gives you five contracts to design for.
+Three more are new models:
 
-Missions in both chapters carry a read-only **evidence panel**: `ip addr` and `ip neigh` output
-for the unreachable host, `conntrack` rows for the NAT, `ss -ti` for the congestion window, an
-SLO definition and an error budget policy, the page and dashboard for the incident. Same panel as
-Chapter 1's language comparison, different material.
-
-### The station
-
-Every mission belongs to one of nine sections of the station — the room names the
-missions already carried, grouped into decks — and finishing it restores power there.
-The fourth mode draws the station as an isometric cutaway: dark modules, modules
-rising as their power comes back, lit windows counting completed missions, and
-conduits that carry light only between sections that are both awake. Bringing every
-mission in a section home turns its beacon on.
-
-Power is not a mission count. A mission restores 100 kW when it is solved with no
-hints and without reading the solution, 80 kW after a hint, and 50 kW after the
-answer was shown — and the best attempt is the one kept, so resetting a mission and
-solving it yourself restores the rest. The rank shows on the mission list, on the
-win panel, and in the section breakdown. Twelve achievements come from signals the
-game already measures: rejecting every broken version in the spec mission with five
-cases, coming in at a tenth of a step budget, solving a debug mission on the first
-run, meeting a contract with a fifth of the budget unspent, reading all five
-languages in a language panel.
-
-None of it is a timer, a streak, or a leaderboard. The only things measured are what
-you solved and how much help you took.
-
-### Predict, then run
-
-Before a mission runs, it asks one question: what does the drone do, which case
-fails first, how many of the broken versions survive your suite, does this meet
-the target. Committing to an answer before the machine hands you one is worth
-more than the answer — watching correct output teaches very little, and being
-wrong on purpose teaches a lot. Nothing is scored on it, and the wrong case is
-the one worth having: the console says what you predicted, what happened, and
-that the gap is the useful part.
-
-### Name the cause, then read it
-
-When a case fails, the sandbox writes an excellent explanation and hands it
-over, and the learner reads it and fixes the line. Console missions now ask for
-a diagnosis first: three plausible causes, one of them the real one, drawn from
-what the evaluator actually returned — the loop runs one step past the end, the
-empty input is not handled, it returns its input without working on it, it is
-right and does far too much work, it changes the thing it was given. Then the
-machine's explanation appears, right or wrong.
-
-Nothing here can describe a failure the game did not have: a test runs every
-console mission's own starter through its evaluator and checks the named cause
-is the one that mission is about — `pastTheEnd` for the loop that reads one too
-far, `mutates` for the sort that rearranges its caller's log, `wrongShape` for
-the two refactors, `weakSuite` for one happy-path test case. It is asked once
-per visit to a mission, and only where a failure is mechanical enough to name
-honestly; a dial is not a program.
-
-### The answer, one line at a time
-
-"Show a solution" used to be all or nothing, which made the button a cliff and
-the rank blunt: glimpsing one line cost exactly as much as reading the whole
-thing. It is a ladder now. Each rung reveals one more line beside the editor,
-and the last rung puts the whole thing in it. A glimpse costs what a hint costs;
-only taking all of it costs the rest.
-
-### Worth another look
-
-The records already know which missions were hard — the answer was read, a hint
-was taken, it took several runs — and the review screen now says so, grouped by
-concept rather than by mission, because the concept is what is shaky. Reading
-the answer weighs most, a hint next, needing several runs least: grinding at
-something until it works is how it is supposed to go.
-
-### Spaced review
-
-A mission solved once and never seen again is mostly forgotten in a month. The
-fifth mode brings solved missions back a day later, then three, then a week, a
-fortnight, five weeks — and one wrong answer sends a question back to the start,
-because the thing you just failed to recall is the thing to ask again soon.
-
-Questions are generated from what each mission already ships, so there is no
-second body of content to keep in step and nothing can be asked that the game
-does not already check: what a function returns for one of its own cases, which
-line belongs in the gap of a program you wrote, which dial setting met the
-target, which parity position was flipped, what the best route cost. The queue
-is mixed across chapters rather than blocked by topic, which is worth more than
-the extra practice itself. Nothing is timed, nothing is lost by missing a day,
-and the review button says how much is waiting because nothing else will.
-
-### The two build modes
-
-The missions teach a concept each; the build modes are where you apply them at scale, against
-contracts that have to be met all at once.
-
-**Signal City** (networking). Lay cable between districts and the model tells you what the city
-gets. Each contract keeps its own city, so switching between them compares designs instead of
-throwing work away, and a legend under the map says what the line weights and load colours mean.
-The model reports: which route each district's traffic takes, how loaded every cable is, how much of the
-demand actually arrives, what the round trip looks like once queues build, and who loses the
-uplink when a single cable is cut. Five contracts move from "connect everything within budget"
-to "survive any one cut without losing more than 40% of the traffic". Copper is cheap and short,
-fibre is fast and expensive, microwave reaches anywhere and carries almost nothing — the design
-is choosing which span gets which.
-
-**Architecture lab** (system design). Choose an edge tier, a datastore, replicas, shards, a
-cache, an async queue, and a second region, against a 99th-percentile latency target, an
-availability target, and a budget.
-
-## Project
-
-A dependency-free static application. The deployable files are in `dist/`; `server.mjs` is only
-the local development server, and the host serves `dist/` in production.
-
-| File | Role |
-| --- | --- |
-| `dist/lang.js` | The teaching language: tokenizer, parser, static checker, interpreter |
-| `dist/engine.js` | Mission evaluators: the grid simulation, data puzzles, graphs, algorithm tests |
-| `dist/net.js` | Networking models: addressing, routing, encapsulation, transport |
-| `dist/city.js` | Signal City: topology, routing, fair bandwidth sharing, failure analysis |
-| `dist/systems.js` | The system-design model behind the architecture lab |
-| `dist/puzzles.js` | One state/widget/diagram/verdict interface for every non-coding mission |
-| `dist/levels.js` | Mission content, including the solution each mission's tests check |
-| `dist/game.js` | The campaign: which mission is current, running it, and what a win is worth |
-| `dist/arena.js` | Everything drawn beside the editor: scenes, diagrams, dials, case tables |
-| `dist/console.js` | The panels about how a mission is being learnt, and the attempt they spend |
-| `dist/progress.js` | Ranks, the station's nine sections, and the achievements |
-| `dist/predict.js`, `dist/diagnose.js`, `dist/recall.js` | Predict before running, name the cause, and come back to it later |
-| `dist/builder.js`, `dist/citylab.js`, `dist/station.js`, `dist/reviewlab.js` | The four modes beside the campaign |
-| `dist/scene.js`, `dist/iso.js`, `dist/stage.js`, `dist/scenes.js` | The isometric renderer and the scene each mission kind gets |
-| `dist/ui.js`, `dist/format.js` | The behaviours, number formats and saved state every mode shares |
-| `dist/theme.css` | Design tokens, base elements, and the light and dark colour schemes |
-| `dist/app.css` | Components, composed only from those tokens |
+- **Keep the hot set close** is a cache with four decisions in it: read around it or write through
+  it, how long an entry lives, and whether a write removes the entry or lets it expire. The
+  datastore load, the staleness window, the write latency and whether an acknowledged write can be
+  lost all move together, and exactly one of the thirty-two settings satisfies all four targets.
+- **When the queue never drains** absorbs a twenty-minute telemetry burst. A bigger buffer moves
+  the moment you start dropping readings without changing whether you will; the graph turning over
+  or not is the diagnosis, and depth over drain rate is how old the reading at the back is.
+- **The retry that made it worse** is a dependency that is up and failing one call in five. Turning
+  retries on takes the offered load from 0.9× capacity to 2.7× without a single new user arriving,
+  and the fix is spreading the retries across the callers as well as across time. The circuit
+  breaker on offer does not earn its place, because it is built for a dependency that is down.
 
 ### The interface
 
@@ -277,7 +159,7 @@ mission on a 1366×768 screen changed nothing visible at all.
 The colour scheme follows the operating system and can be overridden with the toggle in the
 header, which is then remembered. Text meets WCAG AA contrast in both schemes, icon-only
 controls on small screens keep their labels in the accessibility tree, and everything honours
-`prefers-reduced-motion`. The 65 missions are grouped into four collapsible chapters, each
+`prefers-reduced-motion`. The 68 missions are grouped into four collapsible chapters, each
 carrying its own progress and accent colour; on a phone the rail becomes a drawer over the
 mission it is currently on.
 

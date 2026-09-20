@@ -29,13 +29,13 @@ export const sections = [
     id:'sensors', name:'Sensor array', deck:'Deck 3',
     blurb:'Everything the station knows about the outside arrives here first.',
     at:[2.3, 2.1], size:[2.0, 1.8], height:1.3,
-    rooms:['Sensor chamber', 'Sensor array', 'Peak monitor', 'Telemetry bay', 'Telemetry archive', 'Telemetry review', 'Telemetry wall']
+    rooms:['Sensor chamber', 'Sensor array', 'Peak monitor', 'Telemetry bay', 'Telemetry intake', 'Telemetry archive', 'Telemetry review', 'Telemetry wall']
   },
   {
     id:'core', name:'Computer core', deck:'Deck 2',
     blurb:'Memory, firmware and the indexes everything else looks things up in.',
     at:[4.8, 2.1], size:[1.8, 1.8], height:1.9,
-    rooms:['Memory bank', 'Firmware vault', 'Attitude computer', 'Index memory', 'Catalogue index', 'Archive index']
+    rooms:['Memory bank', 'Firmware vault', 'Attitude computer', 'Index memory', 'Archive cache', 'Catalogue index', 'Archive index']
   },
   {
     id:'command', name:'Command deck', deck:'Deck 4',

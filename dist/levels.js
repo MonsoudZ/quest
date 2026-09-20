@@ -78,7 +78,10 @@ const refs = {
   sockets:{label:'Reference: RFC 793 — sockets and the connection four-tuple', url:'https://www.rfc-editor.org/rfc/rfc793'},
   quic:{label:'Reference: RFC 9000 — QUIC', url:'https://www.rfc-editor.org/rfc/rfc9000'},
   ipv6:{label:'Reference: RFC 4291 — IPv6 addressing architecture', url:'https://www.rfc-editor.org/rfc/rfc4291'},
-  certificates:{label:'Reference: RFC 5280 — certificate path validation', url:'https://www.rfc-editor.org/rfc/rfc5280'}
+  certificates:{label:'Reference: RFC 5280 — certificate path validation', url:'https://www.rfc-editor.org/rfc/rfc5280'},
+  caching:{label:'Reference: cache replacement and invalidation', url:'https://en.wikipedia.org/wiki/Cache_replacement_policies'},
+  queues:{label:'Reference: Little’s law and queueing', url:'https://en.wikipedia.org/wiki/Little%27s_law'},
+  retries:{label:'Reference: AWS — timeouts, retries and backoff with jitter', url:'https://aws.amazon.com/builders-library/timeouts-retries-and-backoff-with-jitter/'}
 };
 
 const routingTable = [
@@ -1662,6 +1665,208 @@ export const levels = [
     takeaway:'Every capacity decision starts as arithmetic on a whiteboard. Getting the order of magnitude right, and knowing which way you rounded, is worth more than a benchmark you will not have time to run.', reference:refs.estimation
   },
   {
+    id:'cheaper-than-more-database', kind:'design', chapter:'System design', concept:'Caching vs capacity', name:'Cheaper than more database', location:'Planning deck',
+    objective:'Serve the archive read storm inside the latency, availability and budget targets, for the fewest credits a month.',
+    intro:'Nine thousand requests a second, ninety-seven in a hundred of them reads, over a thirty-gigabyte working set. The obvious move is to buy a datastore that can serve nine thousand reads. Price it before you propose it.',
+    lesson:'Read replicas and caches both take read load off a primary datastore, and they are not interchangeable. A replica is a full copy: it costs what a datastore costs, it can serve any read including ones nobody has asked for before, and it lags the primary by however long replication takes. A cache is a partial copy of whatever has been asked for recently: it costs a fraction of a datastore, it serves only the hot set, and a miss costs you the original read plus the work of caching it. Which one is cheaper depends entirely on the shape of the reads. A workload with a small hot set read over and over — which is most workloads, most of the time — is served overwhelmingly by a cache costing a tenth of what the equivalent read capacity would. A workload whose reads are spread evenly over everything has no hot set to cache, and there the replica is the only thing that helps. The question is not "cache or replica", it is "what fraction of the reads are for the same few things", and the answer to that is measurable before anything is bought.',
+    scenario:1,
+    fixed:{servers:11, web:1},
+    brief:'9,000 requests a second, 97% reads, over a 30 GB working set. The application tier is already sized. Decide what sits behind it.',
+    thrift:'Both of these take read load off the datastore, and one of them costs several times the other to do it.',
+    dials:[
+      {id:'cache', label:'Cache nodes', help:'Serves the hot set; a miss still reads the datastore', value:0, options:[
+        {value:0, label:'None'}, {value:1, label:'1'}, {value:2, label:'2'}
+      ]},
+      {id:'replicas', label:'Read replicas', help:'A full copy of the datastore, serving reads', value:0, options:[
+        {value:0, label:'None'}, {value:1, label:'1'}, {value:2, label:'2'}, {value:4, label:'4'}
+      ]}
+    ],
+    artifact:{
+      title:'The same read load, priced three ways',
+      note:'All three of these serve the storm. The bill is the only thing that tells them apart, and it differs by a factor of four.',
+      panes:[
+        {label:'buy the capacity', code:'primary        1 x  24.0\nread replicas  4 x  24.0\n                   ------\n                    120.0 credits', note:'Every replica is a whole datastore: the same disk, the same memory, the same licence. It serves any read at all, which is exactly what you are paying the premium for.'},
+        {label:'cache the hot set', code:'primary        1 x  24.0\ncache nodes    2 x   6.0\n                   ------\n                     36.0 credits', note:'A fraction of the price because it holds a fraction of the data. It works here because the reads are concentrated, and it would be useless against a workload with no hot set.'},
+        {label:'what the hit ratio buys', code:'hit ratio   reads reaching the datastore\n  0%          9,000/s   (impossible)\n 50%          4,500/s   (still too many)\n 80%          1,800/s\n 95%            450/s', note:'Read load falls linearly with the hit ratio, so the question worth answering first is what fraction of reads are for the same things. That is measurable on the system you already have.'},
+        {label:'what a replica is for', code:'reads spread evenly, no hot set\n  -> cache hit ratio near zero\n  -> the cache is pure overhead\n\nreads must be strongly consistent\n  -> a lagging replica is wrong too', note:'The cache is not the general answer. A uniform access pattern has nothing to cache, and a read that must reflect the last write cannot come from an asynchronous copy of any kind.'}
+      ]
+    },
+    solution:{dials:{cache:2, replicas:1}},
+    hints:['Try replicas alone first and read the bill, then cache alone and read the hit ratio. Neither on its own is the cheapest answer, which is the thing worth noticing.','A cache costs about a quarter of a replica and serves only what has been asked for recently. Price the mix: enough cache for the hot set, and the smallest amount of real read capacity behind it.'],
+    takeaway:'A cache and a read replica both take load off a datastore, at very different prices, and which is cheaper is decided by how concentrated the reads are. That is a property of the workload you can measure, not a preference.', reference:refs.hash
+  },
+  {
+    id:'keep-the-hot-set-close', kind:'caching', chapter:'System design', concept:'Caching', name:'Keep the hot set close', location:'Archive cache',
+    objective:'Keep the archive datastore under 1,800 requests a second, without ever serving a value that has already changed.',
+    intro:'Nine thousand reads a second against a datastore that comfortably serves two thousand. The crew reads the same few hundred archive entries over and over, and a handful of records change every second. Buying eight times the datastore is not on the table.',
+    lesson:'A cache is a copy, and every copy is a decision about how wrong you are willing to be and for how long. The cheap part to reason about is the hit ratio: a small hot set read over and over is nearly all of the traffic, so even a modest cache takes most of the load off, and a longer window is worth something only because it keeps more of the cold tail. The expensive part is what happens when the original changes. A time-to-live bounds how stale a reader can be — it does not stop them being stale, it just says for how long — while removing the entry as part of the write closes the window entirely, at the cost of a write path that now has two things to get right. Writing through the cache is the other way round: the write pays for both hops and readers are never stale, which is freshness bought with the writer’s time. Writing behind is faster than either and acknowledges a write the datastore has not got yet, so a restart loses it. And keep the time-to-live even when you invalidate, because the invalidation you never notice failing is the one that matters: it is the backstop, not the mechanism.',
+    workload:{reads:9000, writes:300, hotFraction:0.8, coldReuse:0.2, storeCapacityRps:2500, storeLatencyMs:20, cacheLatencyMs:1},
+    target:{storeRps:1800, stalenessSeconds:0, backstopSeconds:60, writeLatencyMs:20},
+    dials:[
+      {id:'strategy', label:'How reads and writes use the cache', help:'Where a write goes, and when it is acknowledged', value:'none', options:[
+        {value:'none', label:'No cache'},
+        {value:'aside', label:'Read around it, write past it'},
+        {value:'through', label:'Write through it'},
+        {value:'behind', label:'Write behind it'}
+      ]},
+      {id:'ttl', label:'How long an entry is kept', help:'Longer keeps more of the cold tail', value:5, options:[
+        {value:5, label:'5 seconds'}, {value:30, label:'30 seconds'},
+        {value:60, label:'60 seconds'}, {value:300, label:'5 minutes'}
+      ]},
+      {id:'invalidate', label:'When a record is written', help:'What the write does to the cached copy', value:'no', options:[
+        {value:'no', label:'Leave the entry to expire'},
+        {value:'yes', label:'Remove the entry as well'}
+      ]}
+    ],
+    artifact:{
+      title:'The four ways round, and what each one costs',
+      note:'Every one of these is in production somewhere and correct there. The differences are in which column you are allowed to be wrong in.',
+      panes:[
+        {label:'cache-aside', code:'v = cache.get(k)\nif v is None:\n    v = store.get(k)\n    cache.set(k, v, ttl)\nreturn v\n\n# write:\nstore.put(k, v)\ncache.delete(k)', note:'The application owns the cache. A miss costs a datastore read and a cache write, and the delete on the write path is the only thing standing between a reader and a stale value.'},
+        {label:'write-through', code:'# write:\ncache.set(k, v)\nstore.put(k, v)      # both, before ack\n\n# read:\nreturn cache.get(k) or store.get(k)', note:'Readers are never stale because the cache is written first and always. The writer waits for both, so every write now carries the latency of the slower of the two.'},
+        {label:'the stampede', code:'12:00:00  ttl expires on the hot key\n12:00:00  4,000 readers miss together\n12:00:00  4,000 identical datastore reads\n12:00:02  datastore saturated\n\n(fix: one reader refreshes, the rest\n serve the old value while it does)', note:'A shared hot key with one expiry time is a scheduled outage. Real caches solve it by letting one request through per key and serving the previous value to the rest, or by expiring at slightly different times per reader.'},
+        {label:'the cold start', code:'$ systemctl restart archive-cache\n\n  9,300 req/s -> datastore\n  datastore capacity: 2,500 req/s\n\n(the cache was load-bearing and\n nobody had written that down)', note:'A cache that carries 80% of the traffic is a dependency, not an optimisation. Whether the thing behind it can survive losing it is a question worth answering before the restart, not during.'}
+      ]
+    },
+    solution:{dials:{strategy:'aside', ttl:60, invalidate:'yes'}},
+    hints:['Work the constraints one at a time. Start with the datastore: which windows get the load under 1,800, and which strategies keep the write path short?','A time-to-live long enough to keep the cold tail leaves a reader stale for that long — unless the write takes the entry out as well. Keep the longest window the backstop rule allows, and close the staleness with the write.'],
+    takeaway:'A cache is a copy, and the hard part is never the hit ratio. It is deciding how long a reader may see something that is no longer true, and what the write has to do about it.', reference:refs.caching
+  },
+  {
+    id:'what-the-queue-costs-you', kind:'design', chapter:'System design', concept:'Consistency', name:'What the queue costs you', location:'Data council',
+    objective:'Absorb the telemetry write burst inside the latency and budget targets, and work out what each way of doing it costs in guarantees.',
+    intro:'Six thousand requests a second, three in five of them writes, against a datastore that was sized for reads. There are two ways to survive this and they are not equivalent: split the data so there is more write capacity, or put a queue in front and tell the writer it is done before it is.',
+    lesson:'A queue in front of a datastore is not a capacity increase. It is a change to what an acknowledgement means: before, "written" meant the datastore has it; after, it means something has promised to write it. That promise is usually kept, and the cases where it is not are the ones that matter — a reader who writes and then immediately reads sees the old value, a failover loses whatever had not been drained, and a retry that arrives twice writes twice unless the write carries a key the server can recognise. None of that makes a queue wrong; it makes it a trade, and the trade is worth making when the writer genuinely does not need to know. Sharding is the other answer and it buys throughput honestly: the data is split by key across machines, so write capacity grows with the number of shards and every write is still acknowledged by the datastore that holds it. What it costs is that a query spanning shards now has to visit several of them, and a transaction across shards is a distributed transaction, which is a different and much harder problem. Read what each one takes away before choosing, because a queue that is added for throughput and quietly changes the meaning of a write is how a system ends up with a consistency model nobody chose.',
+    scenario:2,
+    fixed:{servers:8, web:1, db:1},
+    brief:'6,000 requests a second, 60% writes. Decide how the datastore keeps up, and read what each answer does to the guarantee.',
+    thrift:'Both of these survive the burst. One of them changes what an acknowledged write means.',
+    dials:[
+      {id:'shards', label:'Datastore shards', help:'Write capacity grows with the split', value:1, options:[
+        {value:1, label:'1'}, {value:2, label:'2'}, {value:4, label:'4'}
+      ]},
+      {id:'replicas', label:'Read replicas', help:'Copies serving reads, lagging the primary', value:0, options:[
+        {value:0, label:'None'}, {value:1, label:'1'}, {value:2, label:'2'}
+      ]},
+      {id:'queue', label:'Write queue', help:'Acknowledge the write, store it shortly afterwards', value:false, options:[
+        {value:false, label:'None'}, {value:true, label:'Fitted'}
+      ]}
+    ],
+    artifact:{
+      title:'What an acknowledgement means, three ways',
+      note:'The middle column is the one nobody writes down and everybody assumes. Read it before choosing.',
+      panes:[
+        {label:'straight to the datastore', code:'client -> app -> datastore -> ack\n\n"written" = the datastore has it\nread-your-writes: yes\nlost on failover: nothing', note:'The strongest guarantee and the one that runs out of write capacity first. Every other option on this list is bought by giving part of this up.'},
+        {label:'through a queue', code:'client -> app -> queue -> ack\n                   \\-> datastore\n\n"written" = something promised to\nread-your-writes: no\nlost on failover: whatever is queued', note:'A write is acknowledged before it is durable anywhere the reader will look. The window is usually milliseconds, which is exactly why it is missed in testing and found in production.'},
+        {label:'sharded', code:'client -> app -> shard(key) -> ack\n\n"written" = that shard has it\nread-your-writes: yes\ncross-shard query: visits several\ncross-shard transaction: hard', note:'Throughput bought honestly: more machines, same guarantee per key. The cost moves to queries that span keys, and to any operation that has to be atomic across two shards.'},
+        {label:'making a retry safe', code:'PUT /readings/{sensor}/{timestamp}\n  idempotency-key: 7f3c...\n\nserver records the key, second\narrival returns the first answer', note:'A queue means at-least-once delivery, so a write may arrive twice. A key the server remembers turns "at least once" into "exactly once" as far as anybody can tell, which is the only version of exactly-once that exists.'}
+      ]
+    },
+    solution:{dials:{shards:4, replicas:1, queue:false}},
+    hints:['Try the queue on its own first, and read both what it fixes and what the consistency line underneath says afterwards. Then try splitting the data instead.','Write capacity grows with the shards, and the reads still have to come from somewhere. Find the combination that meets every target without changing what an acknowledged write means.'],
+    takeaway:'A queue in front of a datastore does not add capacity, it changes what an acknowledgement means. Sharding buys throughput without touching the guarantee, and pays for it in queries and transactions that span shards.', reference:refs.cap
+  },
+  {
+    id:'when-the-queue-never-drains', kind:'queue', chapter:'System design', concept:'Queues & backpressure', name:'When the queue never drains', location:'Telemetry intake',
+    objective:'Absorb a twenty-minute telemetry burst without losing a reading, and be empty again by the end of the hour — with the fewest workers and the smallest buffer that manage it.',
+    intro:'Every sensor on the station reports at once during a thermal sweep: eighteen thousand readings a minute for twenty minutes, against the three thousand a minute the intake normally sees. Nothing may be dropped. The sweep happens twice a day.',
+    lesson:'A queue between a fast producer and a slow consumer does not make the consumer faster. It converts "refuse this work" into "do this work later", and the only question that matters is whether later ever arrives. If the consumers can drain faster than the long-run average arrival rate, a queue absorbs a burst and empties afterwards, and its depth is the burst you were able to smooth. If they cannot, the queue is not absorbing anything — it is hiding a shortfall, growing until it runs out of memory or of patience, and the readings at the back are so old by the time they are processed that nobody wants them. That is why a bigger buffer is rarely the fix: it moves the moment you start dropping things without changing whether you will. The buffer is sized for the backlog a burst actually builds, and the consumers are sized for the average. What happens when the buffer does fill is the other half of the design: shedding load loses the newest work, blocking pushes the problem back to the producer, and for a sensor that has nowhere to put a reading those are the same thing.',
+    serviceRatePerWorker:50, minutes:60,
+    burst:{minutes:20, perMinute:18000, afterPerMinute:3000},
+    target:{maxWaitSeconds:900},
+    dials:[
+      {id:'workers', label:'Intake workers', help:'Each handles 50 readings a second, all day', value:1, options:[
+        {value:1, label:'1'}, {value:2, label:'2'}, {value:3, label:'3'}, {value:4, label:'4'}, {value:6, label:'6'}
+      ]},
+      {id:'capacity', label:'Buffer size', help:'Readings held before the intake starts dropping them', value:20000, options:[
+        {value:20000, label:'20,000'}, {value:60000, label:'60,000'},
+        {value:150000, label:'150,000'}, {value:400000, label:'400,000'}
+      ]}
+    ],
+    artifact:{
+      title:'A backlog, and what it is telling you',
+      note:'The shape of the graph is the diagnosis. Read where it turns over, or whether it does.',
+      panes:[
+        {label:'absorbing a burst', code:'depth  ▁▂▄▆█▇▅▃▂▁▁▁▁▁\n       └ burst ┘└ drain ┘\n\npeak 120k, empty after 38 minutes', note:'It goes up, it turns over, it comes back. The peak is the burst you smoothed and the area under it is work that would otherwise have been refused.'},
+        {label:'hiding a shortfall', code:'depth  ▁▂▃▄▅▆▇███████\n       └ burst ┘\n\nstill climbing an hour later', note:'No turn-over. The consumers are slower than the producers on average, so the queue is a buffer between now and never — and every reading in it is getting older.'},
+        {label:'the age of the work', code:'queue depth        180,000\ndrain rate           3,000/min\n\noldest item age       60 min\n\n(a telemetry reading nobody\n will look at)', note:'Depth divided by drain rate is how long the thing at the back has been waiting. It is the number worth alerting on, because a queue is only useful while what comes out of it is still wanted.'},
+        {label:'what a full buffer does', code:'shed   : drop the newest, keep serving\nblock  : stop accepting, push it upstream\ngrow   : take it all, run out of memory\n\n(a sensor that is blocked and a\n reading that is shed are the\n same lost reading)', note:'Backpressure only helps when the producer can do something useful with it — slow down, batch, buffer locally. A sensor reporting in real time cannot, so for this intake blocking and shedding lose exactly the same data.'}
+      ]
+    },
+    solution:{dials:{workers:4, capacity:150000}},
+    hints:['Work out the arrival rate and the drain rate per minute first. The burst delivers 18,000 a minute; each worker drains 3,000. Then ask what the difference is, multiplied by twenty minutes.','The burst leaves a backlog of the shortfall times its length, and the workers have the rest of the hour to clear it. Size the buffer for the backlog that actually builds, and the workers for what has to drain it in time.'],
+    takeaway:'A queue absorbs a burst and hides a shortfall, and the graph tells you which. Workers are sized for the average rate, the buffer for the peak backlog — and a bigger buffer only changes when you start losing things, never whether you do.', reference:refs.queues
+  },
+  {
+    id:'the-retry-that-made-it-worse', kind:'retry', chapter:'System design', concept:'Retries & failure', name:'The retry that made it worse', location:'Incident bridge',
+    objective:'Get 85% of the calls answered without ever offering the dependency more than it can serve — and with nothing in the call path that is not earning its place.',
+    intro:'The catalogue service is up. It is answering four calls in five and failing the fifth for no reason anybody can find, and it has been like that for ten minutes. Eighteen hundred callers a second, against a service that can serve two thousand. Then somebody turns retries on.',
+    lesson:'A transient failure that is never retried is simply a failure, so retrying is right. The trouble is that every caller decides to retry at the same moment, for the same reason, and the load on the thing that was already struggling goes up rather than down. Three attempts each turns eighteen hundred callers into five thousand four hundred, and a dependency that was failing one call in five starts failing all of them — at which point everybody retries again. That is a retry storm, and the retry is the outage. Backing off spreads one caller’s attempts over time and does nothing about all the callers being in step with each other; adding jitter spreads them across the callers as well, which is the part that actually breaks the wave. A retry budget — a cap on what fraction of your traffic may be retries — is the version of this that holds under pressure. A circuit breaker is a different tool for a different failure: it is for a dependency that is down, where failing fast is better than waiting, and it earns nothing against one that is up and flaky, because what it refuses is work that would have succeeded.',
+    dependency:{callers:1800, dependencyCapacity:2000, failureRate:0.2},
+    target:{successRate:0.85, attempts:3},
+    dials:[
+      {id:'policy', label:'When a call fails', help:'Whether to try again, and when', value:'immediate', options:[
+        {value:'none', label:'Give up'},
+        {value:'immediate', label:'Try again at once'},
+        {value:'backoff', label:'Wait longer each time'},
+        {value:'jitter', label:'Wait longer, by a random amount'}
+      ]},
+      {id:'attempts', label:'Attempts per call', help:'Including the first one', value:'3', options:[
+        {value:'1', label:'1'}, {value:'3', label:'3'}, {value:'5', label:'5'}
+      ]},
+      {id:'breaker', label:'Circuit breaker', help:'Stop calling while the dependency looks unhealthy', value:'no', options:[
+        {value:'no', label:'None'}, {value:'yes', label:'Fitted'}
+      ]}
+    ],
+    artifact:{
+      title:'The same ten minutes, from both sides',
+      note:'The graph on the dependency and the graph on the caller are the same incident. Only one of them looks like a retry problem.',
+      panes:[
+        {label:'what the caller saw', code:'12:01  errors 20%, p99 40ms\n12:02  retries enabled\n12:03  errors 61%, p99 2,400ms\n12:06  errors 94%\n\n"the retries are not working"', note:'From the caller’s side it looks like the dependency got dramatically worse the moment retries were turned on. It did — and the retries are why.'},
+        {label:'what the dependency saw', code:'12:01  1,800 rps   0.9x capacity\n12:02  3,100 rps   1.6x\n12:03  5,400 rps   2.7x\n12:06  5,400 rps   2.7x  (ceiling:\n       every caller at max attempts)', note:'Offered load tripled without a single new user arriving. The ceiling is callers times attempts, which is the one comforting thing about a retry storm: it is bounded, and the bound is a number you chose.'},
+        {label:'jitter', code:'no jitter:   all retries at t+1s\n             ▁▁█▁▁▁▁█▁▁▁▁█▁▁\n\nwith jitter: spread over t+0..2s\n             ▁▃▄▃▄▃▄▃▄▃▄▃▄▃▁', note:'Backoff decides when one caller tries again. Jitter decides that two callers do not choose the same moment. Without it, exponential backoff produces a slower, larger wave rather than no wave.'},
+        {label:'a retry budget', code:'retries must stay under 10% of\nrequests, measured over a window\n\nover budget -> retries are dropped,\n               the original error\n               is returned', note:'The version that holds under pressure. It caps the amplification at 1.1x whatever the policy does, and it fails in the direction of the dependency staying up rather than the caller getting an answer.'}
+      ]
+    },
+    solution:{dials:{policy:'jitter', attempts:'3', breaker:'no'}},
+    hints:['Try giving up first and read the success rate, then try retrying at once and read the load. Neither target is met by either, and they fail in opposite directions.','Backing off spreads one caller’s attempts. Something has to spread the callers apart from each other as well. And once both targets are met, take out whatever is not needed to meet them.'],
+    takeaway:'A retry is the correct response to a transient failure and the usual cause of the outage that follows it. What makes it safe is spreading retries across callers as well as across time, and capping what fraction of your traffic they are allowed to be.', reference:refs.retries
+  },
+  {
+    id:'two-of-everything', kind:'design', chapter:'System design', concept:'Availability', name:'Two of everything', location:'Telemetry wall',
+    objective:'Keep life support answering to four nines, within the latency budget and for the fewest credits a month.',
+    intro:'Four thousand requests a second, and an availability target of 99.99% — fifty-two minutes of downtime a year, for everything in the path together. One of anything will not do it, and two of everything costs more than the budget allows.',
+    lesson:'Availability composes by multiplication, and that is unforgiving. A chain of four components at 99.9% each is 99.6% together, because every one of them can take the whole thing down. Redundancy turns that multiplication into its complement: two independent copies of a component that is available 99.9% of the time are both down only 0.1% of 0.1% of the time, so the pair is 99.9999%. The word doing the work there is independent. Two instances in the same rack share a power feed; two racks in the same building share a roof; two regions share a deployment pipeline and whoever pushed to it this morning. Each layer of separation buys another nine and costs more than the last, so the design is a question of which correlated failure you are actually trying to survive and what you are prepared to pay to survive it. And redundancy is not free in latency either: a second region means a write that has to reach both before it is acknowledged, or one that does not and can be lost.',
+    scenario:3,
+    fixed:{servers:6, web:0, cache:0},
+    brief:'4,000 requests a second and a 99.99% availability target. The application tier is sized. Decide what redundancy sits behind it.',
+    thrift:'Every nine costs more than the one before it, and one of them is bought twice over here.',
+    dials:[
+      {id:'regions', label:'Regions', help:'A second site, with everything that means', value:1, options:[
+        {value:1, label:'One'}, {value:2, label:'Two'}
+      ]},
+      {id:'replicas', label:'Read replicas', help:'Copies of the datastore that can take over', value:0, options:[
+        {value:0, label:'None'}, {value:1, label:'1'}, {value:2, label:'2'}, {value:4, label:'4'}
+      ]},
+      {id:'shards', label:'Datastore shards', help:'How the data is split across machines', value:1, options:[
+        {value:1, label:'1'}, {value:2, label:'2'}, {value:4, label:'4'}
+      ]}
+    ],
+    artifact:{
+      title:'What each nine actually costs',
+      note:'The multiplication is the whole of it. Read the second pane and then look at the first again.',
+      panes:[
+        {label:'in series', code:'load balancer  99.99%\napplication    99.95%\ndatastore      99.90%\nnetwork        99.99%\n               -------\n  together     99.83%   (15 hours a year)', note:'Four components that each look healthy, multiplied together. Nobody sets out to build a 99.83% system; it is what you get by not doing the multiplication.'},
+        {label:'in parallel', code:'one datastore     99.90%   (8.8 h/yr)\ntwo, independent  99.9999% (32 s/yr)\n\n  1 - (0.001 x 0.001)', note:'Redundancy multiplies the failure probabilities instead of the success ones, which is why one extra copy is worth three nines and the next one is worth much less.'},
+        {label:'the word independent', code:'same host      : shares a kernel\nsame rack      : shares power, a switch\nsame building  : shares a roof, an ISP\nsame region    : shares a control plane\nsame pipeline  : shares this morning\x27s deploy', note:'The multiplication only holds if the failures are unrelated, and they are related far more often than the diagram suggests. The last line is the one that takes out both regions at once, and no amount of hardware helps.'},
+        {label:'what it costs in latency', code:'write to one region      2 ms\nwrite to both, acked     +80 ms\nwrite to both, async     2 ms\n  (and the second region\n   is behind by 80 ms)', note:'Two regions is a choice about writes as much as about uptime: wait for both and every write pays the distance, or do not and accept that a failover loses whatever had not arrived.'}
+      ]
+    },
+    solution:{dials:{regions:2, replicas:1, shards:2}},
+    hints:['Work out what a single datastore does to the whole chain before adding anything. Availability multiplies along the path, so the weakest component sets the ceiling for everything.','Two of the datastore is worth three nines and the third copy is worth almost nothing. Spend the rest on the thing that is still a single point of failure, and check the bill against the budget.'],
+    takeaway:'Availability multiplies along a path and complements across redundancy, so one extra independent copy buys almost everything and the next buys almost nothing. The hard word is independent, and it is usually less true than the diagram suggests.', reference:refs.slo
+  },
+  {
     id:'the-budget-you-spend', kind:'budget', chapter:'System design', concept:'Error budgets', name:'The budget you spend', location:'Reliability review',
     objective:'Work out what is left of the month’s error budget, then decide whether the risky change ships.',
     intro:'The archive service promises 99.9% over thirty days. Three things went wrong this month. Someone wants to ship a storage migration on the 24th.',
@@ -1757,57 +1962,6 @@ export const levels = [
     solution:{dials:{servers:11, web:1, db:0, cache:2, replicas:1}},
     hints:['Only one bar is over 100%. Adding capacity anywhere else spends credits and changes nothing.','The change log says what was removed. Put it back — and the datastore does not also need to grow once the reads stop reaching it.'],
     takeaway:'The meters name the tier; the change log names the cause. A repair that changes one thing tells you whether you were right, and a repair that changes five does not.', reference:refs.incident
-  },
-  {
-    id:'back-of-the-envelope', kind:'quiz', chapter:'System design', concept:'Estimation', name:'Back of the envelope', location:'Planning deck',
-    objective:'Size the station’s service from user numbers alone.',
-    intro:'Before choosing any hardware, you need to know roughly how much work arrives and how much data piles up. Rough is enough: the point is the right order of magnitude.',
-    lesson:'Capacity estimation is arithmetic you can do without a calculator. Requests per second is daily requests divided by 86,400 seconds, and real traffic peaks well above its average, so design for the peak. Storage is requests × bytes each, multiplied by retention and by replication. Machine count follows from the peak rate divided by what one machine serves — plus enough spare that losing one machine does not take the service with it.',
-    instructions:'4.3 million daily active users, 20 requests each per day, peaking at four times the daily average.',
-    questions:[
-      {prompt:'What peak request rate should the design target?', options:[{label:'about 400 per second'},{label:'about 1,000 per second'},{label:'about 4,000 per second'},{label:'about 40,000 per second'}], answer:2, why:'4.3M × 20 = 86M requests a day. 86M ÷ 86,400 ≈ 1,000 per second average, and the peak is four times that.'},
-      {prompt:'Each request writes a 2 KB log line. How much log data per day?', options:[{label:'about 17 GB'},{label:'about 172 GB'},{label:'about 1.7 TB'},{label:'about 17 TB'}], answer:1, why:'86M × 2 KB ≈ 172 GB per day.'},
-      {prompt:'You keep 30 days of those logs, stored in triplicate. How much storage?', options:[{label:'about 5 TB'},{label:'about 15 TB'},{label:'about 155 TB'},{label:'about 1.5 PB'}], answer:1, why:'172 GB × 30 days × 3 copies ≈ 15.5 TB.'},
-      {prompt:'One node serves 2,000 requests per second. How many do you run, if losing a node must not drop traffic?', options:[{label:'two'},{label:'three'},{label:'four'},{label:'eight'}], answer:1, why:'Two nodes cover the 4,000 peak exactly, so a third is what makes a single failure survivable.'}
-    ],
-    quizSuccess:'That is the whole envelope: peak rate, data per day, retention, and the node count that survives a failure.',
-    solution:[2,1,1,1],
-    hints:['There are 86,400 seconds in a day. Work out the average rate first, then multiply by the peak factor.','86M requests a day is about 1,000 per second average and 4,000 at peak; 172 GB of logs a day; 15.5 TB for 30 days in triplicate; three nodes so one can fail.'],
-    takeaway:'These four numbers decide the shape of a design before any technology is chosen. Being out by a factor of two is fine; being out by a factor of a thousand is not.', reference:refs.slo
-  },
-  {
-    id:'the-tail-that-matters', kind:'quiz', chapter:'System design', concept:'Latency & availability', name:'The tail that matters', location:'Telemetry wall',
-    objective:'Reason about queueing, fan-out, and redundancy with numbers.',
-    intro:'Averages hide the requests that make users leave. Utilisation, fan-out, and redundancy all act on the tail rather than on the mean.',
-    lesson:'A queue’s delay depends on how close arrivals are to capacity, not on the gap in absolute terms: at 95% utilisation the wait is long, and adding capacity moves the system away from the cliff rather than making each request faster. Fan-out multiplies tail risk, because a request that touches ten services is slow if any one of them is slow. Redundancy works the other way: independent replicas multiply their failure probabilities together, which is why a second one adds nines.',
-    instructions:'Each answer follows from one line of arithmetic.',
-    questions:[
-      {prompt:'A tier receives 1,000 requests per second and can serve 1,050. You double its capacity to 2,100. What happens to queueing delay?', options:[{label:'it is unchanged: the arrival rate did not change'},{label:'it roughly halves'},{label:'it drops more than twentyfold'},{label:'it doubles'}], answer:2, why:'Delay depends on the headroom, capacity minus arrivals: 50 becomes 1,100, so the wait falls by about a factor of 22.'},
-      {prompt:'One request fans out to 10 services, each slower than 10 ms for 1% of calls. How often is at least one of the ten slow?', options:[{label:'about 1 request in 1,000'},{label:'about 1 request in 100'},{label:'about 1 request in 10'},{label:'about 1 request in 2'}], answer:2, why:'The chance all ten are fast is 0.99^10 ≈ 0.90, so about one request in ten waits on a slow call.'},
-      {prompt:'A region is available 99.9% of the time. Two independent regions, either of which can serve the request, give…', options:[{label:'99.9%'},{label:'99.95%'},{label:'99.99%'},{label:'99.9999%'}], answer:3, why:'Both must fail together: 0.001 × 0.001 = 0.000001, so 99.9999%.'},
-      {prompt:'Which change lowers the 99th percentile without buying capacity?', options:[{label:'raise the client timeout'},{label:'remove a round trip from the request path'},{label:'retry every request once'},{label:'log more detail per request'}], answer:1, why:'A removed round trip is time nobody waits for. A longer timeout hides the symptom, and blanket retries add load exactly when the system is struggling.'}
-    ],
-    quizSuccess:'Headroom, fan-out, and independent redundancy: three numbers that decide what users actually experience.',
-    solution:[2,2,3,1],
-    hints:['For queueing, look at capacity minus arrivals. For fan-out, ask how often every call is fast. For redundancy, multiply the failure probabilities.','Answers in order: more than twentyfold, 1 in 10, 99.9999%, remove a round trip.'],
-    takeaway:'Tail latency is a property of the whole path, and availability is a property of how failures combine. Both are arithmetic before they are engineering.', reference:refs.risk
-  },
-  {
-    id:'consistency-costs', kind:'quiz', chapter:'System design', concept:'Consistency', name:'What consistency costs', location:'Data council',
-    objective:'Name the trade each design choice is actually making.',
-    intro:'Every one of these choices buys something and gives something up. The engineering skill is saying which, out loud, before the incident.',
-    lesson:'Acknowledging a write before storing it makes writes fast and makes readers able to see stale data: that is eventual consistency, and it is a trade rather than a bug. When a network partition splits a system, you may keep answering on both sides and reconcile later, or refuse on one side to keep a single answer: availability or consistency, never both, for the duration of the partition. Retries make duplicates inevitable, so operations that must not happen twice need an idempotency key the server remembers. And a cache is only as fresh as its invalidation: a long time-to-live with nothing telling it the value changed keeps the old answer longest.',
-    instructions:'Choose the answer that names the trade precisely.',
-    questions:[
-      {prompt:'A queue acknowledges a write before the datastore has it. A reader immediately sees the old value. What is that?', options:[{label:'a bug in the queue'},{label:'eventual consistency, the trade the queue makes'},{label:'a cache miss'},{label:'a network partition'}], answer:1, why:'The queue answered before the write landed. Staleness is the price of that latency, not a defect.'},
-      {prompt:'A partition splits two regions. Life support must keep accepting commands in both. What have you chosen?', options:[{label:'consistency over availability'},{label:'availability over consistency, and conflicts to reconcile later'},{label:'both, because the regions are independent'},{label:'neither: partitions are a hardware problem'}], answer:1, why:'Accepting writes on both sides of a partition means the two sides can disagree, and somebody has to merge them afterwards.'},
-      {prompt:'Which change makes a retried command safe to send twice?', options:[{label:'a longer timeout'},{label:'an idempotency key the server records'},{label:'a larger queue'},{label:'a read replica'}], answer:1, why:'The server has to recognise the second copy as the same command. Nothing about timing can guarantee that.'},
-      {prompt:'A record changes in the datastore. Which caching choice keeps readers on the old value longest?', options:[{label:'delete the cache entry as part of the write'},{label:'a 5-second time-to-live'},{label:'a 1-hour time-to-live and no invalidation'},{label:'no cache at all'}], answer:2, why:'Without invalidation, readers keep the stale value for the whole hour the entry is allowed to live.'}
-    ],
-    quizSuccess:'Each of those is a trade with a name. Saying the name is what makes it a design decision instead of a surprise.',
-    solution:[1,1,1,2],
-    hints:['For each option, ask what it costs rather than what it provides.','Answers in order: eventual consistency, availability over consistency, an idempotency key, the one-hour TTL with no invalidation.'],
-    takeaway:'Consistency, availability, and latency are exchanged for one another, never all bought at once. The architecture lab makes the same trades with numbers attached.', reference:refs.cap
   }
 ];
 

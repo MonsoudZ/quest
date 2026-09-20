@@ -324,7 +324,12 @@ test('the missions that look interactive are not four clicks in a costume', () =
     'one-address-many-decks':[20, 2, 'how many outside ports the pool holds, and what is published'],
     'window-of-opportunity':[9, 1, 'every window worth trying either side of one bandwidth-delay product'],
     'ramp-up-carefully':[10, 1, 'enough fixed windows to see that no single one suits both links'],
-    'lost-in-transit':[12, 2, 'a window and a recovery strategy']
+    'lost-in-transit':[12, 2, 'a window and a recovery strategy'],
+    // System design was half multiple choice. Each of these is now a model with
+    // more than one decision in it.
+    'keep-the-hot-set-close':[32, 3, 'a strategy, a window, and what a write does to the entry'],
+    'when-the-queue-never-drains':[20, 2, 'how many workers drain it and how much it may hold'],
+    'the-retry-that-made-it-worse':[24, 3, 'a retry policy, how many attempts, and whether a breaker earns its place']
   };
   for (const [id, [least, dials, why]] of Object.entries(deep)) {
     assert.ok(settings(byId(id)) >= least, `${id} is down to ${settings(byId(id))} settings; it is meant to be ${why}`);

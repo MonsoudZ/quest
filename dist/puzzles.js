@@ -7,7 +7,7 @@
 import {evaluatePuzzle, evaluateNetwork, bitValue, toHex} from './engine.js';
 import {percent} from './format.js';
 import {subnet, smallestPrefixFor, allocate, longestPrefixMatch, encapsulate, transfer, timeline, reachability, translate, congestion, demultiplex, multiplex, planV6, validate} from './net.js';
-import {evaluateArchitecture, estimators, nearestEstimate, errorBudget, catalog} from './systems.js';
+import {evaluateArchitecture, estimators, nearestEstimate, errorBudget, catalog, cacheRun as cachePlan, queueRun, retryRun, defaultDesign} from './systems.js';
 import {accumulate, exactValue, measure, truncate, traverse, hammingCheck, buildTree, representations, routineFaults, schedules} from './machine.js';
 
 const clone = value => Array.isArray(value) ? [...value] : value;
@@ -284,6 +284,32 @@ function chainRun(level, state) {
     .map(id => ({...level.certificates[id], ...(id === 'leaf' ? level.leaves[state.dials.certificate] : {})}));
   return {sent, result:validate({sent, store:level.store, host:level.hosts[0], now:level.now}),
     others:level.hosts.slice(1).map(host => ({host, result:validate({sent, store:level.store, host, now:level.now})}))};
+}
+
+function cachingState(level, state) {
+  return cachePlan({...level.workload, strategy:state.dials.strategy, ttlSeconds:state.dials.ttl,
+    invalidateOnWrite:state.dials.invalidate === 'yes'});
+}
+
+function queueState(level, state) {
+  const burst = level.burst;
+  return queueRun({
+    arrivals:minute => (minute < burst.minutes ? burst.perMinute : burst.afterPerMinute),
+    serviceRatePerWorker:level.serviceRatePerWorker, workers:state.dials.workers,
+    capacity:state.dials.capacity, whenFull:'shed', minutes:level.minutes
+  });
+}
+
+function retryState(level, state) {
+  return retryRun({...level.dependency, policy:state.dials.policy,
+    attempts:Number(state.dials.attempts), breaker:state.dials.breaker === 'yes'});
+}
+
+// A campaign mission built on the architecture simulator the lab uses, with only
+// the handful of knobs its own lesson is about.
+function designState(level, state) {
+  const design = {...defaultDesign, ...level.fixed, ...state.dials};
+  return {design, result:evaluateArchitecture(design, level.scenario)};
 }
 
 function orderedCorrect(level, state) {
@@ -739,6 +765,169 @@ export const kinds = {
           {name:`${entry.link.name} · time`, value:entry.result.seconds, max:entry.link.target.seconds * 1.6, detail:`${entry.result.seconds} s of ${entry.link.target.seconds} s`, problem:!entry.onTime},
           {name:`${entry.link.name} · wasted`, value:entry.result.wasted, max:Math.max(0.2, entry.link.target.wasted * 3), detail:`${percent(entry.result.wasted)} of ${percent(entry.link.target.wasted)}`, problem:!entry.clean}
         ])}
+      };
+    }
+  },
+  // A cache is a copy, and a copy is a decision about how wrong you are prepared
+  // to be and for how long. The hit ratio is the cheap part to reason about.
+  caching:{
+    derive:(level, state) => ({run:cachingState(level, state)}),
+    evaluate(level, state, {run}) {
+      const target = level.target;
+      if (run.storeLoad > target.storeRps) {
+        return {success:false, run, message:run.strategy === 'none'
+          ? `With nothing cached, all ${run.storeLoad} requests a second reach the datastore, which can serve ${target.storeRps}.`
+          : `${percent(run.hitRatio)} of reads are served from the cache and ${run.storeLoad} a second still reach the datastore, against ${target.storeRps}. A longer window keeps more of the cold tail, which is where the rest of the misses are.`};
+      }
+      if (run.stalenessSeconds > target.stalenessSeconds) {
+        return {success:false, run, message:`The datastore is comfortable and a reader can see a value up to ${run.stalenessSeconds} seconds after it changed, against a limit of ${target.stalenessSeconds}. A time-to-live bounds how wrong you can be; it does not stop you being wrong.`};
+      }
+      if (run.ttlSeconds > target.backstopSeconds) {
+        return {success:false, run, message:`Correct while every invalidation lands, and the time-to-live behind it is ${run.ttlSeconds} seconds. That is the backstop for the invalidation that gets lost, and this one is meant to be no longer than ${target.backstopSeconds}.`};
+      }
+      if (run.writeLatencyMs > target.writeLatencyMs) {
+        return {success:false, run, message:`A write now waits ${run.writeLatencyMs} ms because it goes to the cache and the datastore before it is acknowledged, against a budget of ${target.writeLatencyMs} ms. Writing through buys freshness with the writer's time.`};
+      }
+      if (run.canLoseWrites) {
+        return {success:false, run, message:`Fast, cheap, and it acknowledges a write the datastore has not got yet. Everything still in the batch is lost if the cache restarts, and this archive is not allowed to lose an acknowledged write.`};
+      }
+      return {success:true, run, message:`${percent(run.hitRatio)} of reads never reach the datastore, which sees ${run.storeLoad} a second of the ${run.coldStoreLoad} offered. Writes are acknowledged in ${run.writeLatencyMs} ms and readers never see a stale value, because the write removes the entry rather than waiting for it to expire.`};
+    },
+    view(level, state, {run}) {
+      const target = level.target;
+      return {
+        instructions:`${level.workload.reads.toLocaleString('en-US')} reads and ${level.workload.writes} writes a second. The datastore serves ${target.storeRps}.`,
+        legend:[`hit ratio ${percent(run.hitRatio)}`, `datastore ${run.storeLoad} of ${target.storeRps}`, `stale up to ${run.stalenessSeconds}s`],
+        summary:`${run.storeLoad} req/s to the datastore · writes acknowledged in ${run.writeLatencyMs} ms · ${run.canLoseWrites ? 'writes can be lost' : 'no write is lost'}`,
+        diagram:{type:'table', caption:'What each decision costs', columns:['', 'Now', 'Allowed'], rows:[
+          ['Reads served from cache', percent(run.hitRatio), '—'],
+          ['Requests reaching the datastore', `${run.storeLoad}/s`, `${target.storeRps}/s`],
+          ['How stale a read can be', `${run.stalenessSeconds}s`, `${target.stalenessSeconds}s`],
+          ['Time-to-live behind the invalidation', `${run.ttlSeconds}s`, `${target.backstopSeconds}s`],
+          ['A write is acknowledged in', `${run.writeLatencyMs} ms`, `${target.writeLatencyMs} ms`],
+          ['An acknowledged write can be lost', run.canLoseWrites ? 'yes' : 'no', 'no']
+        ], problems:[false, run.storeLoad > target.storeRps, run.stalenessSeconds > target.stalenessSeconds,
+          run.ttlSeconds > target.backstopSeconds, run.writeLatencyMs > target.writeLatencyMs, run.canLoseWrites]}
+      };
+    }
+  },
+  // A queue between a fast producer and a slow consumer does not make the
+  // consumer faster. It decides what happens to the difference.
+  queue:{
+    derive:(level, state) => ({run:queueState(level, state)}),
+    evaluate(level, state, {run}) {
+      if (run.shed > 0) {
+        return {success:false, run, message:`${Math.round(run.shed).toLocaleString('en-US')} readings were dropped because the buffer was full. A bigger buffer moves the moment that happens; only a consumer that keeps up stops it happening.`};
+      }
+      if (level.target?.maxWaitSeconds !== undefined && run.peakWaitSeconds > level.target.maxWaitSeconds) {
+        return {success:false, run, message:`Nothing dropped, and the backlog reaches ${run.peakDepth.toLocaleString('en-US')} — ${Math.round(run.peakWaitSeconds / 60)} minutes of work at this drain rate, against a limit of ${Math.round(level.target.maxWaitSeconds / 60)}. Depth over drain rate is the age of the reading at the back, and a telemetry reading that old is one nobody will look at.`};
+      }
+      if (!run.recovered) {
+        return {success:false, run, message:`Nothing was dropped and the backlog is still ${run.finalDepth.toLocaleString('en-US')} deep at the end of the window, with the last reading waiting ${run.waitSeconds} s to be processed. A queue that never drains is not absorbing a burst, it is hiding a shortfall.`};
+      }
+      // Fewest workers first — one runs all day for a burst of twenty minutes —
+      // and then the smallest buffer that still holds the backlog they leave.
+      // Fewer workers is checked against every buffer, not only the one chosen,
+      // or a design looks tight merely because its neighbour was never tried.
+      const buffers = level.dials.find(dial => dial.id === 'capacity').options.map(option => option.value);
+      const works = dials => {
+        const other = queueState(level, {...state, dials:{...state.dials, ...dials}});
+        return other.shed === 0 && other.recovered && other.peakWaitSeconds <= (level.target?.maxWaitSeconds ?? Infinity);
+      };
+      const cheaper = level.dials.find(dial => dial.id === 'workers').options.map(option => option.value)
+        .filter(value => value < run.workers)
+        .filter(value => buffers.some(capacity => works({workers:value, capacity})))
+        .sort((first, second) => first - second)[0];
+      if (cheaper !== undefined) {
+        return {success:false, run, message:`Nothing dropped and the backlog drains, with ${run.workers} workers where ${cheaper} would do. Workers are running the whole day for a burst that lasts ${level.burst.minutes} minutes.`};
+      }
+      const smaller = buffers.filter(value => value < run.capacity)
+        .filter(value => works({capacity:value}))
+        .sort((first, second) => first - second)[0];
+      if (smaller !== undefined) {
+        return {success:false, run, message:`Nothing dropped, and the backlog never gets past ${run.peakDepth.toLocaleString('en-US')} — a buffer of ${smaller.toLocaleString('en-US')} would have held it. The buffer is memory reserved for a peak that does not arrive.`};
+      }
+      return {success:true, run, message:`Every reading kept, a peak backlog of ${run.peakDepth.toLocaleString('en-US')}, and the queue empty again by the end of the window. ${run.workers} workers is the fewest that can drain what the burst delivers, and the buffer is sized for the backlog that actually builds up.`};
+    },
+    view(level, state, {run}) {
+      const sampled = run.steps.filter((step, index) => index % Math.ceil(run.steps.length / 12) === 0);
+      return {
+        instructions:`${level.burst.perMinute.toLocaleString('en-US')} readings a minute for ${level.burst.minutes} minutes, then ${level.burst.afterPerMinute.toLocaleString('en-US')}. Each worker handles ${level.serviceRatePerWorker} a second.`,
+        legend:[`${run.workers} workers · ${run.rate * 60} a minute`, `peak backlog ${run.peakDepth.toLocaleString('en-US')}`, run.shed ? `${Math.round(run.shed).toLocaleString('en-US')} dropped` : 'nothing dropped'],
+        summary:`peak ${run.peakDepth.toLocaleString('en-US')} · ${run.finalDepth ? `${run.finalDepth.toLocaleString('en-US')} still queued` : 'drained'} · ${run.shed ? `${Math.round(run.shed).toLocaleString('en-US')} dropped` : 'nothing dropped'}`,
+        diagram:{type:'bars', caption:'Backlog over the window', rows:sampled.map(step => ({
+          name:`minute ${step.minute}`, value:step.depth, max:Math.max(run.capacity, run.peakDepth, 1),
+          detail:step.lost ? `${step.depth.toLocaleString('en-US')} queued · ${Math.round(step.lost).toLocaleString('en-US')} dropped` : `${step.depth.toLocaleString('en-US')} queued`,
+          problem:step.lost > 0
+        }))}
+      };
+    }
+  },
+  // A dependency wobbles, everyone retries, and the load on the thing that was
+  // already struggling goes up. The retry is the outage.
+  retry:{
+    derive:(level, state) => ({run:retryState(level, state)}),
+    evaluate(level, state, {run}) {
+      if (run.overloaded) {
+        return {success:false, run, message:`The dependency was offered ${run.peakLoad}× what it can serve — ${run.amplified}× what the callers actually wanted. ${run.policy === 'immediate' ? 'Retrying at once means every caller that failed comes back in the same instant, all of them together.' : run.policy === 'backoff' ? 'Backing off spreads a caller’s own attempts over time and does nothing about all the callers doing it in step.' : 'Even spread out, this many attempts each is more than the dependency has room for.'}`};
+      }
+      if (run.successRate < level.target.successRate) {
+        return {success:false, run, message:`The dependency is never overloaded and only ${percent(run.successRate)} of what the callers asked for came back, against a target of ${percent(level.target.successRate)}. ${run.policy === 'none' ? 'A transient failure that is never retried is just a failure.' : 'The breaker is refusing calls this dependency could have served: it is built for a dependency that is down, and this one is up and flaky.'}`};
+      }
+      const simpler = [];
+      if (run.breaker) simpler.push('the breaker');
+      if (run.attempts > level.target.attempts) simpler.push(`${run.attempts} attempts where ${level.target.attempts} is enough`);
+      if (simpler.length) {
+        const without = retryState(level, {...state, dials:{...state.dials, breaker:'no', attempts:String(level.target.attempts)}});
+        if (!without.overloaded && without.successRate >= level.target.successRate) {
+          return {success:false, run, message:`Both targets are met, and they are met without ${simpler.join(' and ')}. Everything in the call path is another thing to configure, another thing to get wrong at three in the morning, and another way to fail — so it has to be earning its place.`};
+        }
+      }
+      return {success:true, run, message:`${percent(run.successRate)} of what the callers asked for came back, and the dependency was never offered more than ${run.peakLoad}× what it can serve. Spreading the retries across the callers as well as across time is what keeps them from arriving as one wave.`};
+    },
+    view(level, state, {run}) {
+      return {
+        instructions:`${level.dependency.callers.toLocaleString('en-US')} callers a second against a dependency that serves ${level.dependency.dependencyCapacity.toLocaleString('en-US')} and is failing ${percent(level.dependency.failureRate)} of them.`,
+        legend:[`peak ${run.peakLoad}× capacity`, `${percent(run.successRate)} answered`, run.breaker ? 'breaker fitted' : 'no breaker'],
+        summary:`offered up to ${run.peakLoad}× capacity · ${run.amplified}× what was asked for · ${percent(run.successRate)} answered`,
+        diagram:{type:'bars', caption:'Load offered to the dependency, round by round', rows:run.steps.map(step => ({
+          name:`round ${step.round + 1}`, value:step.load, max:Math.max(3, run.peakLoad),
+          detail:`${step.load}× capacity${step.breakerOpen ? ' · breaker open' : ''}`, problem:step.load > 1
+        }))}
+      };
+    }
+  },
+  // The architecture simulator the lab runs on, narrowed to the handful of knobs
+  // one lesson is about.
+  design:{
+    derive:(level, state) => designState(level, state),
+    evaluate(level, state, {design, result}) {
+      if (!result.success) return {success:false, result, message:result.message};
+      // The cheapest design that meets the targets, because a design that meets
+      // them twice over is a bill somebody signs every month.
+      const cheaper = level.dials.reduce((all, dial) => all.flatMap(chosen => dial.options.map(option => ({...chosen, [dial.id]:option.value}))), [{}])
+        .map(dials => ({dials, run:designState(level, {...state, dials})}))
+        .filter(other => other.run.result.success && other.run.result.cost < result.cost)
+        .sort((first, second) => first.run.result.cost - second.run.result.cost)[0];
+      if (cheaper) {
+        return {success:false, result, message:`Every target is met, at ${result.cost} credits a month where ${cheaper.run.result.cost} would do the same job. ${level.thrift ?? 'The cheapest design that meets the targets is the design.'}`};
+      }
+      return {success:true, result, message:`${result.message} At ${result.cost} credits a month, nothing on offer here meets these targets for less.`};
+    },
+    view(level, state, {design, result}) {
+      const slo = result.scenario.slo;
+      return {
+        instructions:level.brief ?? result.scenario.description,
+        legend:[`${result.scenario.traffic.rps.toLocaleString('en-US')} req/s`, `${result.cost} credits a month`, result.bottleneck ? `bottleneck: ${result.bottleneck}` : 'nothing saturated'],
+        summary:`${result.latencyMs === null ? 'overloaded' : `p99 ${result.latencyMs} ms`} · ${result.availabilityText} available · ${result.cost} credits`,
+        diagram:{type:'table', caption:'Against the targets', columns:['', 'This design', 'Target'], rows:[
+          ['99th percentile latency', result.latencyMs === null ? 'no answer: overloaded' : `${result.latencyMs} ms`, `${slo.p99Ms} ms`],
+          ['Availability', result.availabilityText, `${(slo.availability * 100).toFixed(2)}%`],
+          ['Cost a month', `${result.cost}`, `${slo.budget}`],
+          ['Busiest tier', result.bottleneck ?? 'none', 'under capacity'],
+          ['Reads served from cache', percent(result.hitRatio), '—'],
+          ['Consistency', result.consistency, '—']
+        ], problems:[!result.met.latency, !result.met.availability, !result.met.budget, !result.met.capacity, false, false]}
       };
     }
   },

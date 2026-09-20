@@ -350,3 +350,151 @@ export function errorBudget({objective, windowMinutes = constants.minutesPerMont
       : 'ship'
   };
 }
+
+// ------------------------------------------------------------- caching
+//
+// A cache is a copy, and every copy is a decision about how wrong you are
+// willing to be and for how long. The hit ratio decides what it saves; the
+// invalidation decides what it costs you in correctness.
+export function cacheRun({reads, writes, hotFraction = 0.8, coldReuse = 0.2,
+  strategy = 'aside', ttlSeconds = 60, invalidateOnWrite = false, warm = true,
+  storeCapacityRps, storeLatencyMs = 20, cacheLatencyMs = 1, batchFactor = 0.1}) {
+  if (!['aside', 'through', 'behind', 'none'].includes(strategy)) throw new DesignError('Read around the cache, write through it, write behind it, or do not cache.');
+  if (!(ttlSeconds >= 0)) throw new DesignError('A time-to-live is a number of seconds.');
+
+  // How often a read finds what it wants. The hot keys are re-read inside almost
+  // any window; the cold tail is only kept if the window is long enough to hold
+  // it, which is what makes a longer time-to-live worth something.
+  const windowFactor = Math.min(1, ttlSeconds / 60);
+  const hitRatio = strategy === 'none' ? 0
+    : round(hotFraction * (warm ? 1 : 0.5) + (1 - hotFraction) * coldReuse * windowFactor, 3);
+  const readsToStore = reads * (1 - hitRatio);
+  // Write-through writes both places before acknowledging. Write-behind
+  // acknowledges from the cache and batches to the store, which is why it is
+  // both the cheapest and the only one that can lose an acknowledged write.
+  const writesToStore = strategy === 'behind' ? writes * batchFactor : writes;
+  const storeLoad = readsToStore + writesToStore;
+
+  // How long a reader can see a value that is no longer true.
+  const stalenessSeconds = strategy === 'none' || strategy === 'through' ? 0
+    : invalidateOnWrite ? 0
+    : ttlSeconds;
+  // What a write costs the caller. Through pays for both hops; behind pays for
+  // the cache alone; aside and none pay the store.
+  const writeLatencyMs = strategy === 'through' ? storeLatencyMs + cacheLatencyMs
+    : strategy === 'behind' ? cacheLatencyMs
+    : storeLatencyMs;
+  const readLatencyMs = round(hitRatio * cacheLatencyMs + (1 - hitRatio) * storeLatencyMs, 2);
+  return {
+    strategy, ttlSeconds, invalidateOnWrite, warm,
+    hitRatio,
+    readsToStore:Math.round(readsToStore),
+    writesToStore:Math.round(writesToStore),
+    storeLoad:Math.round(storeLoad),
+    storeCapacityRps,
+    overloaded:storeCapacityRps !== undefined && storeLoad > storeCapacityRps,
+    saved:round(1 - storeLoad / (reads + writes), 3),
+    stalenessSeconds,
+    writeLatencyMs, readLatencyMs,
+    // Losing the cache sends every read to the store at once, which is the
+    // failure people meet the first time they restart one under load.
+    coldStoreLoad:Math.round(reads + writes),
+    survivesCold:storeCapacityRps === undefined || reads + writes <= storeCapacityRps,
+    canLoseWrites:strategy === 'behind'
+  };
+}
+
+// ------------------------------------------------- queues and backpressure
+//
+// A queue between a fast producer and a slow consumer does not make the consumer
+// faster. It decides what happens to the difference: waiting, or refused.
+export function queueRun({arrivals, serviceRatePerWorker, workers, capacity, whenFull = 'shed', minutes = 30}) {
+  if (!(workers >= 0)) throw new DesignError('A queue needs a whole number of workers.');
+  if (!['shed', 'block', 'grow'].includes(whenFull)) throw new DesignError('A full queue sheds, blocks, or grows.');
+  const rate = serviceRatePerWorker * workers;
+  const steps = [];
+  let depth = 0, shed = 0, blocked = 0;
+  for (let minute = 0; minute < minutes; minute++) {
+    const arriving = typeof arrivals === 'function' ? arrivals(minute) : arrivals;
+    const served = Math.min(depth + arriving, rate * 60);
+    let next = depth + arriving - served;
+    let lostHere = 0;
+    if (whenFull !== 'grow' && next > capacity) {
+      lostHere = next - capacity;
+      next = capacity;
+      if (whenFull === 'shed') shed += lostHere; else blocked += lostHere;
+    }
+    depth = next;
+    steps.push({minute, arriving, served, depth:Math.round(depth), lost:Math.round(lostHere)});
+  }
+  const peak = Math.max(...steps.map(step => step.depth));
+  // How long the last item in the queue waits, at the end of the window, and at
+  // the worst of it. Depth over drain rate is the age of the thing at the back,
+  // which is the number worth alerting on: a queue is useful only while what
+  // comes out of it is still wanted.
+  const waitSeconds = rate > 0 ? round(depth / rate, 1) : Infinity;
+  const peakWaitSeconds = rate > 0 ? round(peak / rate, 1) : Infinity;
+  return {
+    workers, rate, capacity, whenFull, steps,
+    peakDepth:Math.round(peak),
+    finalDepth:Math.round(depth),
+    shed:Math.round(shed),
+    blocked:Math.round(blocked),
+    waitSeconds, peakWaitSeconds,
+    // A backlog that is still growing at the end never drains: the consumer is
+    // slower than the producer and no amount of queue changes that.
+    drains:steps.at(-1).depth <= steps[Math.floor(steps.length / 2)].depth,
+    recovered:depth < capacity * 0.05
+  };
+}
+
+// --------------------------------------------- retries, budgets and breakers
+//
+// A dependency slows down, every caller retries, and the load on the thing that
+// was already struggling goes up rather than down. The retry is the outage.
+export function retryRun({callers, dependencyCapacity, failureRate, policy = 'immediate',
+  attempts = 3, breaker = false, rounds = 12}) {
+  if (!['none', 'immediate', 'backoff', 'jitter'].includes(policy)) throw new DesignError('Retry never, at once, with backoff, or with backoff and jitter.');
+  if (!(attempts >= 1)) throw new DesignError('At least one attempt has to be made.');
+  const tries = policy === 'none' ? 1 : attempts;
+  // Where the retries land. Immediate puts them all in the next round, which is
+  // what makes a storm; backoff spreads them over several; jitter also spreads
+  // them across callers, so they stop arriving as one synchronised wave.
+  const spread = policy === 'immediate' ? 1 : policy === 'backoff' ? 0.5 : 0.25;
+  const steps = [];
+  let open = false, carried = 0, worstLoad = 0, satisfied = 0;
+
+  for (let round = 0; round < rounds; round++) {
+    // Callers are finite and each gives up after its attempts, so the offered
+    // load has a ceiling however badly the policy behaves.
+    const wanted = Math.min(callers * tries, callers + carried);
+    // A breaker that has tripped refuses most calls itself, which is the point:
+    // it turns a dependency that is failing slowly into one that fails fast.
+    const offered = open ? Math.min(wanted, callers * 0.1) : wanted;
+    const served = Math.min(offered, dependencyCapacity);
+    const rejected = offered - served;
+    const errored = served * failureRate;
+    const good = served - errored;
+    // What the callers actually wanted this round, and how much of it they got.
+    satisfied += Math.min(1, good / callers);
+    const load = round2(offered / dependencyCapacity);
+    worstLoad = Math.max(worstLoad, load);
+    if (breaker) open = load > 1.2 ? true : load < 0.7 ? false : open;
+    carried = (rejected + errored) * (tries - 1) * spread;
+    steps.push({round, offered:Math.round(offered), served:Math.round(served), failed:Math.round(rejected + errored), load, breakerOpen:open});
+  }
+  const last = steps.at(-1);
+  return {
+    policy, attempts:tries, breaker, steps,
+    peakLoad:round2(worstLoad),
+    finalLoad:last.load,
+    // What fraction of what the callers asked for actually got an answer.
+    successRate:round2(satisfied / rounds),
+    overloaded:worstLoad > 1,
+    recovered:last.load <= 1,
+    // Offered load as a multiple of what it would have been with no retries.
+    amplified:round2(worstLoad / (callers / dependencyCapacity))
+  };
+}
+
+const round2 = value => Math.round(value * 100) / 100;

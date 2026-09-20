@@ -121,6 +121,27 @@ test('mission ordering introduces each concept before it is required', () => {
   for (const level of levels.filter(item => item.chapter === 'Networking')) {
     assert.ok(level.artifact, `${level.id} has no evidence panel`);
   }
+  // System design reads as the life of one service: size it, buy what serves it,
+  // live with what you bought, then a burst, then a failure, then the redundancy,
+  // the budget for being down, and the incident when it happens anyway.
+  const design = levels.filter(level => level.chapter === 'System design').map(level => level.id);
+  assert.deepEqual(design, [
+    'size-it-yourself', 'cheaper-than-more-database', 'keep-the-hot-set-close', 'what-the-queue-costs-you',
+    'when-the-queue-never-drains', 'the-retry-that-made-it-worse', 'two-of-everything',
+    'the-budget-you-spend', 'bring-it-back'
+  ], 'the System design arc has drifted');
+  // Half the chapter used to be multiple choice. A mission here is something you
+  // configure and watch, which is the only kind that teaches a system.
+  for (const level of levels.filter(item => item.chapter === 'System design')) {
+    assert.notEqual(level.kind, 'quiz', `${level.id} is a quiz again`);
+    assert.ok(level.artifact, `${level.id} has no evidence panel`);
+  }
+  // The chapter owns the richest model in the codebase and used to reach it only
+  // through the separate lab.
+  assert.ok(design.filter(id => levels.find(level => level.id === id).kind === 'design').length >= 3,
+    'no campaign mission runs on the architecture simulator');
+  assert.equal(new Set(levels.filter(item => item.chapter === 'System design').map(item => item.concept)).size, design.length,
+    'two System design missions teach the same concept');
 });
 
 test('grid missions insist on the concept they teach, not just on arriving', () => {
