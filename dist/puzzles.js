@@ -420,7 +420,9 @@ export function evaluate(level, state) {
 // ---------------------------------------------------------------- views
 
 // A diagram description the UI renders with generic pieces: no mission-specific
-// markup, so adding a mission does not mean adding a renderer.
+// markup, so adding a mission does not mean adding a renderer. A kind that has
+// an isometric scene has no diagram: the scene is its picture, and describing it
+// twice meant one of the two was never read.
 export function view(level, state, result = null) {
   switch (level.kind) {
     case 'bits': {
@@ -431,24 +433,21 @@ export function view(level, state, result = null) {
           ? 'The leftmost bit is the sign bit: when it is on, subtract its place value instead of adding it.'
           : `A bit is 0 (off) or 1 (on). Turn on the place values that add up to ${level.target}.`,
         legend:[`Left to right: ${places.join('s, ')}s`, 'Tap a bit to flip it'],
-        summary:`${state.bits.map((bit, index) => bit * places[index]).filter(Boolean).join(' + ') || '0'} = ${value}`,
-        diagram:{type:'bits', places, bits:state.bits, value, target:level.target, hex:level.bits.width % 4 === 0 ? toHex(value, level.bits.width) : null, binary:state.bits.join('')}
+        summary:`${state.bits.map((bit, index) => bit * places[index]).filter(Boolean).join(' + ') || '0'} = ${value}`
       };
     }
     case 'sort':
       return {
         instructions:'Exchange two neighbouring entries. Compare their values before choosing a swap.',
         legend:['Array indices start at 0', 'Put the smallest value on the left'],
-        summary:`${state.swaps ?? 0} swaps made`,
-        diagram:{type:'sort', values:state.values}
+        summary:`${state.swaps ?? 0} swaps made`
       };
     case 'network': {
       const path = evaluateNetwork(level, state.links);
       return {
         instructions:'Choose cables on the map or use the switches below.',
         legend:['━ Enabled cable', '━ Available cable', '↔ Relay / router'],
-        summary:`${state.links.length} links enabled · ${path.path.length ? `${path.hops} hops${level.budget ? ` / ${path.cost} ms on the fastest route` : ''}` : 'No complete route'}`,
-        diagram:{type:'graph'}
+        summary:`${state.links.length} links enabled · ${path.path.length ? `${path.hops} hops${level.budget ? ` / ${path.cost} ms on the fastest route` : ''}` : 'No complete route'}`
       };
     }
     case 'layers': {
@@ -457,11 +456,7 @@ export function view(level, state, result = null) {
       return {
         instructions:'Order the headers from the first one added to the last, then size the payload so the packet exactly fills the link MTU.',
         legend:[`MTU ${level.mtu} bytes`, `Frame ${frame.frameBytes} bytes`, `${percent(frame.efficiency)} payload`],
-        summary:`${state.dials.payload} B payload + ${frame.overheadBytes} B headers = ${frame.frameBytes} B frame`,
-        diagram:{type:'stack', rows:[
-          {name:'Application payload', detail:`${state.dials.payload} bytes of your data`, size:state.dials.payload, accent:true},
-          ...frame.layers.map(layer => ({name:layer.name, detail:`+${layer.bytes} B → ${layer.cumulative} B`, size:layer.cumulative}))
-        ]}
+        summary:`${state.dials.payload} B payload + ${frame.overheadBytes} B headers = ${frame.frameBytes} B frame`
       };
     }
     case 'subnet': {
@@ -506,12 +501,7 @@ export function view(level, state, result = null) {
       return {
         instructions:`Size the window for a ${level.link.capacityMbps} Mbps link with ${level.link.rttMs} ms round-trip time.`,
         legend:[`One bandwidth-delay product ≈ ${result.bdpPackets} packets`, `${result.packets} packets to send`, `${result.retransmissions} retransmitted`],
-        summary:`${result.seconds} s · ${result.throughputMbps} Mbps · ${percent(result.utilisation)} of link · ${percent(result.wasted)} wasted`,
-        diagram:{type:'bars', caption:'Where the time goes', unit:'', rows:[
-          {name:'In flight (window)', value:result.windowBytes, detail:`${result.windowBytes.toLocaleString('en-US')} bytes`},
-          {name:'Bandwidth-delay product', value:result.bdpBytes, detail:`${result.bdpBytes.toLocaleString('en-US')} bytes`},
-          {name:'Link utilisation', value:result.utilisation * result.bdpBytes, detail:percent(result.utilisation)}
-        ]}
+        summary:`${result.seconds} s · ${result.throughputMbps} Mbps · ${percent(result.utilisation)} of link · ${percent(result.wasted)} wasted`
       };
     }
     case 'sequence': {

@@ -93,9 +93,6 @@ export const rankFor = ({hints = 0, solutionShown = false, revealed = 0} = {}) =
 
 export const bestRank = (a, b) => rankOrder.indexOf(a) >= rankOrder.indexOf(b) ? a : b;
 
-// A record is what the interface remembers about one mission.
-export const blankRecord = () => ({rank:null, firstTry:false, runs:0});
-
 export function stationPower(records) {
   return levels.reduce((total, level) => total + (records[level.id]?.rank ? ranks[records[level.id].rank].power : 0), 0);
 }

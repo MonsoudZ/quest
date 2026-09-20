@@ -1,5 +1,5 @@
 import {levels} from './levels.js';
-import {simulate, evaluateAlgorithm, evaluateNetwork, describe, algoKinds, evaluateSpec} from './engine.js';
+import {simulate, evaluateAlgorithm, describe, algoKinds, evaluateSpec} from './engine.js';
 import {isPuzzle, initialState, solutionState, applyAction, widgets, view, evaluate} from './puzzles.js';
 import {mountBuilder} from './builder.js';
 import {mountCity} from './citylab.js';
@@ -54,7 +54,7 @@ let current = Math.max(0, levels.findIndex(level => level.id === saved?.current)
 let drafts = saved?.drafts && typeof saved.drafts === 'object' ? saved.drafts : {};
 const collapsed = new Set(Array.isArray(saved?.collapsed) ? saved.collapsed : []);
 let hintIndex = 0, unit = null, visited = [], trace = null, traceIndex = 0, runToken = 0, running = false;
-let sound = false, audioContext = null, scene = null, sceneLevel = null, networkResult = null;
+let sound = false, audioContext = null, scene = null, sceneLevel = null;
 let puzzleState = null, algoResult = null, mode = 'campaign';
 let stage = null, stageKind = null;
 const level = () => levels[current];
@@ -363,7 +363,7 @@ function loadMission(index) {
   current = Math.max(0, Math.min(levels.length - 1, index));
   const item = level();
   $('cause').hidden = true;
-  hintIndex = 0; panelChoice = 0; attempt = {hints:0, solutionShown:false, revealed:0, runs:0, predicted:null, diagnosed:false}; trace = null; traceIndex = 0; visited = []; networkResult = null; algoResult = null;
+  hintIndex = 0; panelChoice = 0; attempt = {hints:0, solutionShown:false, revealed:0, runs:0, predicted:null, diagnosed:false}; trace = null; traceIndex = 0; visited = []; algoResult = null;
   unit = item.start ? {x:item.start[0], y:item.start[1], dir:item.start[2]} : null;
   scene?.destroy(); scene = null; sceneLevel = null;
   stage?.destroy(); stage = null; stageKind = null;
@@ -417,7 +417,7 @@ function loadMission(index) {
   persist();
 }
 
-function renderArena(failed = -1) {
+function renderArena() {
   const item = level();
   if (item.kind === 'code') {
     if (!scene || sceneLevel !== item.id) { scene?.destroy(); scene = createScene($('arena'), item, unit); sceneLevel = item.id; }
@@ -436,8 +436,7 @@ function renderArena(failed = -1) {
   if (built) renderStage(item, built);
   else {
     stage?.destroy(); stage = null; stageKind = null;
-    if (rendered.diagram.type === 'graph') renderNetwork(failed);
-    else renderDiagram(rendered.diagram);
+    renderDiagram(rendered.diagram);
   }
   renderWidgets();
 }
@@ -466,25 +465,11 @@ function renderStage(item, built) {
 
 // Diagrams are described by the puzzle layer and drawn by these few renderers,
 // so a new mission kind does not need new markup.
+// Missions whose kind has an isometric scene never reach this: renderArena
+// prefers the scene, and puzzles.js gives those kinds no diagram at all.
 function renderDiagram(diagram) {
   const wrap = document.createElement('div');
   wrap.className = `puzzle diagram-${diagram.type}`;
-  if (diagram.type === 'bits') {
-    const width = diagram.bits.length;
-    wrap.innerHTML = `<div class="eyebrow">TARGET VALUE: ${diagram.target}</div>
-      <div class="bit-grid" style="grid-template-columns:repeat(${Math.min(width, 8)},1fr)">${diagram.bits.map((bit, index) => `<button class="bit ${bit ? 'on' : ''}" data-bit="${index}" aria-label="Toggle the ${diagram.places[index]} bit" aria-pressed="${!!bit}"><span>${bit}</span><small>${index === 0 && diagram.target < 0 ? `−${diagram.places[index]}` : diagram.places[index]}</small></button>`).join('')}</div>
-      <div class="binary-total">${diagram.value}<span>DECIMAL VALUE${diagram.hex ? ` · ${diagram.hex}` : ''}</span></div>`;
-  }
-  if (diagram.type === 'sort') {
-    wrap.innerHTML = `<div class="eyebrow">ARRAY CONTENTS</div><div class="sort-chart">${diagram.values.map((value, index) => `<div class="sort-column"><strong>${value}</strong><div class="sort-bar" style="height:${value * 17}px"></div><small>[${index}]</small></div>`).join('')}</div>`;
-  }
-  if (diagram.type === 'stack') {
-    // Drawn as nested boxes, because that is what encapsulation is: each layer
-    // wraps everything the layer above handed it.
-    const nested = diagram.rows.reduce((inner, row, depth) =>
-      `<div class="stack-layer ${row.accent ? 'accent' : ''}" style="--depth:${depth}"><div class="stack-head"><strong>${row.name}</strong><span>${row.detail}</span></div>${inner}</div>`, '');
-    wrap.innerHTML = `<div class="eyebrow">${diagram.caption ?? 'ENCAPSULATION · OUTERMOST FIRST'}</div><div class="stack-view">${nested}</div>`;
-  }
   if (diagram.type === 'table') {
     wrap.innerHTML = `<div class="eyebrow">${diagram.caption ?? ''}</div><table class="data-table"><thead><tr>${diagram.columns.map(column => `<th>${column}</th>`).join('')}</tr></thead><tbody>${diagram.rows.map((row, index) => `<tr class="${diagram.problems?.[index] ? 'problem' : ''} ${diagram.highlight === index ? 'highlight' : ''}">${row.map(cell => `<td>${cell}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
   }
@@ -503,7 +488,6 @@ function renderDiagram(diagram) {
     wrap.innerHTML = `<div class="eyebrow">${diagram.caption ?? 'QUESTIONS'}</div><div class="card-view">${diagram.rows.map((row, index) => `<div class="question-card ${row.answered ? 'answered' : ''}"><small>${index + 1}</small><strong>${row.name}</strong><span>${row.detail}</span></div>`).join('')}</div>`;
   }
   $('arena').replaceChildren(wrap);
-  wrap.querySelectorAll('[data-bit]').forEach(button => button.addEventListener('click', () => act({type:'bit', index:Number(button.dataset.bit)})));
 }
 
 function renderWidgets() {
@@ -591,71 +575,9 @@ function renderCases(result = null) {
 }
 const short = text => text.length > 42 ? `${text.slice(0, 39)}…` : text;
 
-function renderNetwork(failed) {
-  const item = level(), ns = 'http://www.w3.org/2000/svg';
-  const svg = document.createElementNS(ns, 'svg');
-  svg.setAttribute('viewBox', '0 0 560 350');
-  svg.setAttribute('class', 'network-svg');
-  svg.setAttribute('aria-label', 'Network map. Toggle cables using the buttons in mission controls.');
-  const point = id => { const node = item.nodes.find(entry => entry[0] === id); return [node[1] * 5.6, node[2] * 3.1]; };
-  svg.innerHTML = '<defs><linearGradient id="node-metal" x2="0" y2="1"><stop stop-color="#355675"/><stop offset="1" stop-color="#0c2139"/></linearGradient><linearGradient id="node-core" x2="0" y2="1"><stop stop-color="#c7f5ff"/><stop offset="1" stop-color="#549abb"/></linearGradient></defs>';
-  item.edges.forEach((edge, index) => {
-    const [x1, y1] = point(edge[0]), [x2, y2] = point(edge[1]);
-    const line = document.createElementNS(ns, 'line');
-    Object.entries({x1, y1, x2, y2, class:`network-link ${puzzleState.links.includes(index) ? 'selected' : ''} ${networkResult?.pathEdges.includes(index) ? 'route' : ''} ${index === failed ? 'failed' : ''}`}).forEach(([key, value]) => line.setAttribute(key, value));
-    svg.append(line);
-    const hit = line.cloneNode();
-    hit.setAttribute('class', 'link-hit');
-    hit.addEventListener('click', () => act({type:'link', index}));
-    svg.append(hit);
-    if (item.budget) {
-      const weight = document.createElementNS(ns, 'text');
-      weight.setAttribute('x', (x1 + x2) / 2);
-      weight.setAttribute('y', (y1 + y2) / 2 - 12);
-      weight.setAttribute('class', 'link-weight');
-      weight.setAttribute('text-anchor', 'middle');
-      weight.textContent = `${edge[2]} ms`;
-      svg.append(weight);
-    }
-  });
-  item.nodes.forEach(([id]) => {
-    const [cx, cy] = point(id);
-    const endpoint = id === item.source || id === item.target;
-    const circle = document.createElementNS(ns, 'circle');
-    Object.entries({cx, cy, r:23, class:`network-node ${endpoint ? 'endpoint' : ''}`}).forEach(([key, value]) => circle.setAttribute(key, value));
-    svg.append(circle);
-    const symbol = document.createElementNS(ns, 'text');
-    symbol.setAttribute('x', cx); symbol.setAttribute('y', cy);
-    symbol.setAttribute('class', `node-symbol ${endpoint ? 'endpoint' : ''}`);
-    symbol.textContent = id === item.source ? '↑' : id === item.target ? '▤' : '↔';
-    svg.append(symbol);
-    const text = document.createElementNS(ns, 'text');
-    text.setAttribute('x', cx); text.setAttribute('y', cy + 45);
-    text.setAttribute('class', 'node-label');
-    text.textContent = label(id);
-    svg.append(text);
-  });
-  $('arena').replaceChildren(svg);
-  if (networkResult?.path.length) {
-    $('legend').innerHTML = '<span class="legend-unit">━ Enabled link</span><span style="color:#ffdc93">━ Tested route</span><span>Other links add no path cost</span>';
-    if (running && !reduceMotion()) {
-      const packet = document.createElementNS(ns, 'circle');
-      packet.setAttribute('r', '6');
-      packet.setAttribute('class', 'packet');
-      const motion = document.createElementNS(ns, 'animateMotion');
-      motion.setAttribute('path', networkResult.path.map((id, index) => `${index ? 'L' : 'M'}${point(id).join(' ')}`).join(' '));
-      motion.setAttribute('dur', '1.2s');
-      motion.setAttribute('fill', 'freeze');
-      packet.append(motion);
-      svg.append(packet);
-    }
-  }
-}
-
 function act(action) {
   if (running || !action) return;
   puzzleState = applyAction(level(), puzzleState, action);
-  networkResult = null;
   $('result').hidden = true;
   renderArena();
 }
@@ -829,7 +751,6 @@ async function run() {
     if (animated) {
       log('Testing the signal path…');
       const token = ++runToken;
-      networkResult = evaluateNetwork(item, puzzleState.links);
       renderArena();
       await pause(1250);
       if (token !== runToken) return;
@@ -912,8 +833,7 @@ $('solution').addEventListener('click', () => {
     if (item.kind === 'spec') renderSpec(); else if (algoKinds.has(item.kind)) renderCases();
   } else {
     puzzleState = solutionState(item);
-    networkResult = null;
-    renderArena();
+      renderArena();
   }
   $('result').hidden = true;
   renderLadder();

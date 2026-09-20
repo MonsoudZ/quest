@@ -217,16 +217,6 @@ export function traverse({rows, columns, order = 'row', tile = 0, mode = 'scan',
 // Bits are numbered from 1, parity bits sit at the powers of two, and each one
 // covers the positions whose index has its bit set. The syndrome — the parity
 // bits that come out wrong — is the position of the flipped bit, in binary.
-export const hammingLayout = [
-  {position:1, role:'parity', covers:'positions 1,3,5,7'},
-  {position:2, role:'parity', covers:'positions 2,3,6,7'},
-  {position:3, role:'data', bit:'d1'},
-  {position:4, role:'parity', covers:'positions 4,5,6,7'},
-  {position:5, role:'data', bit:'d2'},
-  {position:6, role:'data', bit:'d3'},
-  {position:7, role:'data', bit:'d4'}
-];
-
 export function hammingEncode(data) {
   if (!Array.isArray(data) || data.length !== 4 || data.some(bit => bit !== 0 && bit !== 1)) fail('Encode exactly four bits, each 0 or 1.');
   const [d1, d2, d3, d4] = data;

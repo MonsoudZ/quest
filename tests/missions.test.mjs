@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {levels, chapters} from '../dist/levels.js';
 import {simulate, evaluateAlgorithm, evaluateSpec, algoKinds} from '../dist/engine.js';
 import {isPuzzle, initialState, solutionState, applyAction, widgets, view, evaluate} from '../dist/puzzles.js';
+import {sceneFor} from '../dist/scenes.js';
 
 const run = level => level.kind === 'spec' ? evaluateSpec : evaluateAlgorithm;
 const solve = level => level.kind === 'code' ? simulate(level, level.solution)
@@ -113,7 +114,10 @@ test('puzzle state, widgets, and diagrams hold together for every puzzle mission
       if (widget.type === 'dial') assert.ok(widget.options.length >= 2, `${level.id} dial needs options`);
     }
     const rendered = view(level, state);
-    assert.ok(rendered.diagram.type, `${level.id} has no diagram`);
+    // A kind either has an isometric scene or a diagram description, never both
+    // and never neither — the pairing is what keeps one of them from going unread.
+    assert.equal(!!sceneFor(level), !rendered.diagram, `${level.id} has ${sceneFor(level) ? 'both a scene and' : 'neither a scene nor'} a diagram`);
+    if (rendered.diagram) assert.ok(rendered.diagram.type, `${level.id} has a diagram with no type`);
     assert.ok(rendered.instructions.length > 10, `${level.id} has no instructions`);
     // Every action a widget offers has to produce a usable state.
     for (const widget of list) {
