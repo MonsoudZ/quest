@@ -268,6 +268,46 @@ test('the sorting puzzle is winnable from its start and only in sorted order', (
   assert.deepEqual(winners[0], [...level.values].sort((a, b) => a - b));
 });
 
+test('a mission set with dials has exactly one setting that wins', () => {
+  // Several right answers makes the shipped solution one of many, leaves the
+  // ladder showing an arbitrary one, and makes "which setting met the target?"
+  // unanswerable when the mission comes back for review.
+  for (const level of levels.filter(isPuzzle)) {
+    if (!level.dials) continue;
+    const combinations = level.dials.reduce(
+      (all, dial) => all.flatMap(chosen => dial.options.map(option => ({...chosen, [dial.id]:option.value}))),
+      [{}]);
+    // Missions whose dials interact with another widget are checked against the
+    // rest of their starting state, which is what the player actually has.
+    const base = initialState(level);
+    const winners = combinations.filter(dials => {
+      try { return evaluate(level, {...base, dials}).success; } catch { return false; }
+    });
+    assert.equal(winners.length, 1,
+      `${level.id} has ${winners.length} winning dial settings out of ${combinations.length}: ${JSON.stringify(winners).slice(0, 160)}`);
+  }
+});
+
+test('the missions that look interactive are not four clicks in a costume', () => {
+  // Three missions here once offered four, six and ten settings, so the way to
+  // solve them was to try all of them rather than to work anything out. What
+  // makes each of these a decision is named beside it; the count is the part a
+  // later edit could quietly undo.
+  const settings = level => level.dials.reduce((total, dial) => total * dial.options.length, 1);
+  const byId = id => levels.find(level => level.id === id);
+  const deep = {
+    'count-the-cents':[12, 2, 'a representation and the unit it counts in'],
+    // This one stayed a single dial on purpose: the decision is which tile size,
+    // and what makes it a decision is having the sizes either side of the answer.
+    'the-loop-that-misses':[15, 1, 'every tile size worth trying, either side of the one that fits'],
+    'hash-it-out':[12, 2, 'a table size and what happens when two keys collide']
+  };
+  for (const [id, [least, dials, why]] of Object.entries(deep)) {
+    assert.ok(settings(byId(id)) >= least, `${id} is down to ${settings(byId(id))} settings; it is meant to be ${why}`);
+    assert.equal(byId(id).dials.length, dials, `${id} should offer ${dials} dial${dials === 1 ? '' : 's'}: ${why}`);
+  }
+});
+
 test('quiz and routing missions have exactly one right answer', () => {
   for (const level of levels.filter(item => item.kind === 'quiz' || item.kind === 'routing')) {
     const winners = enumerate(level).filter(state => evaluate(level, state).success);

@@ -8,7 +8,7 @@ import {evaluatePuzzle, evaluateNetwork, bitValue, toHex} from './engine.js';
 import {percent} from './format.js';
 import {subnet, smallestPrefixFor, allocate, longestPrefixMatch, encapsulate, transfer, timeline, reachability, translate, congestion} from './net.js';
 import {evaluateArchitecture, estimators, nearestEstimate, errorBudget, catalog} from './systems.js';
-import {accumulate, exactValue, measure, truncate, traverse, hammingCheck, buildTree, representations} from './machine.js';
+import {accumulate, exactValue, measure, truncate, traverse, hammingCheck, buildTree, representations, routineFaults, schedules} from './machine.js';
 
 const clone = value => Array.isArray(value) ? [...value] : value;
 
@@ -120,13 +120,42 @@ const label = id => String(id).replace(/-/g, ' ').replace(/\b\w/g, character => 
 
 // ------------------------------------------- what each kind works out
 
+// Two ways to survive a collision. Chaining hangs a list off the slot, so a
+// lookup walks that list. Open addressing keeps everything in the table and
+// walks forward to the next free slot, so a lookup walks that run instead —
+// and the runs of two different keys merge into one, which is the catch.
 function hashTable(level, state) {
   const size = state.dials.size;
-  const multiplier = state.dials.multiplier;
+  const multiplier = state.dials.multiplier ?? 1;
+  const probing = state.dials.collisions === 'probe';
+  const slotOf = key => (key * multiplier) % size;
   const buckets = Array.from({length:size}, () => []);
-  for (const key of level.keys) buckets[(key * multiplier) % size].push(key);
-  const longest = Math.max(...buckets.map(bucket => bucket.length));
-  return {size, multiplier, buckets, longest, load:level.keys.length / size, collisions:buckets.filter(bucket => bucket.length > 1).length};
+  // The cost of finding a key again: for chaining, its place in the chain; for
+  // probing, how many slots are walked from where the key hashed to.
+  const costs = [];
+  if (probing) {
+    const placed = new Array(size).fill(null);
+    for (const key of level.keys) {
+      let steps = 1, slot = slotOf(key);
+      while (placed[slot] !== null) { slot = (slot + 1) % size; steps++; }
+      placed[slot] = key;
+      buckets[slot].push(key);
+      costs.push(steps);
+    }
+  } else {
+    for (const key of level.keys) {
+      buckets[slotOf(key)].push(key);
+      costs.push(buckets[slotOf(key)].length);
+    }
+  }
+  const longest = Math.max(...costs);
+  return {
+    size, multiplier, probing, buckets, longest, costs,
+    load:level.keys.length / size,
+    collisions:probing
+      ? level.keys.filter((key, index) => costs[index] > 1).length
+      : buckets.filter(bucket => bucket.length > 1).length
+  };
 }
 
 
@@ -202,8 +231,7 @@ function incidentDesign(level, state) {
 
 
 function tillRun(level, state) {
-  const [representation, order] = String(state.dials.method).split(':');
-  return accumulate(level.amounts, {representation, order:order ?? 'given'});
+  return accumulate(level.amounts, {representation:state.dials.counts, scale:state.dials.unit});
 }
 
 function columnRun(level, state) {
@@ -224,6 +252,11 @@ function eccRun(level, state) {
   const check = hammingCheck(state.bits);
   const flips = state.bits.reduce((total, bit, index) => total + (bit === level.received[index] ? 0 : 1), 0);
   return {check, flips, received:hammingCheck(level.received)};
+}
+
+function raceRun(level, state) {
+  const routine = state.order.map(id => level.items.find(item => item.id === id).step);
+  return {routine, faults:routineFaults(routine), run:schedules(routine, {start:level.start ?? 0})};
 }
 
 function orderedCorrect(level, state) {
@@ -339,7 +372,14 @@ export const kinds = {
       const outside = plan.blocks.find(block => !block.fits);
       if (short) return {success:false, message:`${short.name} needs ${short.needs} addresses but a /${short.prefix} only has ${short.usable} usable.`, plan};
       if (outside) return {success:false, message:`${outside.name} does not fit: the blocks you chose run past the end of ${plan.parent.cidr}. Larger blocks first waste less space.`, plan};
-      return {success:true, message:`All four decks fit inside ${plan.parent.cidr} with ${plan.free} addresses left over. Each block starts on a boundary that matches its own size.`, plan};
+      // Fitting is not the whole job. The point of variable-length masking is
+      // that each deck gets the smallest block it can live in, and a block with
+      // room to spare is addresses the next deck will not be able to have.
+      const loose = plan.blocks.find(block => block.usable >= block.needs * 2 + 2);
+      if (loose) {
+        return {success:false, plan, message:`Everything fits, and ${loose.name} is in a block twice the size it needs: a /${loose.prefix} holds ${loose.usable} usable addresses for ${loose.needs} hosts. A /${loose.prefix + 1} would still hold it, and the ${plan.free} spare addresses are what the next deck to ask will be given.`};
+      }
+      return {success:true, message:`All ${plan.blocks.length} decks fit inside ${plan.parent.cidr} with ${plan.free} addresses left over, and none of them is in a block it could have halved. Each one starts on a boundary that matches its own size.`, plan};
     },
     view(level, state, {plan}) {
       return {
@@ -380,6 +420,20 @@ export const kinds = {
       const wasteful = level.target.wasted !== undefined && result.wasted > level.target.wasted;
       if (late) return {success:false, message:`The dump took ${result.seconds} s against a ${level.target.seconds} s deadline, using ${percent(result.utilisation)} of the link. One bandwidth-delay product is ${result.bdpPackets} packets; a window smaller than that leaves the link idle waiting for acknowledgements.`, result};
       if (wasteful) return {success:false, message:`Delivered in ${result.seconds} s, but ${percent(result.wasted)} of transmissions were retransmissions against a ${percent(level.target.wasted)} limit. Resending data that already arrived is paid for twice.`, result};
+      // A window past one bandwidth-delay product buys no throughput and is not
+      // free: the sender has to hold every unacknowledged byte in case it needs
+      // resending, so the window is memory reserved per connection.
+      const windows = level.dials.find(dial => dial.id === 'window')?.options.map(option => option.value) ?? [];
+      const smaller = windows.filter(value => value < state.dials.window)
+        .filter(value => {
+          const other = transfer(level.link, {...state.dials, window:value, protocol:state.dials.protocol ?? 'selective-repeat', bytes:level.bytes});
+          return other.seconds <= level.target.seconds && (level.target.wasted === undefined || other.wasted <= level.target.wasted);
+        })
+        .sort((first, second) => second - first)[0];
+      if (smaller !== undefined) {
+        const bytes = size => (size * level.link.mss / 1048576).toFixed(2);
+        return {success:false, result, message:`Delivered in ${result.seconds} s, and a window of ${smaller} packets does it in the same time. Past one bandwidth-delay product a larger window buys nothing and still has to be held: ${state.dials.window} packets is ${bytes(state.dials.window)} MiB of send buffer per connection against ${bytes(smaller)} MiB, on a server with thousands of them.`};
+      }
       return {success:true, message:`Delivered ${(level.bytes / 1048576).toFixed(0)} MiB in ${result.seconds} s at ${result.throughputMbps} Mbps, ${percent(result.utilisation)} of the link, with ${percent(result.wasted)} of transmissions wasted.`, result};
     },
     view(level, state, {result}) {
@@ -418,21 +472,37 @@ export const kinds = {
   hash:{
     derive: (level, state) => ({table:hashTable(level, state)}),
     evaluate(level, state, {table}) {
-      if (table.size > level.maxSlots) return {success:false, message:`A ${table.size}-slot table is larger than the ${level.maxSlots} slots this memory bank has.`, table};
-      if (table.longest > level.maxChain) return {success:false, message:`The longest chain holds ${table.longest} keys and this lookup budget allows ${level.maxChain}. ${table.collisions} slot${table.collisions === 1 ? '' : 's'} hold more than one key. A table size that shares factors with your keys stacks them together.`, table};
-      return {success:true, message:`${level.keys.length} keys in ${table.size} slots, longest chain ${table.longest}, load factor ${table.load.toFixed(2)}. Every lookup is one probe.`, table};
+      const how = table.probing ? 'probe run' : 'chain';
+      if (table.longest > level.maxChain) {
+        return {success:false, table, message:`The worst lookup walks ${table.longest} slots and the budget is ${level.maxChain}. ${table.probing ? `Probing keeps everything in the table, so the run belonging to one key runs on into the run belonging to another: ${table.collisions} of the ${level.keys.length} keys sit somewhere other than the slot they hashed to, and one of them is ${table.longest - 1} slots away from it. That is more walking than the number of collisions can explain, which is what clustering is.` : `${table.collisions} slot${table.collisions === 1 ? ' holds' : 's hold'} more than one key, and a lookup walks that chain.`}`};
+      }
+      // A table that meets the budget and is larger than it needs to be is slots
+      // paid for and never used, so the mission asks for the smallest that works.
+      // Smallest overall, not smallest for the strategy you happened to pick:
+      // a table that only looks tight because the other strategy was not tried
+      // is still bigger than it needs to be.
+      const ways = level.dials.find(dial => dial.id === 'collisions').options.map(option => option.value);
+      const smaller = level.dials.find(dial => dial.id === 'size').options
+        .map(option => option.value).filter(value => value < table.size)
+        .filter(value => ways.some(way => hashTable(level, {...state, dials:{size:value, collisions:way}}).longest <= level.maxChain))
+        .sort((first, second) => first - second)[0];
+      if (smaller !== undefined) {
+        return {success:false, table, message:`Every lookup is within ${level.maxChain}, and a ${smaller}-slot table does the same job. ${level.keys.length} keys in ${table.size} slots is a load factor of ${table.load.toFixed(2)}; the slots you do not need are memory nobody reads.`};
+      }
+      return {success:true, table, message:`${level.keys.length} keys in ${table.size} slots, load factor ${table.load.toFixed(2)}, worst lookup ${table.longest} step${table.longest === 1 ? '' : 's'} along a ${how}. No smaller table here stays inside the budget, and at this load ${table.probing ? 'probing' : 'chaining'} is what keeps it there.`};
     },
     view(level, state, {table}) {
       return {
-        instructions:`Store ${level.keys.length} station IDs so every lookup takes at most ${level.maxChain} probe${level.maxChain === 1 ? '' : 's'}.`,
-        legend:[`slot = (key × ${table.multiplier}) mod ${table.size}`, `load factor ${table.load.toFixed(2)}`],
-        summary:`${table.collisions} slot${table.collisions === 1 ? '' : 's'} with more than one key · longest chain ${table.longest}`,
-        diagram:{type:'bars', caption:`${table.size} slots`, rows:table.buckets.map((bucket, index) => ({
+        instructions:`Store ${level.keys.length} station IDs in the smallest table where no lookup walks more than ${level.maxChain} slots.`,
+        legend:[`slot = key mod ${table.size}`, `load factor ${table.load.toFixed(2)}`, table.probing ? 'open addressing' : 'separate chaining'],
+        summary:`worst lookup ${table.longest} · ${table.collisions} key${table.collisions === 1 ? '' : 's'} not alone in ${table.probing ? 'its slot' : 'their slot'}`,
+        diagram:{type:'bars', caption:`${table.size} slots · ${table.probing ? 'open addressing' : 'separate chaining'}`, rows:table.buckets.map((bucket, index) => ({
           name:`slot ${index}`, value:bucket.length, detail:bucket.length ? bucket.join(', ') : 'empty', problem:bucket.length > 1
         }))}
       };
     }
   },
+
   reach:{
     derive: (level, state) => ({rows:deliveries(level, state)}),
     evaluate(level, state, {rows}) {
@@ -576,20 +646,30 @@ export const kinds = {
   money:{
     derive: (level, state) => ({run:tillRun(level, state)}),
     evaluate(level, state, {run}) {
-      if (!run.equal) {
-        return {success:false, run, message:`The till says ${run.valueText.slice(0, 24)}… and the takings are ${run.exact.toFixed(2)}. ${representations[run.representation].note} ${run.order === 'ascending' ? 'Adding the small amounts first made the error smaller and did not remove it.' : ''}`.trim()};
+      if (!representations[run.representation].exact) {
+        return {success:false, run, message:`The till says ${run.valueText.slice(0, 24)}… and the takings are ${run.exactText}. ${representations[run.representation].note} No unit helps while the amounts are still fractions.`};
       }
-      return {success:true, run, message:`${run.count} amounts, and the total is exact to the cent. Counting in whole minor units keeps every value an integer, so nothing is ever rounded on the way.`};
+      // Integers are not enough on their own. A unit coarser than the smallest
+      // amount charged rounds every one of those amounts, and the total is then
+      // wrong by a clean multiple rather than by a fraction — which is worse,
+      // because it looks deliberate.
+      if (!run.representable) {
+        return {success:false, run, message:`Counting in whole units of ${(1 / run.scale).toFixed(String(run.scale).length - 1)} makes every value an integer and rounds ${run.rounded} of the ${run.count} amounts on the way in, so the total comes to ${run.valueText} against takings of ${run.exactText}. Integers are exact about the unit you chose, and this unit is coarser than the smallest amount the commissary charges.`};
+      }
+      if (!run.tight) {
+        return {success:false, run, message:`Exact, and finer than it needs to be: nothing here is priced below ${(1 / run.needed).toFixed(String(run.needed).length - 1)}, so a counter of ${run.scale} units to the credit carries ${run.scale / run.needed} times the digits for no extra accuracy. Take the smallest unit that still represents every amount.`};
+      }
+      return {success:true, run, message:`${run.count} amounts and the total is exact: ${run.exactText}. Every amount is a whole number of ${(1 / run.needed).toFixed(String(run.needed).length - 1)} units, so nothing is rounded on the way in and nothing drifts on the way up. The decimal point goes back once, on the receipt.`};
     },
     view(level, state, {run}) {
       return {
-        instructions:'Add up one day of takings. Choose what the till counts in.',
-        legend:[`${level.amounts.length} transactions`, `Takings ${run.exact.toFixed(2)} credits`, run.equal ? 'Exact' : 'Off by a fraction of a cent'],
-        summary:`${representations[run.representation].label}: ${run.valueText.slice(0, 30)}${run.valueText.length > 30 ? '…' : ''}`,
+        instructions:'Add up one day of takings. Choose what the till holds a value in, and the unit it counts in.',
+        legend:[`${level.amounts.length} transactions`, `Takings ${run.exactText}`, run.equal ? 'Exact' : 'Wrong'],
+        summary:`${representations[run.representation].label}${representations[run.representation].exact ? ` × ${run.scale}` : ''}: ${run.valueText.slice(0, 30)}${run.valueText.length > 30 ? '…' : ''}`,
         diagram:{type:'table', caption:'What the till reports', columns:['', 'Value'], rows:[
           ['The till’s total', run.valueText.slice(0, 40)],
           ['Rounded for the receipt', run.value.toFixed(2)],
-          ['What was actually taken', run.exact.toFixed(2)],
+          ['What was actually taken', run.exactText],
           ['Difference', run.errorText.slice(0, 28)],
           ['Exactly equal?', run.equal ? 'yes' : 'no']
         ], problems:[false, false, false, !run.equal, !run.equal]}
@@ -666,6 +746,51 @@ export const kinds = {
           ['p4 (position 4)', '4, 5, 6, 7', check.checks.c4 ? 'wrong' : 'ok'],
           ['syndrome', 'c4 c2 c1 as binary', check.syndrome === 0 ? '0 — no error' : `${check.syndrome} — position ${check.syndrome}`]
         ], problems:[!!check.checks.c1, !!check.checks.c2, !!check.checks.c4, check.syndrome !== 0]}
+      };
+    }
+  },
+  // Two consoles running the same routine against one total. A routine is right
+  // when every way their steps can interleave ends at the same number — which is
+  // a different and much harder thing than one run coming out right.
+  race:{
+    derive:(level, state) => raceRun(level, state),
+    evaluate(level, state, {routine, faults, run}) {
+      if (faults.length) return {success:false, run, message:`${faults[0].text} Put the routine in an order that makes sense on its own before worrying about the other console.`};
+      if (!run.correct) {
+        const trace = run.witness.steps.filter(step => ['read', 'write'].includes(step.kind))
+          .map(step => `${step.who.toUpperCase()} ${step.kind}s ${step.kind === 'read' ? step.total : step.held}`).join(', ');
+        return {success:false, run, message:`${run.lost} of the ${run.schedules} ways these two can interleave end at the wrong total — this one ends at ${run.witness.total} instead of ${run.expected}: ${trace}. Both consoles read the same number, so the second write undoes the first.`};
+      }
+      if (run.heldFor > level.target.heldFor) {
+        return {success:false, run, message:`Correct on every schedule, and the lock is held for ${run.heldFor} units across ${run.heldSteps.join(', ')} while the budget is ${level.target.heldFor}. Everything inside the lock is time the other console spends waiting, so anything that does not touch the shared total does not belong in there.`};
+      }
+      return {success:true, run, message:`All ${run.schedules} interleavings end at ${run.expected}, and the lock is held for only ${run.heldFor} units — just the read, the add and the write. The slow step happens outside it, where the other console is free to work.`};
+    },
+    view(level, state, {faults, run}) {
+      const witness = run.witness?.steps ?? [];
+      return {
+        instructions:'Order one console’s routine. Both consoles run the same one, at the same time, against the same total.',
+        legend:[`${run.schedules} interleavings`, run.correct ? 'All end at the same total' : `${run.lost} end short`, `Lock held for ${run.heldFor}`],
+        summary:faults.length ? faults[0].text
+          : run.correct ? `Correct on every schedule · lock held for ${run.heldFor} of ${level.target.heldFor}`
+          : `Ends anywhere from ${run.totals[0]} to ${run.totals.at(-1)} — it should always be ${run.expected}`,
+        diagram:witness.length ? {
+          type:'table', caption:`One interleaving that ends at ${run.witness.total} instead of ${run.expected}`,
+          columns:['', 'Console', 'Step', 'Its own copy', 'Shared total'],
+          rows:witness.map((step, index) => [`${index + 1}`, step.who.toUpperCase(), step.kind, step.held ?? '—', step.total]),
+          problems:witness.map(step => step.kind === 'write')
+        } : {
+          type:'table', caption:'Every interleaving ends here',
+          columns:['', 'Value'],
+          rows:[
+            ['Interleavings tried', String(run.schedules)],
+            ['Totals they can end at', run.totals.join(', ')],
+            ['What it should be', String(run.expected)],
+            ['Lock held for', `${run.heldFor} units across ${run.heldSteps.join(', ') || 'nothing'}`],
+            ['Budget', String(level.target.heldFor)]
+          ],
+          problems:[false, false, false, run.heldFor > level.target.heldFor, false]
+        }
       };
     }
   },

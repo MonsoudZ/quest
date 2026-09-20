@@ -9,6 +9,9 @@ const ramp = (n, step) => Array.from({length:n}, (_, i) => i * step);
 // shape that makes floating-point drift visible rather than theoretical.
 const tillAmounts = [
   ...Array.from({length:600}, () => 0.01),
+  // Water is metered and priced below a cent, which is why counting in cents is
+  // not the answer here even though counting in integers is.
+  ...Array.from({length:241}, () => 0.005),
   ...Array.from({length:120}, () => 0.07),
   19.99, 4.5, 133.28, 0.03
 ];
@@ -70,7 +73,8 @@ const refs = {
   guard:{label:'Reference: replace nested conditional with guard clauses', url:'https://refactoring.com/catalog/replaceNestedConditionalWithGuardClauses.html'},
   queue:{label:'Reference: NIST — queue', url:'https://xlinux.nist.gov/dads/HTML/queue.html'},
   insertion:{label:'Reference: NIST — insertion sort', url:'https://xlinux.nist.gov/dads/HTML/insertionSort.html'},
-  failFast:{label:'Reference: fail fast', url:'https://en.wikipedia.org/wiki/Fail-fast_system'}
+  failFast:{label:'Reference: fail fast', url:'https://en.wikipedia.org/wiki/Fail-fast_system'},
+  concurrency:{label:'Reference: race conditions and the lost update', url:'https://en.wikipedia.org/wiki/Race_condition#In_software'}
 };
 
 const routingTable = [
@@ -757,6 +761,9 @@ export const levels = [
   },
 
   // ------------------------------------------- chapter 2: computer science
+
+
+  // ----------------------------------------------------- chapter 3: networking
   {
     id:'speak-in-bits', kind:'bits', chapter:'Computer science', concept:'Binary numbers', name:'Speak in bits', location:'Memory bank',
     objective:'Encode the unsigned decimal number 13 using four bits.',
@@ -787,78 +794,24 @@ export const levels = [
     takeaway:'The same eight bits mean 216 unsigned and −40 signed. Bits carry no meaning on their own; the encoding supplies it.', reference:refs.twos
   },
   {
-    id:'restore-the-order', kind:'sort', chapter:'Computer science', concept:'Arrays & sorting', name:'Restore the order', location:'Archive index',
-    objective:'Sort the entries from smallest to largest with adjacent swaps.',
-    intro:'The archive index is scrambled. Reorder its entries by swapping neighbouring values.',
-    lesson:'An array is an ordered sequence of entries; JavaScript array indices start at 0. This puzzle permits any adjacent swap. Bubble sort is a particular algorithm: scan adjacent pairs in order, swap out-of-order pairs, and repeat passes until sorted.',
-    values:[7,2,9,4,1],
-    hints:['Try moving the largest value right by swapping it past smaller neighbours.','The final order is 1, 2, 4, 7, 9. Move 9 to the end, then work on the earlier entries.'], solution:[1,2,4,7,9],
-    takeaway:'You sorted an array with adjacent swaps. Following a systematic left-to-right pass repeatedly gives bubble sort, which has quadratic worst-case time. Arbitrary swaps need not follow that algorithm.', reference:refs.sort
-  },
-  {
-    id:'hash-it-out', kind:'hash', chapter:'Computer science', concept:'Hash tables', name:'Somewhere to put it', location:'Index memory',
-    objective:'Choose a table size and multiplier that give all seven station IDs their own slot.',
-    intro:'Seven station IDs need to be found in one step. A hash function turns a key into a slot number; when two keys land in the same slot, the lookup has to search the chain.',
-    lesson:'A hash table computes a slot from the key: slot = (key × multiplier) mod size. Lookup is one step when the slot holds one key, so collisions are what cost time. Six of these IDs are multiples of 10, so a size of 10 sends all six to slot 0, and multiplying first does not help, because a multiple of 10 stays a multiple of 10. A size of 8 or 12 shares factors with the keys and still stacks some of them together. Only a size that shares no factor with them spreads them out, which is why real implementations prefer prime table sizes and keep the load factor well under 1.',
-    keys:[10,20,30,40,50,60,84], maxSlots:13, maxChain:1,
-    dials:[
-      {id:'size', label:'Table size (slots)', help:'How many slots the memory bank provides', value:10, options:[{value:8, label:'8 slots'},{value:10, label:'10 slots'},{value:12, label:'12 slots'},{value:13, label:'13 slots (prime)'},{value:16, label:'16 slots'}]},
-      {id:'multiplier', label:'Hash multiplier', help:'The key is multiplied before the remainder is taken', value:1, options:[{value:1, label:'× 1'},{value:3, label:'× 3'}]}
-    ],
-    solution:{dials:{size:13, multiplier:1}},
-    hints:['Work out (key mod size) for each ID. A size that shares a factor with the keys sends several of them to the same slot, and the multiplier cannot undo that.','13 is prime, so it shares no factor with any of these IDs. Try 13 slots.'],
-    takeaway:'Average lookup is one step only while collisions stay rare. That depends on the relationship between your keys and your table size, not on the speed of the machine.', reference:refs.hash
-  },
-  {
-    id:'how-it-scales', kind:'quiz', chapter:'Computer science', concept:'Complexity', name:'How it scales', location:'Analysis deck',
-    objective:'Predict how four algorithms behave when their input grows.',
-    intro:'Complexity is not about how fast one run is. It is about what happens to the running time when the input gets larger.',
-    lesson:'Big-O describes growth. A linear scan, O(n), does ten times the work for ten times the data. Bubble sort, O(n²), does a hundred times the work for ten times the data. Binary search, O(log n), adds one comparison when the data doubles. The constants matter on small inputs, and the growth rate decides everything on large ones.',
-    instructions:'Each question describes a measured run. Predict the larger one.',
-    questions:[
-      {prompt:'A linear scan of 1,000 entries takes 1 ms. About how long for 1,000,000 entries?', options:[{label:'about 1 ms'},{label:'about 1 second'},{label:'about 20 ms'},{label:'about 1,000 seconds'}], answer:1, why:'A thousand times the data does a thousand times the work: 1 ms becomes about 1 second.'},
-      {prompt:'Bubble sort takes 1 second on 1,000 entries. About how long for 10,000?', options:[{label:'about 10 seconds'},{label:'about 100 seconds'},{label:'about 1 second'},{label:'about 1,000 seconds'}], answer:1, why:'Quadratic growth squares the factor: ten times the data is about a hundred times the work.'},
-      {prompt:'Binary search needs about 10 comparisons for 1,000 sorted entries. About how many for 1,000,000?', options:[{label:'about 20'},{label:'about 1,000'},{label:'about 10,000'},{label:'about 100'}], answer:0, why:'Every doubling adds one comparison, so a thousandfold increase adds about ten.'},
-      {prompt:'Which one is still usable when the input is a million times larger?', options:[{label:'the quadratic sort'},{label:'the linear scan'},{label:'the logarithmic search'},{label:'none of them'}], answer:2, why:'Logarithmic growth is the only one here that barely notices the size change.'}
-    ],
-    quizSuccess:'Growth rate, not raw speed, decides what survives a larger input.',
-    solution:[1,1,0,2],
-    hints:['Work out the factor the input grew by, then apply the growth rate: linear multiplies by it, quadratic by its square, logarithmic adds a constant.','Answers in order: 1 second, 100 seconds, 20 comparisons, the logarithmic search.'],
-    takeaway:'Choosing the algorithm changes the shape of the curve. No amount of faster hardware turns a quadratic algorithm into a linear one.', reference:refs.growth
-  },
-  {
-    id:'fewest-hops', kind:'network', chapter:'Computer science', concept:'Graphs & paths', name:'A shorter route', location:'Navigation core',
-    objective:'Enable a route from uplink to archive with at most two hops.',
-    intro:'The station is a graph: nodes connected by edges. Each traversed edge is one hop. Enable a short route and test it.',
-    lesson:'In an unweighted graph, a shortest path uses the fewest edges. Breadth-first search finds one by exploring nodes in increasing hop distance. This map treats every link as usable in both directions.',
-    nodes:[['uplink',12,50],['relay-a',39,22],['relay-b',39,77],['relay-c',65,77],['archive',87,50]],
-    edges:[['uplink','relay-a',1],['relay-a','archive',1],['uplink','relay-b',1],['relay-b','relay-c',1],['relay-c','archive',1]], source:'uplink', target:'archive', maxEdges:2,
-    hints:['Both routes connect the endpoints. Count the edges along each one.','The upper path is uplink → relay A → archive: two hops.'], solution:[0,1],
-    takeaway:'You minimised hops on an unweighted graph. Only traversed edges contribute to path length; unused enabled branches do not.', reference:refs.graph
-  },
-  {
-    id:'latency-matters', kind:'network', chapter:'Computer science', concept:'Weighted graphs', name:'Find the fastest route', location:'Long-range relay',
-    objective:'Enable a route whose displayed delays total at most 12 ms.',
-    intro:'Every link has a delay. A route with fewer hops can still be slower. Compare the sum of weights along each path.',
-    lesson:'A weighted graph assigns a cost to each edge. Here the weights model fixed link delays. Dijkstra’s algorithm finds shortest paths with non-negative weights. Real packet delay also depends on transmission, processing, and queues; this puzzle omits those effects.',
-    nodes:[['uplink',12,50],['relay-a',49,20],['relay-b',35,78],['relay-c',64,78],['archive',87,50]],
-    edges:[['uplink','relay-a',9],['relay-a','archive',9],['uplink','relay-b',3],['relay-b','relay-c',4],['relay-c','archive',3]], source:'uplink', target:'archive', budget:12,
-    hints:['The two-hop route takes 18 ms in this model. Add the delays on the three-hop route.','The lower route costs 3 + 4 + 3 = 10 ms.'], solution:[2,3,4],
-    takeaway:'The minimum-weight path costs 10 ms here, despite using more hops. Costs are summed along the chosen route, not across every enabled cable.', reference:refs.graph
-  },
-
-  {
     id:'count-the-cents', kind:'money', chapter:'Computer science', concept:'Floating point', name:'Count the cents', location:'Commissary till',
     objective:'Add up a day of takings so the total is exact, not nearly right.',
     intro:'The commissary till has been out by a few cents every evening for a month. Nothing is broken, nobody is stealing, and the arithmetic is correct.',
-    lesson:'A binary fraction can only represent sums of halves, quarters, eighths and so on. A tenth is not one of them, so 0.1 is stored as 0.1000000000000000055511151231257827…, and every amount in cents carries a similar error. Add seven hundred of them and the errors accumulate into something a human can see. Reducing the precision makes it worse and adding the small amounts first makes it smaller, but neither makes it go away, because the problem is the representation and not the order. The fix is to leave the fractions behind: count in whole minor units, so every value is an integer, every sum is exact, and the decimal point is put back once, at the end, when the receipt is printed.',
+    lesson:'A binary fraction can only represent sums of halves, quarters, eighths and so on. A tenth is not one of them, so 0.1 is stored as 0.1000000000000000055511151231257827…, and every amount in cents carries a similar error. Add a thousand of them and the errors accumulate into something a human can see. Reducing the precision makes it worse and adding the small amounts first makes it smaller, but neither makes it go away, because the problem is the representation and not the order. The fix is to leave the fractions behind: count in whole units, so every value is an integer and every sum is exact. Which unit, though, is a second decision and the one that is usually got wrong. An integer counter is exact about the unit you chose and says nothing about the amounts that do not fit in it — count this till in cents and every metered charge below a cent is rounded on the way in, so the total comes out wrong by a clean, confident, entirely wrong number. Read the prices before choosing the unit: it has to be small enough for the smallest thing you charge for, and no smaller.',
     amounts:tillAmounts,
-    dials:[{id:'method', label:'What the till counts in', help:'The representation, and the order it adds in', value:'float64:given', options:[
-      {value:'float64:given', label:'Double precision, as they come'},
-      {value:'float64:ascending', label:'Double precision, smallest first'},
-      {value:'float32:given', label:'Single precision'},
-      {value:'cents:given', label:'Whole cents, as integers'}
-    ]}],
+    dials:[
+      {id:'counts', label:'What a value is held in', help:'A binary fraction, or a whole number of some unit', value:'float64', options:[
+        {value:'float64', label:'Double precision'},
+        {value:'float32', label:'Single precision'},
+        {value:'whole', label:'Whole units, as integers'}
+      ]},
+      {id:'unit', label:'How many units to the credit', help:'Only meaningful once the values are integers', value:10, options:[
+        {value:10, label:'10 · tenths'},
+        {value:100, label:'100 · cents'},
+        {value:1000, label:'1,000 · mills'},
+        {value:10000, label:'10,000'}
+      ]}
+    ],
     artifact:{
       title:'What a number actually holds',
       note:'Every line below is real output. The first one is the reason the till is wrong, and it is also the reason nobody believes it at first.',
@@ -866,11 +819,12 @@ export const levels = [
         {label:'the classic', code:'> 0.1 + 0.2\n0.30000000000000004\n> 0.1 + 0.2 === 0.3\nfalse\n> 0.1 + 0.2 - 0.3\n5.551115123125783e-17', note:'Not a bug in the language. Every language with IEEE 754 doubles prints this, including the one you would rewrite it in.'},
         {label:'0.1 in full', code:'0.1 is stored as\n0.1000000000000000055511151231257827\n021181583404541015625\n\nsign 0  exponent 01111111011\nfraction 1001100110011001100110011…', note:'The fraction is 1100 repeating forever, cut off at 52 bits. A tenth in binary is what a third is in decimal.'},
         {label:'what survives', code:'exactly representable: 0.5 0.25 0.125\n  0.75 3.5 1024 -2.5\nnot representable:     0.1 0.2 0.3\n  0.7 1.1 19.99', note:'Halves, quarters and eighths are exact. Tenths are not, which is unfortunate, because money is counted in tenths.'},
-        {label:'the fix', code:'cents = 1999          // an integer\ntotal += cents        // exact\nprint(total / 100)    // once, at the end\n\n17220 cents → "172.20"', note:'Integers up to 2^53 are exact in a double, so counting minor units keeps you inside the range where nothing is rounded.'}
+        {label:'the fix', code:'mills = 19990         // an integer\ntotal += mills        // exact\nprint(total / 1000)   // once, at the end\n\n173405 mills → "173.41"', note:'Integers up to 2^53 are exact in a double, so counting minor units keeps you inside the range where nothing is rounded. The unit has to be the smallest one you charge in.'},
+        {label:'order is not the fix', code:'as they come    173.40499999999992\nsmallest first  173.40500000000011\nexact           173.405\n\nboth wrong, one less obviously', note:'Adding the small amounts first stops them being rounded away against a large total, so the error shrinks. It never reaches zero, because the amounts were already wrong when they were stored.'}
       ]
     },
-    solution:{dials:{method:'cents:given'}},
-    hints:['Try single precision first and watch the error get larger. That tells you the problem is how many bits the fraction has, not the order of the additions.','Adding smallest first shrinks the error without removing it. Nothing that keeps the amounts as fractions will remove it.'],
+    solution:{dials:{counts:'whole', unit:1000}},
+    hints:['Try single precision first and watch the error get larger. That tells you the problem is how many bits the fraction has, so no unit will help until the values stop being fractions.','Integers are exact about the unit you picked. Look at what the commissary actually charges: the metered water is priced below a cent, so a counter of cents rounds every one of those charges before it is even added.'],
     takeaway:'Money, and anything else counted in exact units, does not belong in a binary fraction. Store the integer and format it for display — the decimal point is a presentation decision, not a storage one.', reference:refs.floats
   },
   {
@@ -906,6 +860,103 @@ export const levels = [
     takeaway:'“Length” is not a property of text; it is a question about a representation. Decide which one a limit means before you write it down, because the answer changes what your users are allowed to be called.', reference:refs.unicode
   },
   {
+    id:'restore-the-order', kind:'sort', chapter:'Computer science', concept:'Arrays & sorting', name:'Restore the order', location:'Archive index',
+    objective:'Sort the entries from smallest to largest with adjacent swaps.',
+    intro:'The archive index is scrambled. Reorder its entries by swapping neighbouring values.',
+    lesson:'An array is an ordered sequence of entries; JavaScript array indices start at 0. This puzzle permits any adjacent swap. Bubble sort is a particular algorithm: scan adjacent pairs in order, swap out-of-order pairs, and repeat passes until sorted.',
+    values:[7,2,9,4,1],
+    hints:['Try moving the largest value right by swapping it past smaller neighbours.','The final order is 1, 2, 4, 7, 9. Move 9 to the end, then work on the earlier entries.'], solution:[1,2,4,7,9],
+    takeaway:'You sorted an array with adjacent swaps. Following a systematic left-to-right pass repeatedly gives bubble sort, which has quadratic worst-case time. Arbitrary swaps need not follow that algorithm.', reference:refs.sort
+  },
+  {
+    id:'how-it-scales', kind:'quiz', chapter:'Computer science', concept:'Complexity', name:'How it scales', location:'Analysis deck',
+    objective:'Predict how four algorithms behave when their input grows.',
+    intro:'Complexity is not about how fast one run is. It is about what happens to the running time when the input gets larger.',
+    lesson:'Big-O describes growth. A linear scan, O(n), does ten times the work for ten times the data. Bubble sort, O(n²), does a hundred times the work for ten times the data. Binary search, O(log n), adds one comparison when the data doubles. The constants matter on small inputs, and the growth rate decides everything on large ones.',
+    instructions:'Each question describes a measured run. Predict the larger one.',
+    questions:[
+      {prompt:'A linear scan of 1,000 entries takes 1 ms. About how long for 1,000,000 entries?', options:[{label:'about 1 ms'},{label:'about 1 second'},{label:'about 20 ms'},{label:'about 1,000 seconds'}], answer:1, why:'A thousand times the data does a thousand times the work: 1 ms becomes about 1 second.'},
+      {prompt:'Bubble sort takes 1 second on 1,000 entries. About how long for 10,000?', options:[{label:'about 10 seconds'},{label:'about 100 seconds'},{label:'about 1 second'},{label:'about 1,000 seconds'}], answer:1, why:'Quadratic growth squares the factor: ten times the data is about a hundred times the work.'},
+      {prompt:'Binary search needs about 10 comparisons for 1,000 sorted entries. About how many for 1,000,000?', options:[{label:'about 20'},{label:'about 1,000'},{label:'about 10,000'},{label:'about 100'}], answer:0, why:'Every doubling adds one comparison, so a thousandfold increase adds about ten.'},
+      {prompt:'Which one is still usable when the input is a million times larger?', options:[{label:'the quadratic sort'},{label:'the linear scan'},{label:'the logarithmic search'},{label:'none of them'}], answer:2, why:'Logarithmic growth is the only one here that barely notices the size change.'}
+    ],
+    quizSuccess:'Growth rate, not raw speed, decides what survives a larger input.',
+    solution:[1,1,0,2],
+    hints:['Work out the factor the input grew by, then apply the growth rate: linear multiplies by it, quadratic by its square, logarithmic adds a constant.','Answers in order: 1 second, 100 seconds, 20 comparisons, the logarithmic search.'],
+    takeaway:'Choosing the algorithm changes the shape of the curve. No amount of faster hardware turns a quadratic algorithm into a linear one.', reference:refs.growth
+  },
+  {
+    id:'hash-it-out', kind:'hash', chapter:'Computer science', concept:'Hash tables', name:'Somewhere to put it', location:'Index memory',
+    objective:'Store seven station IDs in the smallest table where no lookup walks more than two slots.',
+    intro:'Seven station IDs have to be found fast. A hash function turns a key into a slot number, and the memory bank charges for every slot you reserve — so the question is not how to avoid collisions, it is how few slots you can get away with while lookups stay short.',
+    lesson:'A hash table computes a slot from the key: slot = key mod size. A lookup is one step when the slot holds what you want, and longer when it does not, so a table is judged by its worst lookup rather than by whether anything collided at all. The size decides most of it: six of these IDs are multiples of 10, so a size of 10 sends all six to slot 0 and a size of 8 or 12 shares factors with them and stacks some together. What happens after a collision is the second decision. Separate chaining hangs a list off the slot, and a lookup walks that list — two keys in a slot means at worst two steps. Open addressing keeps everything inside the table and walks forward to the next free slot, which is kinder to the cache and has a failure mode chaining does not: the run belonging to one key runs into the run belonging to another, they merge, and the walks get longer than the number of colliding keys can explain. That is primary clustering, and it is why open addressing needs a load factor well under 1 while chaining degrades gently.',
+    keys:[10,20,30,40,50,60,84], maxChain:2,
+    dials:[
+      {id:'size', label:'Table size (slots)', help:'Every slot is memory the bank reserves', value:8, options:[
+        {value:8, label:'8 slots'}, {value:9, label:'9 slots'}, {value:10, label:'10 slots'},
+        {value:11, label:'11 slots (prime)'}, {value:12, label:'12 slots'}, {value:16, label:'16 slots'}
+      ]},
+      {id:'collisions', label:'What happens on a collision', help:'Where the second key in a slot goes', value:'chain', options:[
+        {value:'chain', label:'Separate chaining'},
+        {value:'probe', label:'Open addressing'}
+      ]}
+    ],
+    solution:{dials:{size:9, collisions:'chain'}},
+    hints:['Work out (key mod size) for each ID at each size. Six of the seven are multiples of 10, so any size that shares a factor with 10 piles them up.','Two sizes keep the worst lookup to two, and only with one of the two collision strategies. At a load factor near 0.8 the runs of open addressing start merging into each other.'],
+    takeaway:'A hash table is judged by its worst lookup, not by whether it collided. The size decides how often keys land together, and the collision strategy decides what that costs — open addressing is faster until the table fills, and then the runs merge and it is not.', reference:refs.hash
+  },
+  {
+    id:'the-tree-that-became-a-list', kind:'tree', chapter:'Computer science', concept:'Trees & balance', name:'The tree that became a list', location:'Catalogue index',
+    objective:'Insert seven catalogue keys so no lookup costs more than three comparisons.',
+    intro:'The catalogue index is a binary search tree, and it was built by loading the keys in the order they were catalogued — which was sorted. Every lookup now walks the whole thing.',
+    lesson:'A binary search tree promises logarithmic lookup, and that promise is about its height, not its size. But a tree has no shape of its own: each key goes below the first one it compares against, so the insertion order decides the shape entirely. Insert in sorted order and every key goes down the same side — a linked list with two pointers per node and none of the benefit. Insert the median first, then the medians of each half, and each insert splits the remaining range, so seven keys fit in three levels and a thousand fit in ten. This is why real implementations do not trust the caller: red-black and AVL trees rebalance on every insert, paying a little each time to keep the guarantee, and a B-tree does the same thing with wider nodes so that each level is one disk page.',
+    keys:[1, 2, 3, 4, 5, 6, 7],
+    items:[
+      {id:'1', name:'Key 1', note:'first catalogued'},
+      {id:'2', name:'Key 2', note:''},
+      {id:'3', name:'Key 3', note:''},
+      {id:'4', name:'Key 4', note:'the median'},
+      {id:'5', name:'Key 5', note:''},
+      {id:'6', name:'Key 6', note:''},
+      {id:'7', name:'Key 7', note:'last catalogued'}
+    ],
+    target:{height:3},
+    artifact:{
+      title:'The same seven keys, twice',
+      note:'Identical contents, identical comparisons per level, identical code. Only the order they arrived in differs.',
+      panes:[
+        {label:'sorted input', code:'insert 1,2,3,4,5,6,7\n\n1\\\n  2\\\n    3\\\n      4\\\n        5\\\n          6\\\n            7', note:'Every key is larger than everything before it, so every insert goes right. Seven levels, and a lookup for 7 costs seven comparisons.'},
+        {label:'median first', code:'insert 4,2,6,1,3,5,7\n\n        4\n      /   \\\n     2     6\n    / \\   / \\\n   1   3 5   7', note:'Three levels. The same lookup costs three comparisons, and a thousand keys would cost ten.'},
+        {label:'why it matters', code:'        depth   lookups\n   n    sorted  balanced\n   7       7        3\n 1000    1000       10\n 10^6     10^6      20', note:'The gap is the difference between a data structure and a list. At a million keys it is fifty thousand times.'},
+        {label:'what real trees do', code:'red-black: recolour and rotate on\n  insert; height <= 2·log2(n+1)\nAVL:       stricter, taller cost to\n  insert, shorter trees\nB-tree:    wider nodes so one level\n  is one page of disk', note:'All three pay something on every insert to avoid ever being handed sorted input. Nobody relies on the caller shuffling first.'}
+      ]
+    },
+    order:['4', '2', '6', '1', '3', '5', '7'],
+    solution:{order:['4', '2', '6', '1', '3', '5', '7']},
+    hints:['Sorted input is the worst case, and the catalogue handed you exactly that. The first key you insert becomes the root, so choose it deliberately.','Put the median first, then the median of each remaining half: 4, then 2 and 6, then 1, 3, 5 and 7.'],
+    takeaway:'Logarithmic lookup is a property of a tree’s shape, and the shape is a property of how it was built. A structure that guarantees its own balance is worth the cost of rebalancing, because the alternative is trusting your input to be unsorted.', reference:refs.trees
+  },
+  {
+    id:'fewest-hops', kind:'network', chapter:'Computer science', concept:'Graphs & paths', name:'A shorter route', location:'Navigation core',
+    objective:'Enable a route from uplink to archive with at most two hops.',
+    intro:'The station is a graph: nodes connected by edges. Each traversed edge is one hop. Enable a short route and test it.',
+    lesson:'In an unweighted graph, a shortest path uses the fewest edges. Breadth-first search finds one by exploring nodes in increasing hop distance. This map treats every link as usable in both directions.',
+    nodes:[['uplink',12,50],['relay-a',39,22],['relay-b',39,77],['relay-c',65,77],['archive',87,50]],
+    edges:[['uplink','relay-a',1],['relay-a','archive',1],['uplink','relay-b',1],['relay-b','relay-c',1],['relay-c','archive',1]], source:'uplink', target:'archive', maxEdges:2,
+    hints:['Both routes connect the endpoints. Count the edges along each one.','The upper path is uplink → relay A → archive: two hops.'], solution:[0,1],
+    takeaway:'You minimised hops on an unweighted graph. Only traversed edges contribute to path length; unused enabled branches do not.', reference:refs.graph
+  },
+  {
+    id:'latency-matters', kind:'network', chapter:'Computer science', concept:'Weighted graphs', name:'Find the fastest route', location:'Long-range relay',
+    objective:'Enable a route whose displayed delays total at most 12 ms.',
+    intro:'Every link has a delay. A route with fewer hops can still be slower. Compare the sum of weights along each path.',
+    lesson:'A weighted graph assigns a cost to each edge. Here the weights model fixed link delays. Dijkstra’s algorithm finds shortest paths with non-negative weights. Real packet delay also depends on transmission, processing, and queues; this puzzle omits those effects.',
+    nodes:[['uplink',12,50],['relay-a',49,20],['relay-b',35,78],['relay-c',64,78],['archive',87,50]],
+    edges:[['uplink','relay-a',9],['relay-a','archive',9],['uplink','relay-b',3],['relay-b','relay-c',4],['relay-c','archive',3]], source:'uplink', target:'archive', budget:12,
+    hints:['The two-hop route takes 18 ms in this model. Add the delays on the three-hop route.','The lower route costs 3 + 4 + 3 = 10 ms.'], solution:[2,3,4],
+    takeaway:'The minimum-weight path costs 10 ms here, despite using more hops. Costs are summed along the chosen route, not across every enabled cable.', reference:refs.graph
+  },
+  {
     id:'the-loop-that-misses', kind:'cache', chapter:'Computer science', concept:'Locality', name:'The loop that misses', location:'Sensor array',
     objective:'Transpose the sensor grid with the same arithmetic and a quarter of the memory traffic.',
     intro:'Two loops, identical arithmetic, identical output. One of them moves four and a half megabytes and the other moves one. Nothing about the code says which.',
@@ -914,19 +965,37 @@ export const levels = [
     plans:[
       {id:'row', label:'Row by row', order:'row'},
       {id:'column', label:'Column by column', order:'column'},
+      {id:'tile2', label:'2×2 tiles', tile:2},
+      {id:'tile3', label:'3×3 tiles', tile:3},
       {id:'tile4', label:'4×4 tiles', tile:4},
+      {id:'tile5', label:'5×5 tiles', tile:5},
+      {id:'tile6', label:'6×6 tiles', tile:6},
+      {id:'tile7', label:'7×7 tiles', tile:7},
       {id:'tile8', label:'8×8 tiles', tile:8},
+      {id:'tile9', label:'9×9 tiles', tile:9},
+      {id:'tile10', label:'10×10 tiles', tile:10},
+      {id:'tile12', label:'12×12 tiles', tile:12},
       {id:'tile16', label:'16×16 tiles', tile:16},
+      {id:'tile32', label:'32×32 tiles', tile:32},
       {id:'tile64', label:'64×64 tiles', tile:64}
     ],
     target:{misses:20000},
     dials:[{id:'plan', label:'How the loop walks the grid', help:'The arithmetic is the same in every one of these', value:'row', options:[
       {value:'row', label:'Row by row'},
       {value:'column', label:'Column by column'},
-      {value:'tile4', label:'4×4 tiles'},
-      {value:'tile8', label:'8×8 tiles'},
-      {value:'tile16', label:'16×16 tiles'},
-      {value:'tile64', label:'64×64 tiles'}
+      {value:'tile2', label:'2×2'},
+      {value:'tile3', label:'3×3'},
+      {value:'tile4', label:'4×4'},
+      {value:'tile5', label:'5×5'},
+      {value:'tile6', label:'6×6'},
+      {value:'tile7', label:'7×7'},
+      {value:'tile8', label:'8×8'},
+      {value:'tile9', label:'9×9'},
+      {value:'tile10', label:'10×10'},
+      {value:'tile12', label:'12×12'},
+      {value:'tile16', label:'16×16'},
+      {value:'tile32', label:'32×32'},
+      {value:'tile64', label:'64×64'}
     ]}],
     artifact:{
       title:'The same function, measured',
@@ -964,38 +1033,35 @@ export const levels = [
     takeaway:'Redundancy chosen carelessly tells you that something is wrong. Redundancy chosen well tells you what. The difference is a few bits and the arrangement.', reference:refs.hamming
   },
   {
-    id:'the-tree-that-became-a-list', kind:'tree', chapter:'Computer science', concept:'Trees & balance', name:'The tree that became a list', location:'Catalogue index',
-    objective:'Insert seven catalogue keys so no lookup costs more than three comparisons.',
-    intro:'The catalogue index is a binary search tree, and it was built by loading the keys in the order they were catalogued — which was sorted. Every lookup now walks the whole thing.',
-    lesson:'A binary search tree promises logarithmic lookup, and that promise is about its height, not its size. But a tree has no shape of its own: each key goes below the first one it compares against, so the insertion order decides the shape entirely. Insert in sorted order and every key goes down the same side — a linked list with two pointers per node and none of the benefit. Insert the median first, then the medians of each half, and each insert splits the remaining range, so seven keys fit in three levels and a thousand fit in ten. This is why real implementations do not trust the caller: red-black and AVL trees rebalance on every insert, paying a little each time to keep the guarantee, and a B-tree does the same thing with wider nodes so that each level is one disk page.',
-    keys:[1, 2, 3, 4, 5, 6, 7],
+    id:'both-consoles-at-once', kind:'race', chapter:'Computer science', concept:'Concurrency', name:'Both consoles at once', location:'Repair log',
+    objective:'Order one console’s routine so the repair count is right whatever order the two consoles run in, without holding the lock over the slow part.',
+    intro:'Two engineers close out repairs on two consoles, into one shared total. Forty-two repairs were logged this shift and the board says forty-one. Nothing crashed, nothing was rejected, and both entries are in the log.',
+    lesson:'Adding one to a shared number is not one operation. It is read the number, add one to your own copy, write your copy back — and between any two of those, the other console can run. If both read before either writes, both write the same value and one repair vanishes. That is a lost update, and the thing that makes it hard is that almost every run is fine: the two have to interleave in one of the bad ways, which on a quiet shift may take weeks to happen and will not happen at all while you are watching. This is why the question is never "did it work" but "does every interleaving work". A lock makes a stretch of the routine indivisible, so the answer is to put the read, the add and the write inside one, and everything else outside it: whatever the lock covers is time the other console spends waiting, and a lock held over slow work turns two consoles back into one. For a counter and nothing else, a processor’s atomic add does the same job in a single instruction with no waiting at all.',
+    start:40,
     items:[
-      {id:'1', name:'Key 1', note:'first catalogued'},
-      {id:'2', name:'Key 2', note:''},
-      {id:'3', name:'Key 3', note:''},
-      {id:'4', name:'Key 4', note:'the median'},
-      {id:'5', name:'Key 5', note:''},
-      {id:'6', name:'Key 6', note:''},
-      {id:'7', name:'Key 7', note:'last catalogued'}
+      {id:'read', step:'read', name:'Read the total', note:'reads the shared number'},
+      {id:'add', step:'add', name:'Add one to your copy', note:'works on your own copy'},
+      {id:'write', step:'write', name:'Write your copy back', note:'writes the shared number'},
+      {id:'acquire', step:'acquire', name:'Take the lock', note:'the other console waits here'},
+      {id:'release', step:'release', name:'Give the lock back', note:'the other console may pass'},
+      {id:'format', step:'format', name:'Write the log line', note:'slow · needs the new total · touches nothing shared'}
     ],
-    target:{height:3},
+    target:{heldFor:3},
+    order:['read','add','write','acquire','release','format'],
     artifact:{
-      title:'The same seven keys, twice',
-      note:'Identical contents, identical comparisons per level, identical code. Only the order they arrived in differs.',
+      title:'Why it passed the tests',
+      note:'The same routine, from four angles. The last one is the reason this class of bug reaches production and stays there.',
       panes:[
-        {label:'sorted input', code:'insert 1,2,3,4,5,6,7\n\n1\\\n  2\\\n    3\\\n      4\\\n        5\\\n          6\\\n            7', note:'Every key is larger than everything before it, so every insert goes right. Seven levels, and a lookup for 7 costs seven comparisons.'},
-        {label:'median first', code:'insert 4,2,6,1,3,5,7\n\n        4\n      /   \\\n     2     6\n    / \\   / \\\n   1   3 5   7', note:'Three levels. The same lookup costs three comparisons, and a thousand keys would cost ten.'},
-        {label:'why it matters', code:'        depth   lookups\n   n    sorted  balanced\n   7       7        3\n 1000    1000       10\n 10^6     10^6      20', note:'The gap is the difference between a data structure and a list. At a million keys it is fifty thousand times.'},
-        {label:'what real trees do', code:'red-black: recolour and rotate on\n  insert; height <= 2·log2(n+1)\nAVL:       stricter, taller cost to\n  insert, shorter trees\nB-tree:    wider nodes so one level\n  is one page of disk', note:'All three pay something on every insert to avoid ever being handed sorted input. Nobody relies on the caller shuffling first.'}
+        {label:'one line of code', code:'total = total + 1;\n\n  mov  eax, [total]   ; read\n  add  eax, 1         ; add\n  mov  [total], eax   ; write', note:'One statement, three instructions, and the other console can run between any two of them. The source gives no hint that there is a gap.'},
+        {label:'the lost update', code:'A: read  40\nB: read  40\nA: add   -> 41\nB: add   -> 41\nA: write 41\nB: write 41\n\ntwo repairs, one counted', note:'Both read before either wrote, so both wrote the same number. Nothing errored, and the log holds two entries against a total of one.'},
+        {label:'what a lock costs', code:'lock held over the log line:\n  11 units, both consoles serialised\n\nlock held over the counter:\n   3 units, the log line overlaps\n\nsame correctness, 3.6x the throughput', note:'A lock is correct at any size and only fast at the right one. Everything inside it is time the other console is not working.'},
+        {label:'why tests miss it', code:'$ for i in $(seq 1 10000); do ./count; done\n10000 runs, 10000 correct\n\n$ ./count --stress --threads 8\n  147 runs, 3 wrong\n\n(and the 3 do not reproduce)', note:'A race is not a case you can write; it is a schedule you have to be unlucky enough to hit. Passing is evidence of nothing, which is what thread sanitizers and model checkers exist for.'}
       ]
     },
-    order:['4', '2', '6', '1', '3', '5', '7'],
-    solution:{order:['4', '2', '6', '1', '3', '5', '7']},
-    hints:['Sorted input is the worst case, and the catalogue handed you exactly that. The first key you insert becomes the root, so choose it deliberately.','Put the median first, then the median of each remaining half: 4, then 2 and 6, then 1, 3, 5 and 7.'],
-    takeaway:'Logarithmic lookup is a property of a tree’s shape, and the shape is a property of how it was built. A structure that guarantees its own balance is worth the cost of rebalancing, because the alternative is trusting your input to be unsorted.', reference:refs.trees
+    solution:{order:['acquire','read','add','write','release','format']},
+    hints:['Start by making the routine sensible on its own: you cannot add to a number you have not read, and the log line reports the total after the add. Then ask what the other console can do in the gaps.','The lock has to cover the read, the add and the write — all three, or the gap is still there. The log line is slow and touches nothing shared, so it belongs after the lock is given back.'],
+    takeaway:'Correct on the schedule you observed is not correct. A shared value read and written without a lock around the whole read-modify-write can lose an update on some interleaving, and the fact that it has not yet is not evidence that it will not.', reference:refs.concurrency
   },
-
-  // ----------------------------------------------------- chapter 3: networking
   {
     id:'stack-of-envelopes', kind:'layers', chapter:'Networking', concept:'Layering', name:'A stack of envelopes', location:'Comms locker',
     objective:'Order the headers a packet acquires, then size the payload to fill the 1,500-byte MTU exactly.',
