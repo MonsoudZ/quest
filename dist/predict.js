@@ -8,6 +8,24 @@ import {algoKinds} from './engine.js';
 
 const caseLabel = (level, index) => `Case ${index + 1}`;
 
+// Every shape rule, said the way a player would say it. A mission offers the
+// rules it declares plus the ones it does not, so the answer is a choice rather
+// than the only plausible option on the list.
+const ruleLabels = {
+  maxLoops:'How many times it walks the data',
+  maxLoopDepth:'How deeply its loops nest',
+  maxStatements:'How many statements it takes',
+  forbid:'Something it calls',
+  requireCalls:'Something it never calls'
+};
+const shapeOptions = shape => {
+  const declared = Object.keys(ruleLabels).filter(rule => shape[rule] !== undefined);
+  const rest = Object.keys(ruleLabels).filter(rule => !declared.includes(rule));
+  return [...declared, ...rest.slice(0, Math.max(0, 3 - declared.length))]
+    .sort((a, b) => Object.keys(ruleLabels).indexOf(a) - Object.keys(ruleLabels).indexOf(b))
+    .map(rule => ({value:rule, label:ruleLabels[rule]}));
+};
+
 export function question(level) {
   if (level.kind === 'code') {
     return {
@@ -29,6 +47,20 @@ export function question(level) {
         {value:'0', label:'None of them'},
         ...level.mutants.map((mutant, index) => ({value:String(index + 1), label:index + 1 === level.mutants.length ? 'All of them' : `${index + 1}`})),
         {value:'error', label:'The suite does not run'}
+      ]
+    };
+  }
+  // A refactor mission's starter is required to answer every case, so asking
+  // which one fails is a question with a free answer. What is actually uncertain
+  // is which rule the shape is about to break.
+  if (level.kind === 'refactor') {
+    return {
+      id:'which-rule',
+      prompt:'Before you run it — this already answers every case. What will the console object to?',
+      options:[
+        ...shapeOptions(level.shape ?? {}),
+        {value:'none', label:'Nothing — it is already the shape asked for'},
+        {value:'error', label:'A case fails after all'}
       ]
     };
   }
@@ -71,6 +103,10 @@ export function actual(level, run, thrown = null) {
   if (level.kind === 'spec') {
     if (!run.mutants?.length) return 'error';
     return String(run.mutants.filter(mutant => !mutant.caught).length);
+  }
+  if (level.kind === 'refactor') {
+    if (!run.cases?.length || run.cases.some(entry => !entry.passed || entry.overGate)) return 'error';
+    return run.shapeRule ?? 'none';
   }
   if (algoKinds.has(level.kind)) {
     if (!run.cases?.length) return 'error';

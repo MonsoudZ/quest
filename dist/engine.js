@@ -234,7 +234,9 @@ const clone = value => Array.isArray(value) ? value.map(clone)
 
 // A refactor mission judges the shape of the answer as well as its values. The
 // rules count nodes in the player's own function, so a correct-but-sprawling
-// program is rejected with the reason rather than with a failing case.
+// program is rejected with the reason rather than with a failing case. A report
+// names the rule that fired as well as saying it in words, because the console
+// asks the player to predict which rule it will be.
 const loopNodes = ['for', 'while'];
 function shapeReport(ast, level) {
   const target = [];
@@ -247,8 +249,8 @@ function shapeReport(ast, level) {
   walk(body, node => { if (loopNodes.includes(node.type)) loops++; });
   if (shape.maxLoops !== undefined && loops > shape.maxLoops) {
     return shape.maxLoops === 1
-      ? `${level.fn}() answers every case, but it walks the data ${loops} times. This mission asks for one pass: one loop in the whole function.`
-      : `${level.fn}() answers every case, but it contains ${loops} loops and this mission allows ${shape.maxLoops}.`;
+      ? {rule:'maxLoops', message:`${level.fn}() answers every case, but it walks the data ${loops} times. This mission asks for one pass: one loop in the whole function.`}
+      : {rule:'maxLoops', message:`${level.fn}() answers every case, but it contains ${loops} loops and this mission allows ${shape.maxLoops}.`};
   }
 
   if (shape.maxLoopDepth !== undefined) {
@@ -260,19 +262,19 @@ function shapeReport(ast, level) {
     };
     const depth = deepest(body);
     if (depth > shape.maxLoopDepth) {
-      return `${level.fn}() answers every case, but it nests loops ${depth} deep. This mission allows ${shape.maxLoopDepth}, so the work has to be arranged differently.`;
+      return {rule:'maxLoopDepth', message:`${level.fn}() answers every case, but it nests loops ${depth} deep. This mission allows ${shape.maxLoopDepth}, so the work has to be arranged differently.`};
     }
   }
 
   if (shape.forbid) {
     for (const name of shape.forbid) {
-      if (callSites(body, name)) return `${level.fn}() answers every case, but this mission asks you not to call ${name}().`;
+      if (callSites(body, name)) return {rule:'forbid', message:`${level.fn}() answers every case, but this mission asks you not to call ${name}().`};
     }
   }
 
   if (shape.requireCalls) {
     for (const name of shape.requireCalls) {
-      if (!callSites(body, name)) return `${level.fn}() answers every case, but this mission asks it to call ${name}().`;
+      if (!callSites(body, name)) return {rule:'requireCalls', message:`${level.fn}() answers every case, but this mission asks it to call ${name}().`};
     }
   }
 
@@ -280,7 +282,7 @@ function shapeReport(ast, level) {
     let statements = 0;
     walk(body, node => { if (['let', 'expression', 'if', 'for', 'while', 'return'].includes(node.type)) statements++; });
     if (statements > shape.maxStatements) {
-      return `${level.fn}() answers every case in ${statements} statements, and this mission allows ${shape.maxStatements}.`;
+      return {rule:'maxStatements', message:`${level.fn}() answers every case in ${statements} statements, and this mission allows ${shape.maxStatements}.`};
     }
   }
   return null;
@@ -439,7 +441,8 @@ export function evaluateAlgorithm(level, source) {
     cases:results,
     output:program.output,
     operations:results.reduce((total, result) => total + (result.operations ?? 0), 0),
-    shape:misshapen,
+    shape:misshapen?.message ?? null,
+    shapeRule:misshapen?.rule ?? null,
     error:success ? null : misshapen ? misshapen : gated
       ? `${level.fn}() returns the right answers, but case ${results.indexOf(gated) + 1} used ${gated.operations.toLocaleString('en-US')} steps and this mission allows ${gated.maxOperations.toLocaleString('en-US')}. ${level.gateHint ?? 'A faster algorithm does less work per input.'}`
       : wrong.error
