@@ -548,12 +548,8 @@ kbd { padding:2px 5px; border:1px solid var(--line-strong); border-radius:4px; b
   .builder-metrics { grid-template-columns:1fr; }
   .data-table { min-width:480px; font-size:var(--text-sm); }
   .data-table td, .data-table th { padding:var(--s-2); }
-  .bit-grid { gap:var(--s-1); }
-  .bit > span { font-size:var(--text-xl); }
-  .binary-total { font-size:var(--text-2xl); }
   footer { flex-direction:column; gap:var(--s-2); }
   .game-scene { min-height:280px; }
-  .sort-chart { gap:var(--s-2); }
 }
 
 /* ------------------------------------------------------------ Signal City */

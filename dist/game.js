@@ -1,5 +1,5 @@
 import {levels} from './levels.js';
-import {simulate, evaluateAlgorithm, algoKinds, evaluateSpec} from './engine.js';
+import {simulate, evaluateAlgorithm, algoKinds, evaluateSpec, isCoding} from './engine.js';
 import {isPuzzle, initialState, solutionState, applyAction, evaluate} from './puzzles.js';
 import {mountBuilder} from './builder.js';
 import {mountCity} from './citylab.js';
@@ -208,7 +208,7 @@ function loadMission(index) {
   $('result').hidden = true;
   $('step-count').textContent = 'Ready';
 
-  const coding = item.kind === 'code' || algoKinds.has(item.kind);
+  const coding = isCoding(item);
   $('code-controls').hidden = !coding;
   $('network-controls').hidden = coding;
   $('syntax-note').hidden = !coding;
@@ -463,7 +463,7 @@ $('code').addEventListener('keydown', event => {
   if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) { event.preventDefault(); run(); }
 });
 $('reset').addEventListener('click', () => {
-  if (level().kind === 'code' || algoKinds.has(level().kind)) drafts[level().id] = level().starter;
+  if (isCoding(level())) drafts[level().id] = level().starter;
   loadMission(current);
 });
 $('solution').addEventListener('click', () => {
@@ -472,7 +472,7 @@ $('solution').addEventListener('click', () => {
   running = false;
   controls();
   const item = level();
-  if (item.kind === 'code' || algoKinds.has(item.kind)) {
+  if (isCoding(item)) {
     $('code').value = item.solution;
     trace = null;
     algoResult = null;
@@ -579,12 +579,12 @@ applyTheme();
 
 for (const name of modes) $(`${name}-mode`).addEventListener('click', () => setMode(name));
 
-const isCoding = () => level().kind === 'code' || algoKinds.has(level().kind);
+
 registerGameTools({
   read:() => ({
     mode, missionId:level().id, chapter:level().chapter, concept:level().concept,
     objective:level().objective, kind:level().kind,
-    program:isCoding() ? $('code').value : null,
+    program:isCoding(level()) ? $('code').value : null,
     completed:[...completed], running,
     architecture:builder.getState(),
     city:city.getState(),
@@ -598,13 +598,13 @@ registerGameTools({
     return {missionId:level().id, objective:level().objective, kind:level().kind};
   },
   stage:source => {
-    if (mode !== 'campaign' || !isCoding() || running) throw new Error('Open an idle coding mission first.');
+    if (mode !== 'campaign' || !isCoding(level()) || running) throw new Error('Open an idle coding mission first.');
     $('code').value = source;
     $('code').dispatchEvent(new Event('input'));
     return {missionId:level().id, staged:true};
   },
   run:async () => {
-    if (mode !== 'campaign' || !isCoding() || running) throw new Error('Open an idle coding mission first.');
+    if (mode !== 'campaign' || !isCoding(level()) || running) throw new Error('Open an idle coding mission first.');
     await run();
     return {missionId:level().id, success:algoKinds.has(level().kind) ? !!algoResult?.success : !!trace?.success, log:$('log').textContent};
   }

@@ -6,7 +6,7 @@
 // It owns the attempt — hints taken, lines revealed, runs made — because every
 // panel here is one of the ways an attempt is spent, and the rank at the end is
 // read straight off it.
-import {algoKinds} from './engine.js';
+import {isCoding} from './engine.js';
 import {question as predictionFor, actual as predictionActual, verdict as predictionVerdict} from './predict.js';
 import {question as causeQuestion, causes} from './diagnose.js';
 import {reveal} from './ui.js';
@@ -29,7 +29,6 @@ export function commandReference(item) {
   return [item.signature, ...(item.toolkit ?? ['return', 'let', 'for', 'while', 'if / else', `${parameter}.length`, `${parameter}[i]`, 'Math.floor()', 'print()'])];
 }
 
-const isCoding = item => item.kind === 'code' || algoKinds.has(item.kind);
 const freshAttempt = () => ({hints:0, solutionShown:false, revealed:0, runs:0, predicted:null, diagnosed:false});
 
 export function createConsole({level, feats, persist, log}) {

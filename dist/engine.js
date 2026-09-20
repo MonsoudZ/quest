@@ -10,6 +10,9 @@ export {QuestError, describe};
 // runs but answers wrongly, 'refactor' a program that answers correctly and
 // breaks a shape rule.
 export const algoKinds = new Set(['algo', 'debug', 'refactor', 'spec']);
+// The grid missions and the four function-console kinds together: every
+// mission the player answers by writing a program rather than by setting dials.
+export const isCoding = level => level.kind === 'code' || algoKinds.has(level.kind);
 export const directions = [[1,0],[0,1],[-1,0],[0,-1]];
 export const gridCommands = ['move','turnLeft','turnRight','canMove','print'];
 const gridLimits = {operations:4000, callDepth:48, arrayLength:256, cells:2000};
