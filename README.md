@@ -216,8 +216,14 @@ the local development server, and the host serves `dist/` in production.
 | `dist/systems.js` | The system-design model behind the architecture lab |
 | `dist/puzzles.js` | One state/widget/diagram/verdict interface for every non-coding mission |
 | `dist/levels.js` | Mission content, including the solution each mission's tests check |
-| `dist/game.js`, `dist/builder.js`, `dist/citylab.js`, `dist/scene.js` | Interface, city map, and isometric renderer |
-| `dist/ui.js` | The few behaviours all three modes share |
+| `dist/game.js` | The campaign: which mission is current, running it, and what a win is worth |
+| `dist/arena.js` | Everything drawn beside the editor: scenes, diagrams, dials, case tables |
+| `dist/console.js` | The panels about how a mission is being learnt, and the attempt they spend |
+| `dist/progress.js` | Ranks, the station's nine sections, and the achievements |
+| `dist/predict.js`, `dist/diagnose.js`, `dist/recall.js` | Predict before running, name the cause, and come back to it later |
+| `dist/builder.js`, `dist/citylab.js`, `dist/station.js`, `dist/reviewlab.js` | The four modes beside the campaign |
+| `dist/scene.js`, `dist/iso.js`, `dist/stage.js`, `dist/scenes.js` | The isometric renderer and the scene each mission kind gets |
+| `dist/ui.js`, `dist/format.js` | The behaviours, number formats and saved state every mode shares |
 | `dist/theme.css` | Design tokens, base elements, and the light and dark colour schemes |
 | `dist/app.css` | Components, composed only from those tokens |
 
