@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {levels} from '../dist/levels.js';
 import {
-  sections, conduits, sectionOf, missionsIn,
+  sections, conduits, sectionOf, missionsIn, struggles,
   ranks, rankOrder, rankFor, bestRank,
   stationPower, fullPower, stationState,
   achievements, earnedAchievements
@@ -54,6 +54,10 @@ test('a rank is decided by how much help was taken, and the best one is kept', (
   assert.equal(rankFor({hints:0, solutionShown:true}).id, 'bronze');
   assert.equal(rankFor({hints:9, solutionShown:true}).id, 'bronze', 'reading the answer is the stronger signal');
   assert.equal(rankFor().id, 'gold', 'no record of help means none was taken');
+  // A glimpse of one line is not the same as being handed the whole answer.
+  assert.equal(rankFor({revealed:1}).id, 'silver');
+  assert.equal(rankFor({revealed:9}).id, 'silver');
+  assert.equal(rankFor({revealed:9, solutionShown:true}).id, 'bronze');
 
   // More help is never worth more power.
   const power = rankOrder.map(id => ranks[id].power);
@@ -150,6 +154,8 @@ test('every achievement is unearned at the start and reachable by doing the thin
   assert.ok(!earnedWith({}, {predictions:9}).has('called-it'));
   assert.ok(earnedWith({}, {recalled:20}).has('it-stuck'));
   assert.ok(!earnedWith({}, {recalled:19}).has('it-stuck'));
+  assert.ok(earnedWith({}, {diagnosed:5}).has('own-diagnosis'));
+  assert.ok(!earnedWith({}, {diagnosed:4}).has('own-diagnosis'));
 
   const oneEach = Object.fromEntries(['Programming', 'Computer science', 'Networking', 'System design']
     .map(chapterName => [levels.find(level => level.chapter === chapterName).id, {rank:'silver'}]));
@@ -157,6 +163,32 @@ test('every achievement is unearned at the start and reachable by doing the thin
   assert.ok(!earnedWith({[levels[0].id]:{rank:'gold'}}, {}).has('all-chapters'));
 
   // And everything is earned by a finished station with every feat.
-  const everything = earnedWith(all('gold'), {tightestSuite:5, bestGateRatio:0.04, citySpare:0.3, labSpare:0.3, languagesRead:5, predictions:10, recalled:20});
+  const everything = earnedWith(all('gold'), {tightestSuite:5, bestGateRatio:0.04, citySpare:0.3, labSpare:0.3, languagesRead:5, predictions:10, recalled:20, diagnosed:5});
   assert.equal(everything.size, achievements.length, `${achievements.length - everything.size} achievements cannot be earned`);
+});
+
+test('what to look at again comes from how the missions went, not from a test', () => {
+  // A clean record has nothing to say.
+  assert.deepEqual(struggles(Object.fromEntries(levels.map(level => [level.id, {rank:'gold', runs:1}]))), []);
+  assert.deepEqual(struggles({}), []);
+
+  const read = levels.find(level => level.concept === 'Reading a failure');
+  const hinted = levels.find(level => level.concept === 'Recursion');
+  const laboured = levels.find(level => level.concept === 'Arrays');
+  const list = struggles({
+    [read.id]:{rank:'bronze', runs:2},
+    [hinted.id]:{rank:'silver', runs:1},
+    [laboured.id]:{rank:'gold', runs:6},
+    ...Object.fromEntries(levels.slice(40).map(level => [level.id, {rank:'gold', runs:1}]))
+  });
+  const concepts = list.map(entry => entry.concept);
+  assert.ok(concepts.includes(read.concept) && concepts.includes(hinted.concept) && concepts.includes(laboured.concept));
+  // Reading the answer is the strongest signal, so it comes first.
+  assert.equal(list[0].concept, read.concept, `the list opens with ${list[0].concept}`);
+  assert.match(list.find(entry => entry.concept === read.concept).why, /answer was read/);
+  assert.match(list.find(entry => entry.concept === laboured.concept).why, /several runs/);
+  assert.match(list.find(entry => entry.concept === hinted.concept).why, /hint/);
+  // Missions solved cleanly never appear, however many of them there are.
+  assert.equal(list.every(entry => entry.missions.every(mission => mission.rank !== 'gold' || mission.runs >= 4)), true);
+  assert.ok(list.length <= 6, 'the list stays short enough to act on');
 });

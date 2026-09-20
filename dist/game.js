@@ -7,7 +7,8 @@ import {mountStation} from './station.js';
 import {mountReview} from './reviewlab.js';
 import {question as predictionFor, actual as predictionActual, verdict as predictionVerdict} from './predict.js';
 import {scheduleAfter, dueItems} from './recall.js';
-import {rankFor, bestRank, ranks, stationState, earnedAchievements, sectionOf} from './progress.js';
+import {question as causeQuestion, causes} from './diagnose.js';
+import {rankFor, bestRank, ranks, stationState, earnedAchievements, sectionOf, struggles} from './progress.js';
 import {registerGameTools} from './webmcp.js';
 import {createScene} from './scene.js';
 import {reveal, reduceMotion} from './ui.js';
@@ -37,10 +38,11 @@ const feats = {
   labSpare:Number(saved?.feats?.labSpare) || undefined,
   languagesRead:Number(saved?.feats?.languagesRead) || 0,
   predictions:Number(saved?.feats?.predictions) || 0,
-  recalled:Number(saved?.feats?.recalled) || 0
+  recalled:Number(saved?.feats?.recalled) || 0,
+  diagnosed:Number(saved?.feats?.diagnosed) || 0
 };
 // Per-mission attempt state, reset whenever a mission is loaded.
-let attempt = {hints:0, solutionShown:false, runs:0, predicted:null};
+let attempt = {hints:0, solutionShown:false, revealed:0, runs:0, predicted:null, diagnosed:false};
 // When each solved mission is next worth being asked about.
 const reviews = {};
 for (const [id, entry] of Object.entries(saved?.reviews ?? {})) {
@@ -245,6 +247,76 @@ function readingPanel(item) {
 // Predict, then run. Committing to an answer before the machine gives you one is
 // worth more than the answer; nothing is scored on it, and being wrong is the
 // useful case.
+
+// The answer, one line at a time. Reading the whole thing and glimpsing one line
+// used to cost the same, which made the button all-or-nothing and the rank
+// blunt. Each rung is a decision, and only the last one is the whole answer.
+function solutionLines() {
+  // Only a program has lines. A puzzle's solution is a set of dials or an order.
+  const item = level();
+  return typeof item.solution === 'string' ? item.solution.split('\n').filter(line => line.trim().length) : [];
+}
+function renderLadder() {
+  const item = level();
+  const lines = solutionLines();
+  const ladder = $('ladder');
+  const climbable = (item.kind === 'code' || algoKinds.has(item.kind)) && lines.length > 1;
+  ladder.hidden = !climbable;
+  $('solution').hidden = climbable;
+  if (!climbable) return;
+  const shown = lines.slice(0, attempt.revealed);
+  $('ladder-code').hidden = attempt.revealed === 0;
+  $('ladder-code').textContent = shown.join('\n') + (attempt.revealed < lines.length ? `\n… ${lines.length - attempt.revealed} more line${lines.length - attempt.revealed === 1 ? '' : 's'}` : '');
+  $('ladder-next').hidden = attempt.revealed >= lines.length;
+  $('ladder-next').textContent = attempt.revealed === 0 ? 'Show the first line' : 'Show the next line';
+  $('ladder-all').textContent = attempt.revealed >= lines.length ? 'Put it in the editor' : 'Put the whole thing in the editor';
+  $('ladder-note').textContent = attempt.revealed === 0
+    ? `${lines.length} lines. A glimpse costs a hint’s worth; the whole thing costs the rest.`
+    : attempt.revealed >= lines.length
+      ? 'That is all of it. Typing it out yourself is worth more than pasting it.'
+      : `${attempt.revealed} of ${lines.length} shown. Stop as soon as you can carry on.`;
+}
+
+
+// Ask for a diagnosis before giving one. Once per visit to a mission, and only
+// where a failure is mechanical enough to be named honestly.
+function askTheCause(result, thrown, then) {
+  const item = level();
+  if (attempt.diagnosed || !(item.kind === 'code' || algoKinds.has(item.kind))) { then(); return; }
+  const asked = causeQuestion(item, result, thrown);
+  if (!asked) { then(); return; }
+  attempt.diagnosed = true;
+  const panel = $('cause');
+  panel.hidden = false;
+  $('cause-prompt').textContent = asked.prompt;
+  $('cause-verdict').hidden = true;
+  const options = $('cause-options');
+  options.replaceChildren(...asked.options.map(option => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'cause-option';
+    button.textContent = option.label;
+    button.addEventListener('click', () => {
+      const right = option.value === asked.answer;
+      options.querySelectorAll('button').forEach(other => { other.disabled = true; });
+      button.classList.add(right ? 'right' : 'wrong');
+      options.querySelector(`[data-answer="${asked.answer}"]`)?.classList.add('right');
+      const verdict = $('cause-verdict');
+      verdict.hidden = false;
+      verdict.className = `cause-verdict ${right ? 'right' : 'wrong'}`;
+      verdict.textContent = right
+        ? 'That is it. Here is how the machine put it:'
+        : `Not this time — it was “${causes[asked.answer].label.toLowerCase()}”. Here is how the machine put it:`;
+      if (right) feats.diagnosed = (feats.diagnosed ?? 0) + 1;
+      persist();
+      then();
+    });
+    button.dataset.answer = option.value;
+    return button;
+  }));
+  reveal(panel);
+}
+
 function renderPrediction() {
   const item = level();
   const asked = predictionFor(item);
@@ -290,7 +362,8 @@ function loadMission(index) {
   running = false;
   current = Math.max(0, Math.min(levels.length - 1, index));
   const item = level();
-  hintIndex = 0; panelChoice = 0; attempt = {hints:0, solutionShown:false, runs:0, predicted:null}; trace = null; traceIndex = 0; visited = []; networkResult = null; algoResult = null;
+  $('cause').hidden = true;
+  hintIndex = 0; panelChoice = 0; attempt = {hints:0, solutionShown:false, revealed:0, runs:0, predicted:null, diagnosed:false}; trace = null; traceIndex = 0; visited = []; networkResult = null; algoResult = null;
   unit = item.start ? {x:item.start[0], y:item.start[1], dir:item.start[2]} : null;
   scene?.destroy(); scene = null; sceneLevel = null;
   stage?.destroy(); stage = null; stageKind = null;
@@ -339,6 +412,7 @@ function loadMission(index) {
   navigation();
   renderArena();
   renderPrediction();
+  renderLadder();
   controls();
   persist();
 }
@@ -684,9 +758,7 @@ function prepare() {
   } catch (error) {
     trace = null;
     settlePrediction(null, error);
-    log(error.message, 'error');
-    tone(false);
-    reveal(outcomePanel());
+    askTheCause(null, error, () => { log(error.message, 'error'); tone(false); reveal(outcomePanel()); });
     return false;
   }
 }
@@ -699,8 +771,10 @@ function applyStep() {
   log(`L${step.line} · ${step.label}`, step.error ? 'error' : '');
   if (traceIndex === trace.steps.length) {
     if (trace.success) { win(); return; }
-    log(trace.error || 'Program finished. The cell is still out of reach — adjust your instructions and try again.', 'error');
-    reveal(outcomePanel());
+    askTheCause(trace, null, () => {
+      log(trace.error || 'Program finished. The cell is still out of reach — adjust your instructions and try again.', 'error');
+      reveal(outcomePanel());
+    });
   }
 }
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -722,7 +796,7 @@ async function run() {
       ? `${algoResult.mutants.filter(mutant => mutant.caught).length} / ${item.mutants.length} caught`
       : 'Suite not run';
     if (algoResult.success) { log(algoResult.message, 'success'); win(); }
-    else { log(algoResult.error, 'error'); tone(false); reveal(outcomePanel()); }
+    else askTheCause(algoResult, null, () => { log(algoResult.error, 'error'); tone(false); reveal(outcomePanel()); });
     return;
   }
   if (algoKinds.has(item.kind)) {
@@ -743,7 +817,7 @@ async function run() {
     for (const line of algoResult.output.slice(0, 12)) log(`print → ${line}`);
     $('step-count').textContent = `${algoResult.cases.filter(entry => entry.passed && !entry.overGate).length} / ${item.cases.length} cases`;
     if (algoResult.success) { log(`All ${item.cases.length} cases pass.`, 'success'); win(); }
-    else { log(algoResult.error, 'error'); tone(false); reveal(outcomePanel()); }
+    else askTheCause(algoResult, null, () => { log(algoResult.error, 'error'); tone(false); reveal(outcomePanel()); });
     return;
   }
   if (isPuzzle(item)) {
@@ -815,8 +889,15 @@ $('hint').addEventListener('click', () => {
   $('hint').textContent = hintIndex >= hints.length ? 'All hints shown' : 'Another hint';
   $('hint').disabled = hintIndex >= hints.length;
 });
+$('ladder-next').addEventListener('click', () => {
+  attempt.revealed = Math.min(attempt.revealed + 1, solutionLines().length);
+  renderLadder();
+  persist();
+});
+$('ladder-all').addEventListener('click', () => $('solution').click());
 $('solution').addEventListener('click', () => {
   attempt.solutionShown = true;
+  attempt.revealed = solutionLines().length;
   runToken++;
   running = false;
   controls();
@@ -835,6 +916,7 @@ $('solution').addEventListener('click', () => {
     renderArena();
   }
   $('result').hidden = true;
+  renderLadder();
   $('hint-text').textContent = 'A working solution is loaded. Run it, then reset the mission and try explaining each step yourself.';
 });
 $('next').addEventListener('click', () => loadMission((current + 1) % levels.length));
@@ -868,6 +950,7 @@ const station = mountStation($('station'), {
 station.render();
 const review = mountReview($('review'), {
   getReviews:() => reviews,
+  getRecords:() => records,
   onAnswer:(id, right) => {
     reviews[id] = scheduleAfter(reviews[id]?.box ?? 1, right);
     if (right) feats.recalled = (feats.recalled ?? 0) + 1;

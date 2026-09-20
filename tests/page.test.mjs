@@ -132,11 +132,19 @@ test('every game mode is reachable on a phone without a hidden sideways scroller
 
 test('the station mode is wired into the page the same way the others are', async () => {
   const {sections} = await import('../dist/progress.js');
-  for (const id of ['station', 'station-mode', 'review', 'review-mode', 'predict', 'predict-prompt', 'predict-options', 'predict-verdict', 'result-rank', 'result-power', 'result-note', 'result-badges']) {
+  for (const id of ['station', 'station-mode', 'review', 'review-mode', 'predict', 'predict-prompt', 'predict-options', 'predict-verdict', 'cause', 'cause-prompt', 'cause-options', 'cause-verdict', 'ladder', 'ladder-code', 'ladder-note', 'ladder-next', 'ladder-all', 'result-rank', 'result-power', 'result-note', 'result-badges']) {
     assert.match(html, new RegExp(`id="${id}"`), `the page has no #${id}`);
   }
   // The power bar measures restored power now, so its ceiling has to match.
   const {levels} = await import('../dist/levels.js');
   assert.match(html, new RegExp(`<progress id="power" max="${levels.length * 100}"`), 'the power bar does not go up to the station\'s full capacity');
   assert.ok(sections.length >= 6);
+});
+
+test('the solution ladder only claims lines where there are lines', async () => {
+  // A puzzle's solution is a set of dials or an order, not a program, and
+  // splitting it crashed every one of those missions until this guard existed.
+  const {levels} = await import('../dist/levels.js');
+  assert.match(scripts, /typeof item\.solution === 'string'/, 'solutionLines no longer checks it has a program');
+  assert.ok(levels.some(level => typeof level.solution !== 'string'), 'there are no non-program solutions left to guard against');
 });

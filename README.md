@@ -133,6 +133,40 @@ wrong on purpose teaches a lot. Nothing is scored on it, and the wrong case is
 the one worth having: the console says what you predicted, what happened, and
 that the gap is the useful part.
 
+### Name the cause, then read it
+
+When a case fails, the sandbox writes an excellent explanation and hands it
+over, and the learner reads it and fixes the line. Console missions now ask for
+a diagnosis first: three plausible causes, one of them the real one, drawn from
+what the evaluator actually returned — the loop runs one step past the end, the
+empty input is not handled, it returns its input without working on it, it is
+right and does far too much work, it changes the thing it was given. Then the
+machine's explanation appears, right or wrong.
+
+Nothing here can describe a failure the game did not have: a test runs every
+console mission's own starter through its evaluator and checks the named cause
+is the one that mission is about — `pastTheEnd` for the loop that reads one too
+far, `mutates` for the sort that rearranges its caller's log, `wrongShape` for
+the two refactors, `weakSuite` for one happy-path test case. It is asked once
+per visit to a mission, and only where a failure is mechanical enough to name
+honestly; a dial is not a program.
+
+### The answer, one line at a time
+
+"Show a solution" used to be all or nothing, which made the button a cliff and
+the rank blunt: glimpsing one line cost exactly as much as reading the whole
+thing. It is a ladder now. Each rung reveals one more line beside the editor,
+and the last rung puts the whole thing in it. A glimpse costs what a hint costs;
+only taking all of it costs the rest.
+
+### Worth another look
+
+The records already know which missions were hard — the answer was read, a hint
+was taken, it took several runs — and the review screen now says so, grouped by
+concept rather than by mission, because the concept is what is shaky. Reading
+the answer weighs most, a hint next, needing several runs least: grinding at
+something until it works is how it is supposed to go.
+
 ### Spaced review
 
 A mission solved once and never seen again is mostly forgotten in a month. The
@@ -291,7 +325,7 @@ and the tests check them against independent implementations.
 
 ## Validation
 
-Run `npm test` and `npm run check`. 140 tests across thirteen files:
+Run `npm test` and `npm run check`. 144 tests across thirteen files:
 
 - `tests/lang.test.mjs` — 30 programs run in both the interpreter and real JavaScript via
   `node:vm` and compared, plus the refusals, the deliberate deviations, and the bounds.
@@ -305,8 +339,9 @@ Run `npm test` and `npm run check`. 140 tests across thirteen files:
   contract requires, the availability and cost arithmetic, the 99th-percentile formula checked
   against a simulated M/M/1 queue, each estimator against the arithmetic done by hand, and the
   error budget against a worked month.
-- `tests/learning.test.mjs` — every mission can be predicted and its real outcome
-  is one of the answers offered, a wrong prediction is never scolded, every mission
+- `tests/learning.test.mjs` — every console mission's own starter fails in a way
+  the game can name and the name is the one that mission is about, every mission
+  can be predicted and its real outcome is one of the answers offered, a wrong prediction is never scolded, every mission
   can be asked about again from what it already ships with the answer among the
   options, the schedule widens on recall and resets on failure, and the review
   queue opens with four different chapters.

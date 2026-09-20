@@ -5,6 +5,7 @@ import {simulate, evaluateAlgorithm, evaluateSpec, algoKinds, QuestError} from '
 import {initialState, solutionState, evaluate, isPuzzle} from '../dist/puzzles.js';
 import {question, actual, verdict} from '../dist/predict.js';
 import {recallQuestion, reviewable, scheduleAfter, dueItems, reviewQueue, intervals, day} from '../dist/recall.js';
+import {diagnose, question as causeQuestion, causes} from '../dist/diagnose.js';
 
 const runWith = (level, source) => level.kind === 'spec' ? evaluateSpec(level, source) : evaluateAlgorithm(level, source);
 
@@ -129,4 +130,77 @@ test('the review queue is mixed across chapters and holds nothing that is not du
   assert.equal(short.length, 1);
   assert.equal(short[0].level.id, levels[0].id);
   assert.equal(reviewQueue({}, now, 8).length, 0);
+});
+
+const consoleMissions = levels.filter(level => level.kind === 'code' || algoKinds.has(level.kind));
+const attempt = (level, source) => {
+  try {
+    return {result:level.kind === 'code' ? simulate(level, source)
+      : level.kind === 'spec' ? evaluateSpec(level, source)
+      : evaluateAlgorithm(level, source), thrown:null};
+  } catch (error) {
+    return {result:null, thrown:error};
+  }
+};
+
+test('every console mission’s own starter fails in a way the game can name', () => {
+  const found = new Set();
+  for (const level of consoleMissions) {
+    const {result, thrown} = attempt(level, level.starter);
+    const cause = diagnose(level, result, thrown);
+    assert.ok(cause, `${level.id} (${level.kind}) fails in a way nothing can name`);
+    assert.ok(causes[cause.id], `${level.id} produced a cause that is not in the vocabulary`);
+    assert.ok(cause.label.length > 15, `${cause.id} needs a fuller label`);
+    found.add(cause.id);
+  }
+  // The vocabulary is used, not decorative.
+  assert.ok(found.size >= 8, `only ${found.size} different causes come up across ${consoleMissions.length} missions`);
+});
+
+test('the cause named is the one the mission is actually about', () => {
+  const byId = id => levels.find(level => level.id === id);
+  const causeOf = id => {
+    const level = byId(id);
+    const {result, thrown} = attempt(level, level.starter);
+    return diagnose(level, result, thrown).id;
+  };
+  // Each of these starters is broken in one specific, stated way.
+  assert.equal(causeOf('the-log-that-lies'), 'pastTheEnd', 'its loop reads one past the end');
+  assert.equal(causeOf('whose-array-is-it'), 'mutates', 'it sorts the caller’s array');
+  assert.equal(causeOf('remember-the-answer'), 'tooSlow', 'it is right and exponential');
+  assert.equal(causeOf('stop-searching-twice'), 'wrongShape', 'it passes every case and nests loops');
+  assert.equal(causeOf('say-it-once'), 'wrongShape', 'it passes every case and inlines the decision');
+  assert.equal(causeOf('call-yourself'), 'notRecursive');
+  assert.equal(causeOf('write-the-tests'), 'weakSuite', 'one happy path catches nothing');
+  assert.equal(causeOf('hold-the-line'), 'notComputed', 'it returns false whatever it is given');
+
+  // Nothing is asked when nothing went wrong, or when it is not a program.
+  for (const level of consoleMissions.slice(0, 6)) {
+    const {result} = attempt(level, level.solution);
+    assert.equal(diagnose(level, result), null, `${level.id} names a cause for a working solution`);
+  }
+  const puzzle = levels.find(level => !isPuzzle(level) === false);
+  assert.equal(causeQuestion(puzzle, evaluate(puzzle, initialState(puzzle))), null, 'a dial is not a program');
+});
+
+test('the cause is asked with two plausible alternatives, in a stable order', () => {
+  for (const level of consoleMissions) {
+    const {result, thrown} = attempt(level, level.starter);
+    const asked = causeQuestion(level, result, thrown);
+    assert.equal(asked.options.length, 3, `${level.id} offers ${asked.options.length} causes`);
+    assert.equal(new Set(asked.options.map(option => option.value)).size, 3, `${level.id} repeats a cause`);
+    assert.ok(asked.options.some(option => option.value === asked.answer), `${level.id}: the real cause is not offered`);
+    // The distractors have to be causes a program could have, not filler.
+    for (const option of asked.options) assert.ok(causes[option.value], `${option.value} is not a real cause`);
+    // Same failure, same three, same order.
+    const again = causeQuestion(level, result, thrown);
+    assert.deepEqual(again.options, asked.options, level.id);
+  }
+  // And the right answer is not always in the same slot.
+  const slots = consoleMissions.map(level => {
+    const {result, thrown} = attempt(level, level.starter);
+    const asked = causeQuestion(level, result, thrown);
+    return asked.options.findIndex(option => option.value === asked.answer);
+  });
+  assert.equal(new Set(slots).size, 3, `the real cause only ever appears in ${new Set(slots).size} of the three slots`);
 });

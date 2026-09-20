@@ -110,6 +110,11 @@
             <button id="step" class="secondary">Step</button>
             <button id="reset" class="quiet">Reset</button>
           </div>
+          <div id="cause" class="cause" hidden>
+            <p id="cause-prompt" class="cause-prompt"></p>
+            <div id="cause-options" class="cause-options"></div>
+            <p id="cause-verdict" class="cause-verdict" role="status" aria-live="polite" hidden></p>
+          </div>
           <div class="trace-panel">
             <div class="trace-heading"><span>Mission log</span><span id="step-count">Ready</span></div>
             <div id="log" role="status" aria-live="polite"><p>Awaiting your instructions.</p></div>
@@ -158,6 +163,14 @@
           <div class="hint-actions">
             <button id="hint" class="secondary">Get a hint</button>
             <button id="solution" class="quiet">Show a solution</button>
+          </div>
+          <div id="ladder" class="ladder" hidden>
+            <pre id="ladder-code" class="ladder-code" hidden></pre>
+            <p id="ladder-note" class="ladder-note"></p>
+            <div class="hint-actions">
+              <button id="ladder-next" class="secondary">Show the first line</button>
+              <button id="ladder-all" class="quiet">Put the whole thing in the editor</button>
+            </div>
           </div>
         </section>
       </div>

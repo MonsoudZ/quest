@@ -80,13 +80,16 @@ export const missionsIn = section => levels.filter(level => section.rooms.includ
 // without them, because the best attempt is the one that counts.
 export const ranks = {
   gold:{id:'gold', name:'Unaided', power:100, mark:'★', note:'Solved with no hints and without reading the solution.'},
-  silver:{id:'silver', name:'Hinted', power:80, mark:'◆', note:'Solved after reading one of this mission’s hints.'},
-  bronze:{id:'bronze', name:'Guided', power:50, mark:'●', note:'Solved after the solution was shown. Reset it and solve it yourself to restore the rest.'}
+  silver:{id:'silver', name:'Hinted', power:80, mark:'◆', note:'Solved after a hint, or after glimpsing part of the answer.'},
+  bronze:{id:'bronze', name:'Guided', power:50, mark:'●', note:'Solved with the whole answer in hand. Reset it and solve it yourself to restore the rest.'}
 };
 export const rankOrder = ['bronze', 'silver', 'gold'];
 
-export const rankFor = ({hints = 0, solutionShown = false} = {}) =>
-  solutionShown ? ranks.bronze : hints > 0 ? ranks.silver : ranks.gold;
+// Peeking at one line of an answer is not the same as being handed all of it,
+// so the ladder is graduated: climbing part of it costs a hint's worth, and
+// only taking the whole thing costs the rest.
+export const rankFor = ({hints = 0, solutionShown = false, revealed = 0} = {}) =>
+  solutionShown ? ranks.bronze : hints > 0 || revealed > 0 ? ranks.silver : ranks.gold;
 
 export const bestRank = (a, b) => rankOrder.indexOf(a) >= rankOrder.indexOf(b) ? a : b;
 
@@ -120,6 +123,41 @@ export function stationState(records = {}) {
     restored:built.filter(section => section.status === 'online').length,
     online:built.every(section => section.status === 'online')
   };
+}
+
+
+// ------------------------------------------------- what to look at again
+
+// The records already know which missions were hard: the answer was read, hints
+// were taken, or it took several runs. Grouped by concept, because the concept
+// is what is shaky — not the particular mission it was met in.
+// Reading the answer is the strongest signal that a concept did not land, a
+// hint the next, and needing several runs the weakest — grinding at something
+// until it works is how it is supposed to go.
+const weight = record => (record.rank === 'bronze' ? 4 : record.rank === 'silver' ? 2 : 0) + Math.max(0, Math.min(2, (record.runs ?? 1) - 3));
+
+export function struggles(records = {}, limit = 6) {
+  const byConcept = new Map();
+  for (const level of levels) {
+    const record = records[level.id];
+    if (!record?.rank) continue;
+    const score = weight(record);
+    if (!score) continue;
+    const key = `${level.chapter}::${level.concept}`;
+    if (!byConcept.has(key)) byConcept.set(key, {concept:level.concept, chapter:level.chapter, score:0, missions:[]});
+    const entry = byConcept.get(key);
+    entry.score += score;
+    entry.missions.push({id:level.id, name:level.name, rank:record.rank, runs:record.runs ?? 1});
+  }
+  return [...byConcept.values()]
+    .map(entry => ({
+      ...entry,
+      why:entry.missions.some(mission => mission.rank === 'bronze') ? 'the answer was read here'
+        : entry.missions.some(mission => mission.runs >= 4) ? 'it took several runs'
+        : 'a hint was taken here'
+    }))
+    .sort((a, b) => b.score - a.score || a.concept.localeCompare(b.concept))
+    .slice(0, limit);
 }
 
 // -------------------------------------------------------- achievements
@@ -180,6 +218,10 @@ export const achievements = [
   {
     id:'it-stuck', name:'It stuck', hint:'Recall twenty review questions correctly.',
     earned:({feats}) => (feats.recalled ?? 0) >= 20
+  },
+  {
+    id:'own-diagnosis', name:'Your own diagnosis', hint:'Name the cause of a failure before reading it, correctly, five times.',
+    earned:({feats}) => (feats.diagnosed ?? 0) >= 5
   },
   {
     id:'station-restored', name:'Station restored', hint:'Bring every section online.',

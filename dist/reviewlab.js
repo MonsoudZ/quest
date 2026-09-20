@@ -3,13 +3,14 @@
 // wrong — a wrong answer only means the question comes back sooner.
 import {levels} from './levels.js';
 import {reviewQueue, recallQuestion, scheduleAfter, dueItems, intervals, day} from './recall.js';
+import {struggles, ranks} from './progress.js';
 
 const soon = (due, now) => {
   const days = Math.ceil((due - now) / day);
   return days <= 0 ? 'now' : days === 1 ? 'tomorrow' : `in ${days} days`;
 };
 
-export function mountReview(container, {getReviews, onAnswer, onOpen}) {
+export function mountReview(container, {getReviews, getRecords, onAnswer, onOpen}) {
   let queue = [];
   let position = 0;
   let chosen = null;
@@ -42,6 +43,7 @@ export function mountReview(container, {getReviews, onAnswer, onOpen}) {
       .map(([id, entry]) => ({id, ...entry}))
       .sort((a, b) => (a.due ?? 0) - (b.due ?? 0));
     const due = dueItems(reviews, now);
+    const hard = struggles(getRecords());
 
     if (!waiting.length) {
       container.innerHTML = `
@@ -106,6 +108,21 @@ export function mountReview(container, {getReviews, onAnswer, onOpen}) {
           <h3>Come back when something is.</h3>
           <button class="primary" data-restart>Check again</button>
         </section>`}
+
+      ${hard.length ? `
+      <section class="panel-block">
+        <div class="eyebrow">Worth another look · from how these went, not from a test</div>
+        <div class="struggle-list">
+          ${hard.map(entry => `
+            <div class="struggle">
+              <span><strong>${entry.concept}</strong><small>${entry.chapter} — ${entry.why}</small></span>
+              <span class="review-box">${entry.missions.length} mission${entry.missions.length === 1 ? '' : 's'}</span>
+              <span class="struggle-missions">
+                ${entry.missions.map(mission => `<button class="struggle-mission" data-open="${mission.id}">${ranks[mission.rank].mark} ${mission.name}${mission.runs >= 4 ? ` · ${mission.runs} runs` : ''}</button>`).join('')}
+              </span>
+            </div>`).join('')}
+        </div>
+      </section>` : ''}
 
       <section class="panel-block">
         <div class="eyebrow">Schedule</div>
