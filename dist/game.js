@@ -1,20 +1,17 @@
 import {levels} from './levels.js';
-import {simulate, evaluateAlgorithm, describe, algoKinds, evaluateSpec} from './engine.js';
-import {isPuzzle, initialState, solutionState, applyAction, widgets, view, evaluate} from './puzzles.js';
+import {simulate, evaluateAlgorithm, algoKinds, evaluateSpec} from './engine.js';
+import {isPuzzle, initialState, solutionState, applyAction, evaluate} from './puzzles.js';
 import {mountBuilder} from './builder.js';
 import {mountCity} from './citylab.js';
 import {mountStation} from './station.js';
 import {mountReview} from './reviewlab.js';
-import {question as predictionFor, actual as predictionActual, verdict as predictionVerdict} from './predict.js';
 import {scheduleAfter, dueItems} from './recall.js';
-import {question as causeQuestion, causes} from './diagnose.js';
 import {rankFor, bestRank, ranks, stationState, earnedAchievements, sectionOf, struggles} from './progress.js';
 import {registerGameTools} from './webmcp.js';
-import {createScene} from './scene.js';
 import {reveal, reduceMotion} from './ui.js';
 import {readStore, writeStore, count} from './format.js';
-import {createStage} from './stage.js';
-import {sceneFor} from './scenes.js';
+import {createArena} from './arena.js';
+import {createConsole, commandReference, consoleTask, languageTag, mapLabel, panelTitle, runLabel} from './console.js';
 
 const $ = id => document.getElementById(id);
 const saveKey = 'signal-quest-v2';
@@ -41,8 +38,6 @@ const feats = {
   recalled:Number(saved?.feats?.recalled) || 0,
   diagnosed:Number(saved?.feats?.diagnosed) || 0
 };
-// Per-mission attempt state, reset whenever a mission is loaded.
-let attempt = {hints:0, solutionShown:false, revealed:0, runs:0, predicted:null, diagnosed:false};
 // When each solved mission is next worth being asked about.
 const reviews = {};
 for (const [id, entry] of Object.entries(saved?.reviews ?? {})) {
@@ -53,11 +48,16 @@ let earnedBefore = new Set();
 let current = Math.max(0, levels.findIndex(level => level.id === saved?.current));
 let drafts = saved?.drafts && typeof saved.drafts === 'object' ? saved.drafts : {};
 const collapsed = new Set(Array.isArray(saved?.collapsed) ? saved.collapsed : []);
-let hintIndex = 0, unit = null, visited = [], trace = null, traceIndex = 0, runToken = 0, running = false;
-let sound = false, audioContext = null, scene = null, sceneLevel = null;
+let unit = null, visited = [], trace = null, traceIndex = 0, runToken = 0, running = false;
+let sound = false, audioContext = null;
 let puzzleState = null, algoResult = null, mode = 'campaign';
-let stage = null, stageKind = null;
 const level = () => levels[current];
+
+// The console owns how a mission is being attempted; the arena owns what is
+// drawn beside it. Both are built once and told which mission is current.
+const mission = createConsole({level, feats, persist, log});
+const arena = createArena({onAct:action => act(action)});
+const renderArena = () => arena.render(level(), {unit, visited, puzzleState});
 
 function persist() {
   const stored = writeStore(saveKey, {completed:[...completed], records, feats, reviews, current:level().id, drafts, collapsed:[...collapsed]});
@@ -183,190 +183,15 @@ function controls() {
   $('code').readOnly = running;
 }
 
-const runLabel = kind => ({code:'▶ Run program', algo:'▶ Run the tests', debug:'▶ Run the tests', refactor:'▶ Run the tests', spec:'▶ Run your suite', network:'▶ Send signal', transport:'▶ Start the transfer', sequence:'▶ Time the exchange', layers:'▶ Send the frame', routing:'▶ Forward the packets'}[kind] ?? '▶ Check answer');
-const panelTitle = kind => ({code:'COMMAND CONSOLE', algo:'FUNCTION CONSOLE', debug:'REPAIR CONSOLE', refactor:'REWRITE CONSOLE', spec:'TEST CONSOLE'}[kind] ?? 'MISSION CONTROLS');
-const languageTag = kind => ({code:'JavaScript · sandboxed subset', algo:'JavaScript · checked against test cases', debug:'JavaScript · a program that runs and is wrong', refactor:'JavaScript · judged on shape as well as answers', spec:'JavaScript · your cases against their code'}[kind] ?? 'Interactive model · simplified');
-const mapLabel = kind => ({code:'ISOMETRIC VIEW', algo:'TEST CASES', debug:'TEST CASES', refactor:'TEST CASES', spec:'THE CODE UNDER TEST'}[kind] ?? 'DATA VISUALISATION');
-
-const consoleTask = kind => ({debug:'Repair this function', refactor:'Rewrite this function', spec:'Return your cases from'}[kind] ?? 'Write this function');
-
-function commandReference(item) {
-  if (item.kind === 'code') return ['move(n)', 'turnLeft()', 'turnRight()', 'canMove()', 'let', 'for', 'while', 'if / else', 'function'];
-  // Puzzle missions have no function to write, and their row stays hidden.
-  if (!item.signature) return [];
-  // A mission may name the pieces it is actually about; otherwise the general
-  // set, written against this mission's own parameter rather than a stand-in.
-  const parameter = item.signature.match(/\(([^,)]+)/)?.[1].trim() || 'values';
-  return [item.signature, ...(item.toolkit ?? ['return', 'let', 'for', 'while', 'if / else', `${parameter}.length`, `${parameter}[i]`, 'Math.floor()', 'print()'])];
-}
-
-
-// Read-only evidence beside the lesson: the same idea in other languages, or the
-// tool output an engineer would actually have been looking at. Nothing here
-// runs — it is there to be read against what the mission is asking.
-let panelChoice = 0;
-const read = new Set();
-function readingPanel(item) {
-  const source = item.polyglot ?? item.artifact ?? null;
-  const panes = (source?.samples ?? source?.panes ?? []).map(pane => ({
-    label:pane.language ?? pane.label, code:pane.code, note:pane.note
-  }));
-  const panel = $('polyglot');
-  panel.hidden = panes.length === 0;
-  if (!panes.length) return;
-  panelChoice = Math.min(panelChoice, panes.length - 1);
-  $('polyglot-title').textContent = source.title;
-  $('polyglot-note').textContent = source.note;
-  $('polyglot-caveat').textContent = item.polyglot
-    ? 'Read-only. These samples are for comparison; only the JavaScript subset above runs here.'
-    : 'Read-only. This is evidence to read, not a control — the mission is changed with the dials.';
-  const tabs = $('polyglot-tabs');
-  tabs.replaceChildren(...panes.map((pane, index) => {
-    const tab = document.createElement('button');
-    tab.className = `polyglot-tab ${index === panelChoice ? 'chosen' : ''}`;
-    tab.type = 'button';
-    tab.role = 'tab';
-    tab.setAttribute('aria-selected', String(index === panelChoice));
-    tab.textContent = pane.label;
-    tab.addEventListener('click', () => {
-      panelChoice = index;
-      read.add(`${item.id}:${index}`);
-      feats.languagesRead = Math.max(feats.languagesRead ?? 0, [...read].filter(key => key.startsWith(`${item.id}:`)).length);
-      persist();
-      readingPanel(item);
-    });
-    return tab;
-  }));
-  const pane = panes[panelChoice];
-  $('polyglot-code').textContent = pane.code;
-  $('polyglot-code').setAttribute('aria-label', `${pane.label} sample`);
-  $('polyglot-sample-note').textContent = pane.note;
-}
-
-
-// Predict, then run. Committing to an answer before the machine gives you one is
-// worth more than the answer; nothing is scored on it, and being wrong is the
-// useful case.
-
-// The answer, one line at a time. Reading the whole thing and glimpsing one line
-// used to cost the same, which made the button all-or-nothing and the rank
-// blunt. Each rung is a decision, and only the last one is the whole answer.
-function solutionLines() {
-  // Only a program has lines. A puzzle's solution is a set of dials or an order.
-  const item = level();
-  return typeof item.solution === 'string' ? item.solution.split('\n').filter(line => line.trim().length) : [];
-}
-function renderLadder() {
-  const item = level();
-  const lines = solutionLines();
-  const ladder = $('ladder');
-  const climbable = (item.kind === 'code' || algoKinds.has(item.kind)) && lines.length > 1;
-  ladder.hidden = !climbable;
-  $('solution').hidden = climbable;
-  if (!climbable) return;
-  const shown = lines.slice(0, attempt.revealed);
-  $('ladder-code').hidden = attempt.revealed === 0;
-  $('ladder-code').textContent = shown.join('\n') + (attempt.revealed < lines.length ? `\n… ${lines.length - attempt.revealed} more line${lines.length - attempt.revealed === 1 ? '' : 's'}` : '');
-  $('ladder-next').hidden = attempt.revealed >= lines.length;
-  $('ladder-next').textContent = attempt.revealed === 0 ? 'Show the first line' : 'Show the next line';
-  $('ladder-all').textContent = attempt.revealed >= lines.length ? 'Put it in the editor' : 'Put the whole thing in the editor';
-  $('ladder-note').textContent = attempt.revealed === 0
-    ? `${lines.length} lines. A glimpse costs a hint’s worth; the whole thing costs the rest.`
-    : attempt.revealed >= lines.length
-      ? 'That is all of it. Typing it out yourself is worth more than pasting it.'
-      : `${attempt.revealed} of ${lines.length} shown. Stop as soon as you can carry on.`;
-}
-
-
-// Ask for a diagnosis before giving one. Once per visit to a mission, and only
-// where a failure is mechanical enough to be named honestly.
-function askTheCause(result, thrown, then) {
-  const item = level();
-  if (attempt.diagnosed || !(item.kind === 'code' || algoKinds.has(item.kind))) { then(); return; }
-  const asked = causeQuestion(item, result, thrown);
-  if (!asked) { then(); return; }
-  attempt.diagnosed = true;
-  const panel = $('cause');
-  panel.hidden = false;
-  $('cause-prompt').textContent = asked.prompt;
-  $('cause-verdict').hidden = true;
-  const options = $('cause-options');
-  options.replaceChildren(...asked.options.map(option => {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'cause-option';
-    button.textContent = option.label;
-    button.addEventListener('click', () => {
-      const right = option.value === asked.answer;
-      options.querySelectorAll('button').forEach(other => { other.disabled = true; });
-      button.classList.add(right ? 'right' : 'wrong');
-      options.querySelector(`[data-answer="${asked.answer}"]`)?.classList.add('right');
-      const verdict = $('cause-verdict');
-      verdict.hidden = false;
-      verdict.className = `cause-verdict ${right ? 'right' : 'wrong'}`;
-      verdict.textContent = right
-        ? 'That is it. Here is how the machine put it:'
-        : `Not this time — it was “${causes[asked.answer].label.toLowerCase()}”. Here is how the machine put it:`;
-      if (right) feats.diagnosed = (feats.diagnosed ?? 0) + 1;
-      persist();
-      then();
-    });
-    button.dataset.answer = option.value;
-    return button;
-  }));
-  reveal(panel);
-}
-
-function renderPrediction() {
-  const item = level();
-  const asked = predictionFor(item);
-  const row = $('predict');
-  row.hidden = false;
-  $('predict-prompt').textContent = asked.prompt;
-  const options = $('predict-options');
-  options.replaceChildren(...asked.options.map(option => {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = `predict-option ${attempt.predicted === option.value ? 'chosen' : ''}`;
-    button.setAttribute('aria-pressed', String(attempt.predicted === option.value));
-    button.textContent = option.label;
-    button.addEventListener('click', () => {
-      attempt.predicted = attempt.predicted === option.value ? null : option.value;
-      renderPrediction();
-    });
-    return button;
-  }));
-  $('predict-verdict').hidden = true;
-  $('predict-verdict').textContent = '';
-}
-
-// Called once a run has produced something, with whatever that kind's evaluator
-// returned — or the error, when the program did not run at all.
-function settlePrediction(result, thrown = null) {
-  if (attempt.predicted === null) return;
-  const happened = predictionActual(level(), result, thrown);
-  const called = predictionVerdict(level(), attempt.predicted, happened);
-  if (!called) return;
-  if (called.right) feats.predictions = (feats.predictions ?? 0) + 1;
-  const row = $('predict-verdict');
-  row.hidden = false;
-  row.className = `predict-verdict ${called.right ? 'right' : 'wrong'}`;
-  row.textContent = called.message;
-  log(called.right ? `Prediction: ${called.message}` : `Prediction: ${called.message}`, called.right ? 'success' : null);
-  attempt.predicted = null;
-  persist();
-}
 
 function loadMission(index) {
   runToken++;
   running = false;
   current = Math.max(0, Math.min(levels.length - 1, index));
   const item = level();
-  $('cause').hidden = true;
-  hintIndex = 0; panelChoice = 0; attempt = {hints:0, solutionShown:false, revealed:0, runs:0, predicted:null, diagnosed:false}; trace = null; traceIndex = 0; visited = []; algoResult = null;
+  trace = null; traceIndex = 0; visited = []; algoResult = null;
   unit = item.start ? {x:item.start[0], y:item.start[1], dir:item.start[2]} : null;
-  scene?.destroy(); scene = null; sceneLevel = null;
-  stage?.destroy(); stage = null; stageKind = null;
+  arena.reset();
   puzzleState = isPuzzle(item) ? initialState(item) : null;
 
   $('mission-meta').textContent = `MISSION ${String(current + 1).padStart(2, '0')} / ${String(levels.length).padStart(2, '0')} · ${item.chapter.toUpperCase()}`;
@@ -377,13 +202,9 @@ function loadMission(index) {
   $('objective').textContent = item.objective;
   $('lesson-title').textContent = item.concept;
   $('lesson').textContent = item.lesson;
-  readingPanel(item);
   $('lesson-source').href = item.reference.url;
   $('lesson-source').textContent = item.reference.label;
   $('map-label').textContent = mapLabel(item.kind);
-  $('hint-text').textContent = 'Mistakes are part of the mission. Try an idea and read what comes back.';
-  $('hint').textContent = 'Get a hint';
-  $('hint').disabled = false;
   $('result').hidden = true;
   $('step-count').textContent = 'Ready';
 
@@ -410,170 +231,12 @@ function loadMission(index) {
     : algoKinds.has(item.kind) ? `Write ${item.signature} and run the tests.`
     : 'Set up the model, then run it.');
   navigation();
+  mission.load(item);
   renderArena();
-  renderPrediction();
-  renderLadder();
   controls();
   persist();
 }
 
-function renderArena() {
-  const item = level();
-  if (item.kind === 'code') {
-    if (!scene || sceneLevel !== item.id) { scene?.destroy(); scene = createScene($('arena'), item, unit); sceneLevel = item.id; }
-    scene.update(unit, visited);
-    $('legend').innerHTML = '<span class="legend-unit">➤ Cyan arrow: facing direction</span><span>◎ Amber ring: power cell</span><span>Only raised tiles are traversable</span>';
-    return;
-  }
-  scene?.destroy(); scene = null; sceneLevel = null;
-  if (item.kind === 'spec') { stage?.destroy(); stage = null; stageKind = null; renderSpec(); return; }
-  if (algoKinds.has(item.kind)) { stage?.destroy(); stage = null; stageKind = null; renderCases(); return; }
-  const rendered = view(item, puzzleState);
-  document.querySelector('.network-instructions').textContent = rendered.instructions;
-  $('legend').innerHTML = rendered.legend.map((entry, position) => `<span${position === 0 ? ' class="legend-unit"' : ''}>${entry}</span>`).join('');
-  $('link-total').textContent = rendered.summary;
-  const built = sceneFor(item);
-  if (built) renderStage(item, built);
-  else {
-    stage?.destroy(); stage = null; stageKind = null;
-    renderDiagram(rendered.diagram);
-  }
-  renderWidgets();
-}
-
-// A mission with an isometric scene draws it on a canvas; clicking a solid does
-// whatever clicking the matching control would.
-function renderStage(item, built) {
-  if (!stage || stageKind !== item.id) {
-    stage?.destroy();
-    stage = createStage($('arena'), {
-      bounds:state => built.bounds(state.level, state.state),
-      build:(scene, context) => built.build(scene, {...context, level:context.state.level, state:context.state.state}),
-      describe:state => built.describe(state.level, state.state),
-      still:built.still ?? false,
-      aspect:built.aspect ?? 0.58,
-      onPick:id => {
-        const [type, index] = String(id).split('-');
-        if (type === 'bit') act({type:'bit', index:Number(index)});
-        if (type === 'link') act({type:'link', index:Number(index)});
-      }
-    });
-    stageKind = item.id;
-  }
-  stage.update({level:item, state:puzzleState});
-}
-
-// Diagrams are described by the puzzle layer and drawn by these few renderers,
-// so a new mission kind does not need new markup.
-// Missions whose kind has an isometric scene never reach this: renderArena
-// prefers the scene, and puzzles.js gives those kinds no diagram at all.
-function renderDiagram(diagram) {
-  const wrap = document.createElement('div');
-  wrap.className = `puzzle diagram-${diagram.type}`;
-  if (diagram.type === 'table') {
-    wrap.innerHTML = `<div class="eyebrow">${diagram.caption ?? ''}</div><table class="data-table"><thead><tr>${diagram.columns.map(column => `<th>${column}</th>`).join('')}</tr></thead><tbody>${diagram.rows.map((row, index) => `<tr class="${diagram.problems?.[index] ? 'problem' : ''} ${diagram.highlight === index ? 'highlight' : ''}">${row.map(cell => `<td>${cell}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
-  }
-  if (diagram.type === 'bars') {
-    // A row may carry its own full-scale value, so bars that measure different
-    // things — seconds against a deadline, a fraction against a cap — each read
-    // against their own target instead of against the largest number present.
-    const widest = Math.max(1e-9, ...diagram.rows.map(row => row.value));
-    const fill = row => Math.max(1, Math.min(100, Math.round((row.value / (row.max ?? widest)) * 100)));
-    wrap.innerHTML = `<div class="eyebrow">${diagram.caption ?? ''}</div><div class="bar-view">${diagram.rows.map(row => `<div class="bar-row ${row.problem ? 'problem' : ''}"><span class="bar-name">${row.name}</span><div class="bar-track"><i style="width:${fill(row)}%"></i></div><span class="bar-detail">${row.detail}</span></div>`).join('')}</div>`;
-  }
-  if (diagram.type === 'timeline') {
-    wrap.innerHTML = `<div class="eyebrow">${diagram.caption ?? ''} · ${diagram.total} MS</div><div class="bar-view">${diagram.rows.map(row => `<div class="bar-row"><span class="bar-name">${row.name}</span><div class="bar-track"><i style="width:${Math.max(2, Math.round(row.value / diagram.total * 100))}%;margin-left:${Math.round((row.at - row.value) / diagram.total * 100)}%"></i></div><span class="bar-detail">${row.detail}</span></div>`).join('')}</div>`;
-  }
-  if (diagram.type === 'cards') {
-    wrap.innerHTML = `<div class="eyebrow">${diagram.caption ?? 'QUESTIONS'}</div><div class="card-view">${diagram.rows.map((row, index) => `<div class="question-card ${row.answered ? 'answered' : ''}"><small>${index + 1}</small><strong>${row.name}</strong><span>${row.detail}</span></div>`).join('')}</div>`;
-  }
-  $('arena').replaceChildren(wrap);
-}
-
-function renderWidgets() {
-  const item = level();
-  const list = widgets(item, puzzleState);
-  const container = $('link-list');
-  container.replaceChildren();
-  for (const widget of list) {
-    if (widget.type === 'toggle' || widget.type === 'button') {
-      const button = document.createElement('button');
-      button.className = 'link-option';
-      if (widget.type === 'toggle') button.setAttribute('aria-pressed', String(widget.on));
-      button.innerHTML = widget.type === 'toggle'
-        ? `<span class="link-check">${widget.on ? '✓' : ''}</span><span>${widget.label}</span><span class="link-cost">${widget.note ?? ''}</span>`
-        : `<span>${widget.label}</span>`;
-      button.addEventListener('click', () => act(widget.action));
-      container.append(button);
-      continue;
-    }
-    const row = document.createElement('div');
-    row.className = `widget-row widget-${widget.type}`;
-    if (widget.type === 'order') {
-      row.innerHTML = `<span class="widget-label">${widget.label}${widget.note ? `<small>${widget.note}</small>` : ''}</span><span class="order-buttons"><button aria-label="Move ${widget.label} earlier" ${widget.first ? 'disabled' : ''}>▲</button><button aria-label="Move ${widget.label} later" ${widget.last ? 'disabled' : ''}>▼</button></span>`;
-      const [up, down] = row.querySelectorAll('button');
-      up.addEventListener('click', () => act(widget.up));
-      down.addEventListener('click', () => act(widget.down));
-    }
-    if (widget.type === 'dial' || widget.type === 'choice') {
-      row.innerHTML = `<span class="widget-label">${widget.label}${widget.help || widget.note ? `<small>${widget.help || widget.note}</small>` : ''}</span><span class="segmented">${widget.options.map((option, index) => `<button data-option="${index}" class="component-option ${option.selected ? 'chosen' : ''}" aria-pressed="${!!option.selected}"><span>${option.label}</span></button>`).join('')}</span>`;
-      row.querySelectorAll('[data-option]').forEach(button => {
-        const option = widget.options[Number(button.dataset.option)];
-        button.addEventListener('click', () => act(option.action ?? {type:'dial', id:widget.id, value:option.value}));
-      });
-    }
-    container.append(row);
-  }
-}
-
-
-// A spec mission shows the code under test rather than a case list: the cases
-// are the player's, and what matters is which broken versions they reject.
-function renderSpec(result = null) {
-  const item = level();
-  const wrap = document.createElement('div');
-  wrap.className = 'puzzle diagram-spec';
-  const rows = item.mutants.map((mutant, index) => {
-    const outcome = result?.mutants?.[index];
-    const status = !outcome ? '·' : outcome.caught ? '✓' : '✗';
-    const detail = !outcome ? 'not run yet'
-      : outcome.caught ? `rejected by case ${outcome.by.join(', ')}`
-      : `passes your suite — ${mutant.why}`;
-    return `<div class="case-row ${!outcome ? '' : outcome.caught ? 'pass' : 'fail'}"><span class="case-status">${status}</span><code>${mutant.name}</code><span class="case-detail">${detail}</span></div>`;
-  }).join('');
-  const written = result?.cases?.length ?? 0;
-  wrap.innerHTML = `<div class="eyebrow">${item.subject.signature}</div>
-    <pre class="polyglot-code" tabindex="0" aria-label="The function under test, as it is meant to behave">${item.subject.contract}</pre>
-    <div class="eyebrow">${item.mutants.length} BROKEN VERSIONS${result ? ` · ${result.mutants.filter(mutant => mutant.caught).length} REJECTED · ${written} CASE${written === 1 ? '' : 'S'} WRITTEN` : ''}</div>
-    <div class="case-table">${rows}</div>`;
-  $('arena').replaceChildren(wrap);
-  $('legend').innerHTML = '<span class="legend-unit">✓ Your suite rejects it</span><span>✗ It passes your suite</span><span>A test that passes everything tests nothing</span>';
-}
-
-function renderCases(result = null) {
-  const item = level();
-  const wrap = document.createElement('div');
-  wrap.className = 'puzzle diagram-cases';
-  const rows = item.cases.map((testCase, index) => {
-    const outcome = result?.cases?.[index];
-    const status = !outcome ? '·' : outcome.passed && !outcome.overGate ? '✓' : '✗';
-    const className = !outcome ? '' : outcome.passed && !outcome.overGate ? 'pass' : 'fail';
-    const detail = !outcome
-      ? testCase.note ?? ''
-      : outcome.error ? outcome.error
-      : !outcome.passed ? `returned ${describe(outcome.actual)}`
-      : outcome.overGate ? `${count(outcome.operations)} steps, over the ${count(outcome.maxOperations)} allowed`
-      : `${count(outcome.operations)} steps${testCase.maxOperations ? ` of ${count(testCase.maxOperations)} allowed` : ''}`;
-    return `<div class="case-row ${className}"><span class="case-status">${status}</span><code>${item.fn}(${testCase.args.map(argument => short(describe(argument))).join(', ')})</code><span class="case-expect">→ ${short(describe(testCase.expect))}</span><span class="case-detail">${detail}</span></div>`;
-  }).join('');
-  // A refactor mission can pass every case and still be refused, so the panel
-  // says which rule is outstanding rather than showing an unexplained full house.
-  const shapeNote = result?.shape ? `<p class="case-shape">${result.shape}</p>` : '';
-  wrap.innerHTML = `<div class="eyebrow">${item.cases.length} TEST CASES${result ? ` · ${result.cases.filter(entry => entry.passed && !entry.overGate).length} PASSING${result.shape ? ' · SHAPE RULE NOT MET' : ''}` : ''}</div>${shapeNote}<div class="case-table">${rows}</div>${result?.output?.length ? `<div class="case-output"><strong>print() output</strong>${result.output.slice(0, 12).map(line => `<code>${line}</code>`).join('')}</div>` : ''}`;
-  $('arena').replaceChildren(wrap);
-  $('legend').innerHTML = '<span class="legend-unit">✓ Case passed</span><span>✗ Case failed</span><span>Steps counted by the interpreter</span>';
-}
-const short = text => text.length > 42 ? `${text.slice(0, 39)}…` : text;
 
 function act(action) {
   if (running || !action) return;
@@ -603,7 +266,7 @@ function win() {
   const before = stationState(records);
   const beforeBadges = new Set(earnedAchievements(records, feats).filter(badge => badge.done).map(badge => badge.id));
   const previous = records[item.id] ?? null;
-  const earnedRank = rankFor(attempt);
+  const earnedRank = rankFor(mission.attempt);
   const rank = ranks[previous ? bestRank(previous.rank, earnedRank.id) : earnedRank.id];
   const improved = previous && rank.id !== previous.rank;
 
@@ -612,14 +275,14 @@ function win() {
   reviews[item.id] = scheduleAfter(0, true);
   records[item.id] = {
     rank:rank.id,
-    firstTry:(previous?.firstTry ?? false) || (attempt.runs <= 1 && earnedRank.id === 'gold'),
-    runs:(previous?.runs ?? 0) + attempt.runs
+    firstTry:(previous?.firstTry ?? false) || (mission.attempt.runs <= 1 && earnedRank.id === 'gold'),
+    runs:(previous?.runs ?? 0) + mission.attempt.runs
   };
   persist();
   navigation();
   station.render();
   dueBadge();
-  scene?.celebrate();
+  arena.celebrate();
 
   const after = stationState(records);
   const section = sectionOf(item);
@@ -663,7 +326,7 @@ function prepare() {
   visited = [];
   const item = level();
   unit = {x:item.start[0], y:item.start[1], dir:item.start[2]};
-  scene?.update(unit, [], true);
+  arena.place(unit);
   $('result').hidden = true;
   $('log').replaceChildren();
   drafts[item.id] = $('code').value;
@@ -672,15 +335,15 @@ function prepare() {
     trace = simulate(item, $('code').value);
     // The drone's fate is known as soon as the trace is, even though the
     // animation has not played it out yet.
-    settlePrediction(trace);
+    mission.settlePrediction(trace);
     renderArena();
     for (const line of trace.output) log(`print → ${line}`);
     if (!trace.steps.length) { log('Your program has no actions yet. Add a command.'); return false; }
     return true;
   } catch (error) {
     trace = null;
-    settlePrediction(null, error);
-    askTheCause(null, error, () => { log(error.message, 'error'); tone(false); reveal(outcomePanel()); });
+    mission.settlePrediction(null, error);
+    mission.askTheCause(null, error, () => { log(error.message, 'error'); tone(false); reveal(outcomePanel()); });
     return false;
   }
 }
@@ -693,7 +356,7 @@ function applyStep() {
   log(`L${step.line} · ${step.label}`, step.error ? 'error' : '');
   if (traceIndex === trace.steps.length) {
     if (trace.success) { win(); return; }
-    askTheCause(trace, null, () => {
+    mission.askTheCause(trace, null, () => {
       log(trace.error || 'Program finished. The cell is still out of reach — adjust your instructions and try again.', 'error');
       reveal(outcomePanel());
     });
@@ -703,22 +366,22 @@ const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 async function run() {
   if (running) return;
-  attempt.runs++;
+  mission.countRun();
   const item = level();
   if (item.kind === 'spec') {
     drafts[item.id] = $('code').value;
     persist();
     $('log').replaceChildren();
     algoResult = evaluateSpec(item, $('code').value);
-    settlePrediction(algoResult);
+    mission.settlePrediction(algoResult);
     if (algoResult.success) feats.tightestSuite = Math.min(feats.tightestSuite ?? Infinity, algoResult.cases.length);
-    renderSpec(algoResult);
+    arena.spec(item, algoResult);
     for (const line of algoResult.output.slice(0, 12)) log(`print → ${line}`);
     $('step-count').textContent = algoResult.mutants.length
       ? `${algoResult.mutants.filter(mutant => mutant.caught).length} / ${item.mutants.length} caught`
       : 'Suite not run';
     if (algoResult.success) { log(algoResult.message, 'success'); win(); }
-    else askTheCause(algoResult, null, () => { log(algoResult.error, 'error'); tone(false); reveal(outcomePanel()); });
+    else mission.askTheCause(algoResult, null, () => { log(algoResult.error, 'error'); tone(false); reveal(outcomePanel()); });
     return;
   }
   if (algoKinds.has(item.kind)) {
@@ -726,7 +389,7 @@ async function run() {
     persist();
     $('log').replaceChildren();
     algoResult = evaluateAlgorithm(item, $('code').value);
-    settlePrediction(algoResult);
+    mission.settlePrediction(algoResult);
     if (algoResult.success) {
       // How far under the tightest budget this mission set, for the achievement
       // that is about beating a gate rather than merely passing it.
@@ -735,11 +398,11 @@ async function run() {
         feats.bestGateRatio = Math.min(feats.bestGateRatio ?? Infinity, entry.operations / entry.maxOperations);
       }
     }
-    renderCases(algoResult);
+    arena.cases(item, algoResult);
     for (const line of algoResult.output.slice(0, 12)) log(`print → ${line}`);
     $('step-count').textContent = `${algoResult.cases.filter(entry => entry.passed && !entry.overGate).length} / ${item.cases.length} cases`;
     if (algoResult.success) { log(`All ${item.cases.length} cases pass.`, 'success'); win(); }
-    else askTheCause(algoResult, null, () => { log(algoResult.error, 'error'); tone(false); reveal(outcomePanel()); });
+    else mission.askTheCause(algoResult, null, () => { log(algoResult.error, 'error'); tone(false); reveal(outcomePanel()); });
     return;
   }
   if (isPuzzle(item)) {
@@ -756,7 +419,7 @@ async function run() {
       if (token !== runToken) return;
     }
     const result = evaluate(item, puzzleState);
-    settlePrediction(result);
+    mission.settlePrediction(result);
     $('step-count').textContent = 'Check complete';
     log(result.message, result.success ? 'success' : 'error');
     if (result.success) win(); else { tone(false); reveal(outcomePanel()); }
@@ -803,22 +466,8 @@ $('reset').addEventListener('click', () => {
   if (level().kind === 'code' || algoKinds.has(level().kind)) drafts[level().id] = level().starter;
   loadMission(current);
 });
-$('hint').addEventListener('click', () => {
-  attempt.hints++;
-  const hints = level().hints;
-  $('hint-text').textContent = hints[Math.min(hintIndex++, hints.length - 1)];
-  $('hint').textContent = hintIndex >= hints.length ? 'All hints shown' : 'Another hint';
-  $('hint').disabled = hintIndex >= hints.length;
-});
-$('ladder-next').addEventListener('click', () => {
-  attempt.revealed = Math.min(attempt.revealed + 1, solutionLines().length);
-  renderLadder();
-  persist();
-});
-$('ladder-all').addEventListener('click', () => $('solution').click());
 $('solution').addEventListener('click', () => {
-  attempt.solutionShown = true;
-  attempt.revealed = solutionLines().length;
+  mission.revealSolution();
   runToken++;
   running = false;
   controls();
@@ -830,13 +479,13 @@ $('solution').addEventListener('click', () => {
     lineNumbers();
     drafts[item.id] = item.solution;
     persist();
-    if (item.kind === 'spec') renderSpec(); else if (algoKinds.has(item.kind)) renderCases();
+    if (item.kind === 'spec') arena.spec(item); else if (algoKinds.has(item.kind)) arena.cases(item);
   } else {
     puzzleState = solutionState(item);
       renderArena();
   }
   $('result').hidden = true;
-  renderLadder();
+  mission.renderLadder();
   $('hint-text').textContent = 'A working solution is loaded. Run it, then reset the mission and try explaining each step yourself.';
 });
 $('next').addEventListener('click', () => loadMission((current + 1) % levels.length));

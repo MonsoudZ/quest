@@ -9,7 +9,7 @@ import {fileURLToPath} from 'node:url';
 const dist = resolve(dirname(fileURLToPath(import.meta.url)), '../dist');
 const read = name => readFileSync(resolve(dist, name), 'utf8');
 const html = read('index.html');
-const scripts = ['game.js', 'builder.js', 'citylab.js', 'scene.js', 'webmcp.js', 'puzzles.js', 'ui.js'].map(read).join('\n');
+const scripts = ['game.js', 'arena.js', 'console.js', 'builder.js', 'citylab.js', 'scene.js', 'webmcp.js', 'puzzles.js', 'ui.js'].map(read).join('\n');
 const styles = ['theme.css', 'app.css'].map(read).join('\n');
 
 test('every local file the page links to exists', () => {
