@@ -132,7 +132,7 @@ test('every game mode is reachable on a phone without a hidden sideways scroller
 
 test('the station mode is wired into the page the same way the others are', async () => {
   const {sections} = await import('../dist/progress.js');
-  for (const id of ['station', 'station-mode', 'result-rank', 'result-power', 'result-note', 'result-badges']) {
+  for (const id of ['station', 'station-mode', 'review', 'review-mode', 'predict', 'predict-prompt', 'predict-options', 'predict-verdict', 'result-rank', 'result-power', 'result-note', 'result-badges']) {
     assert.match(html, new RegExp(`id="${id}"`), `the page has no #${id}`);
   }
   // The power bar measures restored power now, so its ceiling has to match.

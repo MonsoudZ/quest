@@ -174,6 +174,14 @@ export const achievements = [
       .every(chapter => levels.some(level => level.chapter === chapter && records[level.id]?.rank))
   },
   {
+    id:'called-it', name:'Called it', hint:'Predict what a run will do, correctly, ten times.',
+    earned:({feats}) => (feats.predictions ?? 0) >= 10
+  },
+  {
+    id:'it-stuck', name:'It stuck', hint:'Recall twenty review questions correctly.',
+    earned:({feats}) => (feats.recalled ?? 0) >= 20
+  },
+  {
     id:'station-restored', name:'Station restored', hint:'Bring every section online.',
     earned:({state}) => state.online
   }

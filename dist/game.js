@@ -4,6 +4,9 @@ import {isPuzzle, initialState, solutionState, applyAction, widgets, view, evalu
 import {mountBuilder} from './builder.js';
 import {mountCity} from './citylab.js';
 import {mountStation} from './station.js';
+import {mountReview} from './reviewlab.js';
+import {question as predictionFor, actual as predictionActual, verdict as predictionVerdict} from './predict.js';
+import {scheduleAfter, dueItems} from './recall.js';
 import {rankFor, bestRank, ranks, stationState, earnedAchievements, sectionOf} from './progress.js';
 import {registerGameTools} from './webmcp.js';
 import {createScene} from './scene.js';
@@ -32,10 +35,18 @@ const feats = {
   bestGateRatio:Number(saved?.feats?.bestGateRatio) || undefined,
   citySpare:Number(saved?.feats?.citySpare) || undefined,
   labSpare:Number(saved?.feats?.labSpare) || undefined,
-  languagesRead:Number(saved?.feats?.languagesRead) || 0
+  languagesRead:Number(saved?.feats?.languagesRead) || 0,
+  predictions:Number(saved?.feats?.predictions) || 0,
+  recalled:Number(saved?.feats?.recalled) || 0
 };
 // Per-mission attempt state, reset whenever a mission is loaded.
-let attempt = {hints:0, solutionShown:false, runs:0};
+let attempt = {hints:0, solutionShown:false, runs:0, predicted:null};
+// When each solved mission is next worth being asked about.
+const reviews = {};
+for (const [id, entry] of Object.entries(saved?.reviews ?? {})) {
+  if (!levels.some(level => level.id === id)) continue;
+  reviews[id] = {box:Math.min(Math.max(Number(entry?.box) || 1, 1), 5), due:Number(entry?.due) || Date.now()};
+}
 let earnedBefore = new Set();
 let current = Math.max(0, levels.findIndex(level => level.id === saved?.current));
 let drafts = saved?.drafts && typeof saved.drafts === 'object' ? saved.drafts : {};
@@ -47,7 +58,7 @@ let stage = null, stageKind = null;
 const level = () => levels[current];
 
 function persist() {
-  try { localStorage.setItem(saveKey, JSON.stringify({completed:[...completed], records, feats, current:level().id, drafts, collapsed:[...collapsed]})); }
+  try { localStorage.setItem(saveKey, JSON.stringify({completed:[...completed], records, feats, reviews, current:level().id, drafts, collapsed:[...collapsed]})); }
   catch {
     const note = document.querySelector('.save-note');
     if (note) note.textContent = 'Browser storage is unavailable. Progress lasts until this page closes.';
@@ -230,12 +241,56 @@ function readingPanel(item) {
   $('polyglot-sample-note').textContent = pane.note;
 }
 
+
+// Predict, then run. Committing to an answer before the machine gives you one is
+// worth more than the answer; nothing is scored on it, and being wrong is the
+// useful case.
+function renderPrediction() {
+  const item = level();
+  const asked = predictionFor(item);
+  const row = $('predict');
+  row.hidden = false;
+  $('predict-prompt').textContent = asked.prompt;
+  const options = $('predict-options');
+  options.replaceChildren(...asked.options.map(option => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = `predict-option ${attempt.predicted === option.value ? 'chosen' : ''}`;
+    button.setAttribute('aria-pressed', String(attempt.predicted === option.value));
+    button.textContent = option.label;
+    button.addEventListener('click', () => {
+      attempt.predicted = attempt.predicted === option.value ? null : option.value;
+      renderPrediction();
+    });
+    return button;
+  }));
+  $('predict-verdict').hidden = true;
+  $('predict-verdict').textContent = '';
+}
+
+// Called once a run has produced something, with whatever that kind's evaluator
+// returned — or the error, when the program did not run at all.
+function settlePrediction(result, thrown = null) {
+  if (attempt.predicted === null) return;
+  const happened = predictionActual(level(), result, thrown);
+  const called = predictionVerdict(level(), attempt.predicted, happened);
+  if (!called) return;
+  if (called.right) feats.predictions = (feats.predictions ?? 0) + 1;
+  const row = $('predict-verdict');
+  row.hidden = false;
+  row.className = `predict-verdict ${called.right ? 'right' : 'wrong'}`;
+  row.textContent = called.message;
+  log(called.right ? `Prediction: ${called.message}` : `Prediction: ${called.message}`, called.right ? 'success' : null);
+  attempt.predicted = null;
+  persist();
+}
+
 function loadMission(index) {
   runToken++;
   running = false;
   current = Math.max(0, Math.min(levels.length - 1, index));
   const item = level();
-  hintIndex = 0; panelChoice = 0; attempt = {hints:0, solutionShown:false, runs:0}; trace = null; traceIndex = 0; visited = []; networkResult = null; algoResult = null;
+  hintIndex = 0; panelChoice = 0; attempt = {hints:0, solutionShown:false, runs:0, predicted:null}; trace = null; traceIndex = 0; visited = []; networkResult = null; algoResult = null;
   unit = item.start ? {x:item.start[0], y:item.start[1], dir:item.start[2]} : null;
   scene?.destroy(); scene = null; sceneLevel = null;
   stage?.destroy(); stage = null; stageKind = null;
@@ -283,6 +338,7 @@ function loadMission(index) {
     : 'Set up the model, then run it.');
   navigation();
   renderArena();
+  renderPrediction();
   controls();
   persist();
 }
@@ -556,6 +612,8 @@ function win() {
   const improved = previous && rank.id !== previous.rank;
 
   completed.add(item.id);
+  // Solved once is not learned. Ask about it again tomorrow.
+  reviews[item.id] = scheduleAfter(0, true);
   records[item.id] = {
     rank:rank.id,
     firstTry:(previous?.firstTry ?? false) || (attempt.runs <= 1 && earnedRank.id === 'gold'),
@@ -564,6 +622,7 @@ function win() {
   persist();
   navigation();
   station.render();
+  dueBadge();
   scene?.celebrate();
 
   const after = stationState(records);
@@ -615,12 +674,16 @@ function prepare() {
   persist();
   try {
     trace = simulate(item, $('code').value);
+    // The drone's fate is known as soon as the trace is, even though the
+    // animation has not played it out yet.
+    settlePrediction(trace);
     renderArena();
     for (const line of trace.output) log(`print → ${line}`);
     if (!trace.steps.length) { log('Your program has no actions yet. Add a command.'); return false; }
     return true;
   } catch (error) {
     trace = null;
+    settlePrediction(null, error);
     log(error.message, 'error');
     tone(false);
     reveal(outcomePanel());
@@ -651,6 +714,7 @@ async function run() {
     persist();
     $('log').replaceChildren();
     algoResult = evaluateSpec(item, $('code').value);
+    settlePrediction(algoResult);
     if (algoResult.success) feats.tightestSuite = Math.min(feats.tightestSuite ?? Infinity, algoResult.cases.length);
     renderSpec(algoResult);
     for (const line of algoResult.output.slice(0, 12)) log(`print → ${line}`);
@@ -666,6 +730,7 @@ async function run() {
     persist();
     $('log').replaceChildren();
     algoResult = evaluateAlgorithm(item, $('code').value);
+    settlePrediction(algoResult);
     if (algoResult.success) {
       // How far under the tightest budget this mission set, for the achievement
       // that is about beating a gate rather than merely passing it.
@@ -696,6 +761,7 @@ async function run() {
       if (token !== runToken) return;
     }
     const result = evaluate(item, puzzleState);
+    settlePrediction(result);
     $('step-count').textContent = 'Check complete';
     log(result.message, result.success ? 'success' : 'error');
     if (result.success) win(); else { tone(false); reveal(outcomePanel()); }
@@ -800,13 +866,37 @@ const station = mountStation($('station'), {
   }
 });
 station.render();
-const modes = ['campaign', 'builder', 'city', 'station'];
+const review = mountReview($('review'), {
+  getReviews:() => reviews,
+  onAnswer:(id, right) => {
+    reviews[id] = scheduleAfter(reviews[id]?.box ?? 1, right);
+    if (right) feats.recalled = (feats.recalled ?? 0) + 1;
+    persist();
+    dueBadge();
+  },
+  onOpen:id => {
+    const index = levels.findIndex(level => level.id === id);
+    if (index < 0) return;
+    setMode('campaign');
+    loadMission(index);
+  }
+});
+// The review button says how much is waiting, because nothing else will.
+function dueBadge() {
+  const due = dueItems(reviews).length;
+  const button = $('review-mode');
+  button.textContent = due ? `05 · Review · ${due}` : '05 · Review';
+  button.classList.toggle('has-due', due > 0);
+}
+const modes = ['campaign', 'builder', 'city', 'station', 'review'];
+dueBadge();
 function setMode(nextMode) {
   runToken++;
   running = false;
   controls();
   mode = nextMode;
   if (nextMode === 'station') station.render();
+  if (nextMode === 'review') review.start();
   for (const name of modes) {
     $(name).hidden = name !== mode;
     $(`${name}-mode`).classList.toggle('active', name === mode);

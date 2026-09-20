@@ -43,6 +43,7 @@
       <button id="builder-mode" class="mode-button" aria-pressed="false">02 · Architecture lab</button>
       <button id="city-mode" class="mode-button" aria-pressed="false">03 · Signal City</button>
       <button id="station-mode" class="mode-button" aria-pressed="false">04 · Station</button>
+      <button id="review-mode" class="mode-button" aria-pressed="false">05 · Review</button>
     </div>
     <span>4 chapters · 54 missions</span>
   </nav>
@@ -98,6 +99,11 @@
             <p class="network-instructions"></p>
             <div id="link-list"></div>
             <p id="link-total" class="link-total"></p>
+          </div>
+          <div id="predict" class="predict" hidden>
+            <p id="predict-prompt" class="predict-prompt"></p>
+            <div id="predict-options" class="predict-options"></div>
+            <p id="predict-verdict" class="predict-verdict" role="status" aria-live="polite" hidden></p>
           </div>
           <div class="actions">
             <button id="run" class="primary">▶ Run program</button>
@@ -160,6 +166,7 @@
 
   <main id="builder" class="builder-workspace" hidden></main>
   <main id="station" class="station-workspace" hidden></main>
+  <main id="review" class="review-workspace" hidden></main>
   <main id="city" class="builder-workspace" hidden></main>
 
   <footer>

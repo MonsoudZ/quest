@@ -146,6 +146,10 @@ test('every achievement is unearned at the start and reachable by doing the thin
   assert.ok(!earnedWith({}, {labSpare:0.19}).has('thrifty-lab'));
   assert.ok(earnedWith({}, {languagesRead:5}).has('polyglot'));
   assert.ok(!earnedWith({}, {languagesRead:4}).has('polyglot'));
+  assert.ok(earnedWith({}, {predictions:10}).has('called-it'));
+  assert.ok(!earnedWith({}, {predictions:9}).has('called-it'));
+  assert.ok(earnedWith({}, {recalled:20}).has('it-stuck'));
+  assert.ok(!earnedWith({}, {recalled:19}).has('it-stuck'));
 
   const oneEach = Object.fromEntries(['Programming', 'Computer science', 'Networking', 'System design']
     .map(chapterName => [levels.find(level => level.chapter === chapterName).id, {rank:'silver'}]));
@@ -153,6 +157,6 @@ test('every achievement is unearned at the start and reachable by doing the thin
   assert.ok(!earnedWith({[levels[0].id]:{rank:'gold'}}, {}).has('all-chapters'));
 
   // And everything is earned by a finished station with every feat.
-  const everything = earnedWith(all('gold'), {tightestSuite:5, bestGateRatio:0.04, citySpare:0.3, labSpare:0.3, languagesRead:5});
+  const everything = earnedWith(all('gold'), {tightestSuite:5, bestGateRatio:0.04, citySpare:0.3, labSpare:0.3, languagesRead:5, predictions:10, recalled:20});
   assert.equal(everything.size, achievements.length, `${achievements.length - everything.size} achievements cannot be earned`);
 });

@@ -123,6 +123,32 @@ languages in a language panel.
 None of it is a timer, a streak, or a leaderboard. The only things measured are what
 you solved and how much help you took.
 
+### Predict, then run
+
+Before a mission runs, it asks one question: what does the drone do, which case
+fails first, how many of the broken versions survive your suite, does this meet
+the target. Committing to an answer before the machine hands you one is worth
+more than the answer — watching correct output teaches very little, and being
+wrong on purpose teaches a lot. Nothing is scored on it, and the wrong case is
+the one worth having: the console says what you predicted, what happened, and
+that the gap is the useful part.
+
+### Spaced review
+
+A mission solved once and never seen again is mostly forgotten in a month. The
+fifth mode brings solved missions back a day later, then three, then a week, a
+fortnight, five weeks — and one wrong answer sends a question back to the start,
+because the thing you just failed to recall is the thing to ask again soon.
+
+Questions are generated from what each mission already ships, so there is no
+second body of content to keep in step and nothing can be asked that the game
+does not already check: what a function returns for one of its own cases, which
+line belongs in the gap of a program you wrote, which dial setting met the
+target, which parity position was flipped, what the best route cost. The queue
+is mixed across chapters rather than blocked by topic, which is worth more than
+the extra practice itself. Nothing is timed, nothing is lost by missing a day,
+and the review button says how much is waiting because nothing else will.
+
 ### The two build modes
 
 The missions teach a concept each; the build modes are where you apply them at scale, against
@@ -265,7 +291,7 @@ and the tests check them against independent implementations.
 
 ## Validation
 
-Run `npm test` and `npm run check`. 134 tests across twelve files:
+Run `npm test` and `npm run check`. 140 tests across thirteen files:
 
 - `tests/lang.test.mjs` — 30 programs run in both the interpreter and real JavaScript via
   `node:vm` and compared, plus the refusals, the deliberate deviations, and the bounds.
@@ -279,6 +305,11 @@ Run `npm test` and `npm run check`. 134 tests across twelve files:
   contract requires, the availability and cost arithmetic, the 99th-percentile formula checked
   against a simulated M/M/1 queue, each estimator against the arithmetic done by hand, and the
   error budget against a worked month.
+- `tests/learning.test.mjs` — every mission can be predicted and its real outcome
+  is one of the answers offered, a wrong prediction is never scolded, every mission
+  can be asked about again from what it already ships with the answer among the
+  options, the schedule widens on recall and resets on failure, and the review
+  queue opens with four different chapters.
 - `tests/progress.test.mjs` — every mission belongs to exactly one section, every
   section is reachable from the reactor, ranks never pay more for more help, the
   station lights up section by section, and every achievement is unearned at the
