@@ -364,44 +364,43 @@ function applyStep() {
 }
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 
+// What a passing run is worth beyond the win itself: the tightest suite that
+// still caught every mutant, and how far under the tightest budget a mission set.
+// Both are achievements about beating a gate rather than merely passing it.
+function recordFeats(item, result) {
+  if (item.kind === 'spec') {
+    feats.tightestSuite = Math.min(feats.tightestSuite ?? Infinity, result.cases.length);
+    return;
+  }
+  for (const entry of result.cases) {
+    if (!entry.maxOperations || !entry.operations) continue;
+    feats.bestGateRatio = Math.min(feats.bestGateRatio ?? Infinity, entry.operations / entry.maxOperations);
+  }
+}
+
 async function run() {
   if (running) return;
   mission.countRun();
   const item = level();
-  if (item.kind === 'spec') {
-    drafts[item.id] = $('code').value;
-    persist();
-    $('log').replaceChildren();
-    algoResult = evaluateSpec(item, $('code').value);
-    mission.settlePrediction(algoResult);
-    if (algoResult.success) feats.tightestSuite = Math.min(feats.tightestSuite ?? Infinity, algoResult.cases.length);
-    arena.spec(item, algoResult);
-    for (const line of algoResult.output.slice(0, 12)) log(`print → ${line}`);
-    $('step-count').textContent = algoResult.mutants.length
-      ? `${algoResult.mutants.filter(mutant => mutant.caught).length} / ${item.mutants.length} caught`
-      : 'Suite not run';
-    if (algoResult.success) { log(algoResult.message, 'success'); win(); }
-    else mission.askTheCause(algoResult, null, () => { log(algoResult.error, 'error'); tone(false); reveal(outcomePanel()); });
-    return;
-  }
+  // A spec mission and the three function-console kinds are run the same way:
+  // the editor is the answer, one call judges it, and the arena shows the result.
+  // They differ only in the four things this table names.
   if (algoKinds.has(item.kind)) {
+    const suite = item.kind === 'spec';
     drafts[item.id] = $('code').value;
     persist();
     $('log').replaceChildren();
-    algoResult = evaluateAlgorithm(item, $('code').value);
+    algoResult = (suite ? evaluateSpec : evaluateAlgorithm)(item, $('code').value);
     mission.settlePrediction(algoResult);
-    if (algoResult.success) {
-      // How far under the tightest budget this mission set, for the achievement
-      // that is about beating a gate rather than merely passing it.
-      for (const entry of algoResult.cases) {
-        if (!entry.maxOperations || !entry.operations) continue;
-        feats.bestGateRatio = Math.min(feats.bestGateRatio ?? Infinity, entry.operations / entry.maxOperations);
-      }
-    }
-    arena.cases(item, algoResult);
+    if (algoResult.success) recordFeats(item, algoResult);
+    if (suite) arena.spec(item, algoResult); else arena.cases(item, algoResult);
     for (const line of algoResult.output.slice(0, 12)) log(`print → ${line}`);
-    $('step-count').textContent = `${algoResult.cases.filter(entry => entry.passed && !entry.overGate).length} / ${item.cases.length} cases`;
-    if (algoResult.success) { log(`All ${item.cases.length} cases pass.`, 'success'); win(); }
+    $('step-count').textContent = suite
+      ? algoResult.mutants.length
+        ? `${algoResult.mutants.filter(mutant => mutant.caught).length} / ${item.mutants.length} caught`
+        : 'Suite not run'
+      : `${algoResult.cases.filter(entry => entry.passed && !entry.overGate).length} / ${item.cases.length} cases`;
+    if (algoResult.success) { log(suite ? algoResult.message : `All ${item.cases.length} cases pass.`, 'success'); win(); }
     else mission.askTheCause(algoResult, null, () => { log(algoResult.error, 'error'); tone(false); reveal(outcomePanel()); });
     return;
   }
