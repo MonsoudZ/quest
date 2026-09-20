@@ -101,6 +101,26 @@ test('mission ordering introduces each concept before it is required', () => {
   assert.ok(movement('how-it-scales') < movement('the-tree-that-became-a-list'));
   assert.ok(index('address-the-station') < index('carve-the-block'));
   assert.ok(index('window-of-opportunity') < index('lost-in-transit'));
+  // Networking reads bottom-up, the way its own first mission draws the stack:
+  // the frame, then addresses, then getting a packet to the next network, then
+  // the transport on top of that, then what the application does with it.
+  const network = levels.filter(level => level.chapter === 'Networking').map(level => level.id);
+  const link = ['stack-of-envelopes'];
+  const addressing = ['address-the-station', 'carve-the-block', 'the-same-prefix-every-time', 'same-deck-or-not',
+    'longest-prefix-wins', 'which-door-it-knocks-on', 'one-address-many-decks'];
+  const transport = ['window-of-opportunity', 'lost-in-transit', 'ramp-up-carefully', 'one-file-holds-the-rest'];
+  const application = ['name-the-archive', 'first-byte', 'who-says-so'];
+  assert.deepEqual([...link, ...addressing, ...transport, ...application], network, 'the layers have drifted out of order');
+  // Two of these are ordered by what they depend on rather than by layer alone.
+  const at = id => network.indexOf(id);
+  assert.ok(at('address-the-station') < at('same-deck-or-not'), 'a mask before the mission that asks what is inside one');
+  assert.ok(at('which-door-it-knocks-on') < at('one-address-many-decks'), 'ports before the mission whose whole trick is rewriting them');
+  assert.ok(at('carve-the-block') < at('the-same-prefix-every-time'), 'sizing a block to its hosts before the family that stopped doing that');
+  // Every Networking mission carries read-only evidence beside the lesson; they
+  // used to stop after the eighth, which is where a chapter quietly gets worse.
+  for (const level of levels.filter(item => item.chapter === 'Networking')) {
+    assert.ok(level.artifact, `${level.id} has no evidence panel`);
+  }
 });
 
 test('grid missions insist on the concept they teach, not just on arriving', () => {

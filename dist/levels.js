@@ -74,7 +74,11 @@ const refs = {
   queue:{label:'Reference: NIST — queue', url:'https://xlinux.nist.gov/dads/HTML/queue.html'},
   insertion:{label:'Reference: NIST — insertion sort', url:'https://xlinux.nist.gov/dads/HTML/insertionSort.html'},
   failFast:{label:'Reference: fail fast', url:'https://en.wikipedia.org/wiki/Fail-fast_system'},
-  concurrency:{label:'Reference: race conditions and the lost update', url:'https://en.wikipedia.org/wiki/Race_condition#In_software'}
+  concurrency:{label:'Reference: race conditions and the lost update', url:'https://en.wikipedia.org/wiki/Race_condition#In_software'},
+  sockets:{label:'Reference: RFC 793 — sockets and the connection four-tuple', url:'https://www.rfc-editor.org/rfc/rfc793'},
+  quic:{label:'Reference: RFC 9000 — QUIC', url:'https://www.rfc-editor.org/rfc/rfc9000'},
+  ipv6:{label:'Reference: RFC 4291 — IPv6 addressing architecture', url:'https://www.rfc-editor.org/rfc/rfc4291'},
+  certificates:{label:'Reference: RFC 5280 — certificate path validation', url:'https://www.rfc-editor.org/rfc/rfc5280'}
 };
 
 const routingTable = [
@@ -1062,6 +1066,9 @@ export const levels = [
     hints:['Start by making the routine sensible on its own: you cannot add to a number you have not read, and the log line reports the total after the add. Then ask what the other console can do in the gaps.','The lock has to cover the read, the add and the write — all three, or the gap is still there. The log line is slow and touches nothing shared, so it belongs after the lock is given back.'],
     takeaway:'Correct on the schedule you observed is not correct. A shared value read and written without a lock around the whole read-modify-write can lose an update on some interleaving, and the fact that it has not yet is not evidence that it will not.', reference:refs.concurrency
   },
+
+
+  // -------------------------------------------------- chapter 4: system design
   {
     id:'stack-of-envelopes', kind:'layers', chapter:'Networking', concept:'Layering', name:'A stack of envelopes', location:'Comms locker',
     objective:'Order the headers a packet acquires, then size the payload to fill the 1,500-byte MTU exactly.',
@@ -1074,6 +1081,16 @@ export const levels = [
     ],
     order:['tcp','ip','ethernet'], mtu:1500, linkOverhead:38,
     dials:[{id:'payload', label:'Application payload', help:'Bytes of your own data in this packet', value:1400, options:[{value:1400, label:'1,400 B'},{value:1440, label:'1,440 B'},{value:1460, label:'1,460 B'},{value:1480, label:'1,480 B'},{value:1500, label:'1,500 B'}]}],
+    artifact:{
+      title:'One packet, as four programs describe it',
+      note:'The same bytes on the same wire. What changes is how far down each tool bothers to look, which is exactly what a layer is.',
+      panes:[
+        {label:'tcpdump', code:'14:22:07.113 IP 10.20.0.31.51314 > 203.0.113.9.443:\n  Flags [P.], seq 1:1461, ack 1, win 501,\n  length 1460', note:'One line, four layers deep, and no mention of the Ethernet header it arrived in or the 20 bytes of IP header it read to get here. The tool hides what it has already understood.'},
+        {label:'tcpdump -e -x', code:'02:42:ac:11:00:02 > 02:42:9d:1c:00:01, ethertype IPv4\n  0x0000:  4500 05dc 1c46 4000 4006 ...\n  0x000e:  c350 01bb 0000 0001 ...\n\n  14 bytes frame | 20 IP | 20 TCP | 1460 data', note:'The same packet with the wrapping shown. 54 bytes of headers around 1,460 bytes of payload — 3.6% overhead, and every one of those bytes was added by a different layer that knew nothing about the others.'},
+        {label:'ip link', code:'2: eth0: <BROADCAST,MULTICAST,UP> mtu 1500\n    link/ether 02:42:ac:11:00:02\n\n3: wg0: <POINTOPOINT,UP> mtu 1420\n    link/none', note:'The MTU is a property of the link, not of the protocol above it. A tunnel adds its own header to every packet, so its MTU is lower — which is why a VPN breaks large transfers that worked a moment earlier.'},
+        {label:'path MTU discovery', code:'$ ping -M do -s 1472 host   # 1472+28 = 1500\n64 bytes from host: ttl=54 time=11.3 ms\n\n$ ping -M do -s 1473 host\nping: local error: message too long', note:'One byte more and the packet cannot be sent without fragmenting. This is how the largest workable payload is found in practice, and why a firewall that drops the "too big" reply produces a connection that opens and then hangs.'}
+      ]
+    },
     solution:{order:['tcp','ip','ethernet'], dials:{payload:1460}},
     hints:['Wrapping goes from the inside out: the layer closest to your data is added first, and the frame the cable carries is added last.','The IP packet must be at most 1,500 bytes, and it already spends 20 on TCP and 20 on IP. That leaves 1,460 for your data.'],
     takeaway:'Every layer costs bytes on every packet. A 1,460-byte payload spends 5% of the frame on headers; a 100-byte payload spends 44% of it.', reference:refs.layering
@@ -1085,6 +1102,16 @@ export const levels = [
     lesson:'An IPv4 address is 32 bits. A prefix length says how many of those bits identify the network, leaving the rest for hosts: a /26 has 6 host bits and so 64 addresses. Two of them are not usable as hosts, the all-zeros network address and the all-ones broadcast address, so a /26 holds 62 hosts. A longer prefix is a smaller block, which is the part that reads backwards at first.',
     base:'10.20.30.0', hosts:40,
     dials:[{id:'prefix', label:'Prefix length', help:'Longer prefix, smaller block', value:24, options:[24,25,26,27,28,29,30].map(prefix => ({value:prefix, label:`/${prefix}`}))}],
+    artifact:{
+      title:'A prefix, four ways of writing the same thing',
+      note:'The mask, the prefix length and the host count are one fact stated three ways. Being fluent between them is most of what subnetting is.',
+      panes:[
+        {label:'the mask in binary', code:'/26  11111111.11111111.11111111.11000000\n     255      .255      .255      .192\n\n     26 network bits | 6 host bits\n     2^6 = 64 addresses, 62 usable', note:'The prefix length counts the ones. Everything else follows from it, which is why /26 and 255.255.255.192 are not two facts to remember but one.'},
+        {label:'ipcalc', code:'Address:   10.20.30.0\nNetmask:   255.255.255.192 = 26\nNetwork:   10.20.30.0/26\nHostMin:   10.20.30.1\nHostMax:   10.20.30.62\nBroadcast: 10.20.30.63\nHosts/Net: 62', note:'The two addresses that are not hosts are the all-zeros network and the all-ones broadcast. That is where the "minus two" comes from, and why a /30 point-to-point link holds exactly two usable addresses.'},
+        {label:'ip addr', code:'inet 10.20.30.7/26 brd 10.20.30.63 scope global\n\n(the /26 is the host telling itself\n which addresses are on its own link)', note:'The prefix on an interface is not decoration. It is how the host decides whether a destination is on this link or has to go to the gateway, which is the next mission.'},
+        {label:'the sizes worth knowing', code:'/24  254 hosts   a deck\n/25  126\n/26   62\n/27   30\n/28   14\n/29    6\n/30    2        a link between two routers\n/31    2        the same, without the waste', note:'Halving each time. Reading a prefix as "how many addresses" rather than "how many bits" is the fluency; /31 is the special case RFC 3021 added precisely because the minus-two was pure loss on a two-ended link.'}
+      ]
+    },
     solution:{dials:{prefix:26}},
     hints:['Count the usable addresses for each prefix: /27 gives 30, /26 gives 62. You need 40.','A /26 is the smallest block with room for 40 hosts. /25 would work too, but wastes 86 addresses.'],
     takeaway:'Subnetting is arithmetic on bits, not on dotted numbers. Each extra host bit doubles the block, so block sizes only ever come in powers of two.', reference:refs.cidr
@@ -1107,99 +1134,58 @@ export const levels = [
       {id:'dock', label:'Docking bay · 20 hosts', value:24, options:[24,25,26,27,28,29,30].map(prefix => ({value:prefix, label:`/${prefix}`}))},
       {id:'bridge', label:'Bridge · 6 hosts', value:24, options:[24,25,26,27,28,29,30].map(prefix => ({value:prefix, label:`/${prefix}`}))}
     ],
+    artifact:{
+      title:'The same /24, allocated two ways',
+      note:'Both plans hold every deck. One of them can accept another request and the other cannot, and nothing about the requirements changed.',
+      panes:[
+        {label:'fixed size', code:'10.20.0.0/26   Operations   62 usable, 100 needed ✗\n10.20.0.64/26  Laboratories 62 usable,  50 needed\n10.20.0.128/26 Docking      62 usable,  20 needed\n10.20.0.192/26 Bridge       62 usable,   6 needed', note:'Four equal blocks, and the largest deck does not fit in one. Fixed-size subnetting has to size every block for the biggest tenant, which is why it ran out of room before it ran out of addresses.'},
+        {label:'variable length', code:'10.20.0.0/25   Operations   126 usable, 100 needed\n10.20.0.128/26 Laboratories  62 usable,  50 needed\n10.20.0.192/27 Docking       30 usable,  20 needed\n10.20.0.224/29 Bridge         6 usable,   6 needed\n10.20.0.232/29 .. free', note:'Each block sized to its deck, largest first. Every deck fits and 24 addresses are left — enough for three more small ones, which is the whole point of the technique.'},
+        {label:'why order matters', code:'smallest first:\n  10.20.0.0/29    Bridge\n  10.20.0.8/27    Docking   ← must start at .0/.32/.64\n  ✗ .8 is not a /27 boundary', note:'A block has to start at a multiple of its own size, so a small block placed early leaves a hole a large block is not allowed to begin in. Allocating largest first is not a preference; it is what avoids the hole.'},
+        {label:'as a router sees it', code:'$ ip route\n10.20.0.0/25   dev ops\n10.20.0.128/26 dev labs\n10.20.0.192/27 dev dock\n10.20.0.224/29 dev bridge', note:'Four routes instead of one, which is the cost. Variable-length subnetting trades a larger routing table for addresses that are not wasted, and summarising them back up is how that table stays small at the next router.'}
+      ]
+    },
     solution:{dials:{ops:25, labs:26, dock:27, bridge:29}},
     hints:['Work out the smallest prefix for each deck on its own: 100 hosts, 50 hosts, 20 hosts, 6 hosts.','/25 holds 126, /26 holds 62, /27 holds 30, /29 holds 6. Together that is 232 of the 256 addresses.'],
     takeaway:'Fixed-size subnets would have wasted most of this /24. Sizing each block to its deck left 24 addresses spare for the next one.', reference:refs.cidr
   },
   {
-    id:'longest-prefix-wins', kind:'routing', chapter:'Networking', concept:'Forwarding', name:'The most specific route wins', location:'Station router',
-    objective:'Forward five packets using the station’s routing table.',
-    intro:'A router does not know where every address on the network is. It holds a table of prefixes and, for each packet, picks one line from it.',
-    lesson:'Several routes can contain the same destination. The router always forwards along the one with the longest matching prefix, because a longer prefix is a more specific statement about where that address lives. 0.0.0.0/0 matches everything and so acts as the default route, used only when nothing more specific matches. This one rule is what lets a small table forward to the whole internet.',
-    table:routingTable,
-    questions:[
-      {prompt:'A packet for 10.20.30.70 leaves by…', destination:'10.20.30.70', options:routeOptions},
-      {prompt:'A packet for 10.20.30.9 leaves by…', destination:'10.20.30.9', options:routeOptions},
-      {prompt:'A packet for 10.20.99.4 leaves by…', destination:'10.20.99.4', options:routeOptions},
-      {prompt:'A packet for 10.9.1.1 leaves by…', destination:'10.9.1.1', options:routeOptions},
-      {prompt:'A packet for 203.0.113.7 leaves by…', destination:'203.0.113.7', options:routeOptions}
+    id:'the-same-prefix-every-time', kind:'ipv6', chapter:'Networking', concept:'IPv6 addressing', name:'The same prefix every time', location:'Address registry',
+    objective:'Number four decks of wildly different sizes inside the station’s /48, so that anything plugged in addresses itself.',
+    intro:'The station has been allocated 2001:db8:1234::/48. Four decks need numbering: one has three devices, one has three thousand. The instinct from the last two missions is to size each block to its deck. That instinct is wrong here, and being wrong about it is the usual way IPv6 deployments go sideways.',
+    lesson:'IPv4 subnetting is an exercise in thrift: you count hosts and hand out the smallest block that holds them, because there are not enough addresses. IPv6 removes the scarcity and replaces it with a convention that is load-bearing. The bottom 64 bits of an address are the interface identifier, and a device builds its own from what it knows about itself — that is stateless address autoconfiguration, and it is why a device can be plugged into a network that has never heard of it and be reachable a moment later without a server involved. Those 64 bits are not yours to economise on. So a subnet is a /64 whether it holds three devices or three thousand, and the number you are actually choosing is how many subnets to make, not how big to make them: a /48 holds 65,536 of them, which is why even a home connection is normally handed a /56 or better. Going longer than /64 to save space saves nothing worth having and breaks the thing that makes the protocol pleasant; going shorter hands one network enough room for hundreds and gets you nothing either.',
+    base:'2001:db8:1234::', basePrefix:48,
+    decks:[
+      {name:'Habitat ring', hosts:400},
+      {name:'Docking bay', hosts:3000},
+      {name:'Reactor control', hosts:3},
+      {name:'Sensor array', hosts:64}
     ],
-    solution:[4,3,2,1,0],
-    hints:['For each destination, find every prefix that contains it, then keep the one with the largest prefix length.','10.20.30.64/26 covers .64 to .127, so .70 is inside it but .9 is not. Only 203.0.113.7 falls through to the default route.'],
-    takeaway:'Longest prefix match is the whole forwarding decision. Adding a more specific route changes where traffic goes without touching any other line in the table.', reference:refs.routers
-  },
-  {
-    id:'window-of-opportunity', kind:'transport', chapter:'Networking', concept:'Sliding windows', name:'Fill the pipe', location:'Relay uplink',
-    objective:'Send 8 MiB across a 50 Mbps, 200 ms link in under 2 seconds.',
-    intro:'The link is fast and the distance is long. Sending one packet and waiting for its acknowledgement wastes almost all of the capacity.',
-    lesson:'A sender may keep a window of unacknowledged data in flight. The amount that fits in the network at once is the bandwidth-delay product: capacity × round-trip time, here 50 Mbps × 0.2 s = 1.25 MB, about 857 packets. With a smaller window the sender runs out of permission and waits for an acknowledgement while the link sits idle. Beyond one bandwidth-delay product the window is no longer the limit, so nothing more is gained; in a real network an oversized window fills router queues and adds delay, which this model does not simulate.',
-    link:{rttMs:200, capacityMbps:50, mss:1460, lossEvery:0}, bytes:8388608, target:{seconds:2},
-    dials:[{id:'window', label:'Send window', help:'Unacknowledged packets allowed in flight', value:32, options:[{value:32, label:'32 packets'},{value:128, label:'128 packets'},{value:512, label:'512 packets'},{value:857, label:'857 packets (one BDP)'},{value:2048, label:'2,048 packets'}]}],
-    solution:{dials:{window:857}},
-    hints:['Work out how much data fits in the link at once: 50 Mbps for 200 ms. Then divide by the 1,460-byte packet size.','One bandwidth-delay product is about 857 packets. A 512-packet window still leaves the link waiting.'],
-    takeaway:'Throughput on a long link is set by the window, not by the bandwidth. Until the window covers one bandwidth-delay product, most of the capacity you are paying for is idle.', reference:refs.tcp
-  },
-  {
-    id:'lost-in-transit', kind:'transport', chapter:'Networking', concept:'Reliable delivery', name:'Lost in transit', location:'Deep-space array',
-    objective:'Deliver 8 MiB over a lossy link within 2.6 seconds while retransmitting under 10% of it.',
-    intro:'This link drops a packet every so often. Delivery still has to be complete, so anything lost must be sent again — the question is how much else goes with it.',
-    lesson:'Reliability comes from acknowledgements and retransmission: the sender keeps data until the receiver confirms it, and a timeout means resend. What gets resent is the protocol’s choice. Go-Back-N acknowledges cumulatively, so a single loss makes the sender repeat every packet from the lost one onward, including ones that already arrived. Selective repeat acknowledges packets individually and resends only what was lost, at the cost of tracking each one. Both deliver the same bytes; they differ in how much of the link they waste doing it.',
-    link:{rttMs:200, capacityMbps:50, mss:1460, lossEvery:256}, bytes:8388608, target:{seconds:2.6, wasted:0.1},
+    now:2026,
     dials:[
-      {id:'window', label:'Send window', value:512, options:[{value:512, label:'512 packets'},{value:857, label:'857 packets (one BDP)'},{value:2048, label:'2,048 packets'}]},
-      {id:'protocol', label:'Recovery strategy', value:'go-back-n', options:[{value:'go-back-n', label:'Go-Back-N'},{value:'selective-repeat', label:'Selective repeat'}]}
+      {id:'prefix', label:'Prefix for each deck', help:'How much of the address names the network', value:56, options:[
+        {value:56, label:'/56'}, {value:60, label:'/60'}, {value:64, label:'/64'},
+        {value:72, label:'/72'}, {value:80, label:'/80'}, {value:112, label:'/112'}, {value:126, label:'/126'}
+      ]},
+      {id:'addressing', label:'How a device gets its address', help:'What happens when something is plugged in', value:'static', options:[
+        {value:'slaac', label:'It works one out itself'},
+        {value:'dhcpv6', label:'A DHCPv6 server hands it one'},
+        {value:'static', label:'Somebody types it in'}
+      ]}
     ],
-    solution:{dials:{window:2048, protocol:'selective-repeat'}},
-    hints:['Two targets bind here. The deadline needs a window large enough to keep sending through the gaps left by recovery; the waste limit is about which packets get resent.','A 2,048-packet window meets the deadline. Go-Back-N then resends about half of everything, so selective repeat is the one that stays under 10%.'],
-    takeaway:'A loss rate of well under 1% cost either 0.4% or 49% of the link, depending only on which packets the protocol chose to resend.', reference:refs.tcp
+    artifact:{
+      title:'Where the 128 bits actually go',
+      note:'Almost none of this is about having a lot of addresses. It is about what the bottom half is reserved for and what that buys.',
+      panes:[
+        {label:'the split', code:'2001:0db8:1234:0007:0a2f:fffe:31c4:9d01\n\\____________/\\__/\\__________________/\n   routing    sub      interface\n   prefix     net      identifier\n   48 bits   16 bits      64 bits', note:'The registry gives you the left 48. You choose the middle 16, which is 65,536 subnets. The right 64 are the device’s and are not yours to spend.'},
+        {label:'a device arriving', code:'$ ip -6 addr\ninet6 fe80::a2f:fffe:31c4:9d01/64 scope link\ninet6 2001:db8:1234:7:a2f:fffe:31c4:9d01/64\n         scope global dynamic mngtmpaddr\n\nno server was contacted', note:'The link-local address exists before anything is configured. The global one is the router’s advertised prefix with the same identifier stuck on the end — which only works because the prefix stops at 64.'},
+        {label:'what a /64 holds', code:'/64  = 18,446,744,073,709,551,616 addresses\n       for a deck with three devices\n\n/48  = 65,536 subnets\n/56  =    256 subnets  (a home allocation)\n/32  =  65,536 /48s    (an ISP allocation)', note:'The waste is the point. Addresses are not the scarce resource any more; the scarce resources are routing table entries and human attention, and a fixed subnet size costs neither.'},
+        {label:'writing them down', code:'2001:0db8:1234:0000:0000:0000:0000:0001\n2001:db8:1234:0:0:0:0:1\n2001:db8:1234::1\n\nall the same address; the last one\nis the only correct way to print it', note:'Leading zeros in a group are dropped and the longest run of zero groups is replaced by :: exactly once. Two :: would be ambiguous, which is why the rule says once.'}
+      ]
+    },
+    solution:{dials:{prefix:64, addressing:'slaac'}},
+    hints:['Work out how many subnets the /48 gives you at each prefix before thinking about how many devices a deck has. The answer to "how many devices" turns out not to be part of this.','A device that configures itself builds the bottom 64 bits of its own address. Leave it fewer than 64 and it has nowhere to put them.'],
+    takeaway:'In IPv6 a subnet is a /64, whatever it holds. The prefix stopped being a function of how many hosts there are and became the boundary a device builds its own address below — which is the whole reason something can be plugged in and be reachable without anyone configuring it.', reference:refs.ipv6
   },
-  {
-    id:'name-the-archive', kind:'sequence', chapter:'Networking', concept:'DNS', name:'Ask for it by name', location:'Name service',
-    objective:'Order a DNS resolution and answer it within 60 ms.',
-    intro:'The archive has a name, not an address. Finding the address means walking down the name hierarchy — unless somebody already wrote the answer down.',
-    lesson:'DNS is a hierarchy resolved from the top. A resolver asks a root server which servers know the top-level domain, asks one of those which server is authoritative for the domain, and asks that one for the record. Each step is a round trip, which is why the whole chain is slow and why every answer carries a time-to-live telling resolvers how long they may reuse it. A resolver holding the delegations skips straight to the authoritative server; one holding the record answers immediately, with no network at all.',
-    instructions:'Put the steps in the order they happen, then decide what the resolver already knows.',
-    items:[
-      {id:'stub', name:'Station resolver checks its own cache', ms:1, note:'no network'},
-      {id:'recursive', name:'Recursive resolver accepts the query', ms:4},
-      {id:'root', name:'Root server names the .quest servers', ms:80, note:'one round trip'},
-      {id:'tld', name:'.quest server names the authoritative server', ms:60, note:'one round trip'},
-      {id:'authoritative', name:'Authoritative server returns the address record', ms:45},
-      {id:'answer', name:'Address returns to the station', ms:4}
-    ],
-    order:['stub','recursive','root','tld','authoritative','answer'],
-    orderHint:'Resolution starts at the station and walks down the hierarchy: root, then the top-level domain, then the server authoritative for the name.',
-    dials:[{id:'cache', label:'Resolver cache', help:'What the recursive resolver already holds', value:'cold', options:[{value:'cold', label:'Cold — nothing cached'},{value:'warm', label:'Warm — delegations still within their TTL'}]}],
-    skipWhen:{dial:'cache', value:'warm', skip:['root','tld']},
-    target:{ms:60},
-    solution:{order:['stub','recursive','root','tld','authoritative','answer'], dials:{cache:'warm'}},
-    hints:['The order is fixed by the hierarchy. The 60 ms budget is not reachable while the resolver has to ask the root and the top-level domain.','Warm the resolver cache. The delegations are still valid, so only the authoritative lookup remains: 1 + 4 + 45 + 4 = 54 ms.'],
-    takeaway:'A cold resolution spends 194 ms in round trips and a warm one 54 ms, for the same answer. Caching in DNS is not an optimisation bolted on afterwards; the TTL field is part of the protocol.', reference:refs.dns
-  },
-  {
-    id:'first-byte', kind:'sequence', chapter:'Networking', concept:'Connection setup', name:'Time to first byte', location:'Uplink terminal',
-    objective:'Order the steps of an HTTPS request and get the first byte inside 150 ms.',
-    intro:'The link has a 120 ms round-trip time. Before any of your data moves, the two ends have to agree that they are talking, and that nobody else is listening.',
-    lesson:'A new HTTPS request pays for three round trips: one for the TCP handshake, one for the TLS handshake, and one for the request and response. At 120 ms each, that is 360 ms before the first byte, none of it spent on bandwidth. Keeping the connection open removes the first two, so the next request costs one round trip. This is why connection reuse, and protocols that fold handshakes together, matter more to perceived speed than raw throughput does.',
-    instructions:'Order the exchange, then decide whether this is a new connection or a reused one.',
-    items:[
-      {id:'syn', name:'SYN — client opens the connection', ms:60},
-      {id:'synack', name:'SYN-ACK — server agrees', ms:60},
-      {id:'hello', name:'TLS ClientHello — client proposes keys', ms:60},
-      {id:'server-hello', name:'TLS ServerHello and Finished', ms:60},
-      {id:'request', name:'HTTP GET /archive', ms:60},
-      {id:'response', name:'First byte of the response', ms:60}
-    ],
-    order:['syn','synack','hello','server-hello','request','response'],
-    orderHint:'TCP first, then TLS on top of it, then the HTTP request. Nothing encrypted can precede the handshake that set up the keys.',
-    dials:[{id:'connection', label:'Connection', help:'Whether this request opens a new connection', value:'new', options:[{value:'new', label:'New connection'},{value:'reused', label:'Reused, already handshaken'}]}],
-    skipWhen:{dial:'connection', value:'reused', skip:['syn','synack','hello','server-hello']},
-    target:{ms:150},
-    solution:{order:['syn','synack','hello','server-hello','request','response'], dials:{connection:'reused'}},
-    hints:['Handshakes happen bottom-up: the transport connection exists before TLS can negotiate on it, and TLS finishes before an encrypted request can be sent.','Three round trips is 360 ms, so a new connection cannot make 150 ms. Reuse the connection and only the request and response remain: 120 ms.'],
-    takeaway:'Round trips, not bandwidth, decide time to first byte. Every handshake you can avoid is a whole round trip saved.', reference:refs.tls
-  },
-
   {
     id:'same-deck-or-not', kind:'reach', chapter:'Networking', concept:'Local delivery', name:'The deck that cannot talk', location:'Wiring closet',
     objective:'Repair one host’s mask and gateway so every destination leaves the way the address plan says it should.',
@@ -1241,14 +1227,96 @@ export const levels = [
     takeaway:'A host’s mask is a claim about who its neighbours are. Get it wrong and the symptom is not “no route” but silence: the host is shouting on its own wire for a machine that was never there.', reference:refs.arp
   },
   {
+    id:'longest-prefix-wins', kind:'routing', chapter:'Networking', concept:'Forwarding', name:'The most specific route wins', location:'Station router',
+    objective:'Forward five packets using the station’s routing table.',
+    intro:'A router does not know where every address on the network is. It holds a table of prefixes and, for each packet, picks one line from it.',
+    lesson:'Several routes can contain the same destination. The router always forwards along the one with the longest matching prefix, because a longer prefix is a more specific statement about where that address lives. 0.0.0.0/0 matches everything and so acts as the default route, used only when nothing more specific matches. This one rule is what lets a small table forward to the whole internet.',
+    table:routingTable,
+    questions:[
+      {prompt:'A packet for 10.20.30.70 leaves by…', destination:'10.20.30.70', options:routeOptions},
+      {prompt:'A packet for 10.20.30.9 leaves by…', destination:'10.20.30.9', options:routeOptions},
+      {prompt:'A packet for 10.20.99.4 leaves by…', destination:'10.20.99.4', options:routeOptions},
+      {prompt:'A packet for 10.9.1.1 leaves by…', destination:'10.9.1.1', options:routeOptions},
+      {prompt:'A packet for 203.0.113.7 leaves by…', destination:'203.0.113.7', options:routeOptions}
+    ],
+    artifact:{
+      title:'A routing table, and the one rule for reading it',
+      note:'The order of the lines does not matter. Only the length of the prefix does, which is the part that surprises people coming from firewall rules.',
+      panes:[
+        {label:'ip route', code:'default via 198.51.100.1 dev uplink\n10.0.0.0/8     via 10.20.0.1 dev core\n10.20.0.0/16   via 10.20.0.1 dev spine\n10.20.30.0/24  dev lab\n10.20.30.64/26 via 10.20.30.1 dev sensors', note:'Five routes, and four of them could match 10.20.30.70. A firewall takes the first rule that matches; a routing table takes the most specific one, wherever it sits in the file.'},
+        {label:'ip route get', code:'$ ip route get 10.20.30.70\n10.20.30.70 via 10.20.30.1 dev sensors src 10.20.30.9\n\n$ ip route get 10.20.30.9\n10.20.30.9 dev lab src 10.20.30.9', note:'The kernel answering the exact question rather than making you read the table. Two addresses one hop apart leave by different interfaces, because one of them falls inside the /26 and the other does not.'},
+        {label:'the default route', code:'default via 198.51.100.1\n  =  0.0.0.0/0\n  =  zero bits have to match\n  =  the least specific route there can be', note:'The default route is not a special case in the lookup. It is a prefix of length zero, which matches everything and therefore loses to any other match — which is exactly the behaviour you want from a last resort.'},
+        {label:'why the internet fits in memory', code:'$ wc -l < full-table.txt\n  974,331          # a full BGP table today\n\n10.20.0.0/16 covers 256 /24s\n  as one line, if they all leave the\n  same way', note:'Longest prefix match is what makes aggregation possible: a provider announces one short prefix instead of the hundreds of long ones inside it, and anybody needing finer detail announces it themselves and wins on specificity.'}
+      ]
+    },
+    solution:[4,3,2,1,0],
+    hints:['For each destination, find every prefix that contains it, then keep the one with the largest prefix length.','10.20.30.64/26 covers .64 to .127, so .70 is inside it but .9 is not. Only 203.0.113.7 falls through to the default route.'],
+    takeaway:'Longest prefix match is the whole forwarding decision. Adding a more specific route changes where traffic goes without touching any other line in the table.', reference:refs.routers
+  },
+  {
+    id:'which-door-it-knocks-on', kind:'socket', chapter:'Networking', concept:'Ports & sockets', name:'Which door it knocks on', location:'Service registry',
+    objective:'Three services on one host. Give each the narrowest address it can listen on and still do its job.',
+    intro:'The station controller runs three services on one machine. The portal is meant for anyone, the metrics are meant for the deck, and the admin console is meant for nobody but the machine itself. All three are currently listening on everything.',
+    lesson:'A port on its own does not identify anything. What a program actually listens on is a socket: an address and a port together, and the address matters as much as the number. A host has several addresses — the loopback it talks to itself on, the one its deck can see, the one the outside world can see — and a socket bound to one of them is reachable only through that one. Bind to 0.0.0.0 instead and the socket answers on every interface the host has, including ones added later by a VPN or a second network card nobody told you about. When a packet arrives the kernel looks for the most specific match: a socket on this exact address wins over a socket on all of them, which is also why the two cannot both exist on the same port. This is the cheapest access control there is, and the only one that cannot be undone by a firewall rule somebody forgot to apply.',
+    interfaces:[
+      {name:'loopback', address:'127.0.0.1', note:'this machine only'},
+      {name:'deck network', address:'10.20.0.5', note:'reachable from the station'},
+      {name:'uplink', address:'198.51.100.2', note:'reachable from the internet'}
+    ],
+    services:[
+      {id:'portal', name:'Station portal', port:80, note:'meant for anyone who can reach the station'},
+      {id:'metrics', name:'Metrics endpoint', port:9090, note:'meant for the deck, not the internet'},
+      {id:'admin', name:'Admin console', port:8080, note:'meant for this machine only'}
+    ],
+    packets:[
+      {name:'Visitor loads the portal', source:'203.0.113.40', destination:'198.51.100.2', destinationPort:80, expect:true},
+      {name:'Crew deck loads the portal', source:'10.20.0.31', destination:'10.20.0.5', destinationPort:80, expect:true},
+      {name:'Deck monitor scrapes metrics', source:'10.20.0.31', destination:'10.20.0.5', destinationPort:9090, expect:true},
+      {name:'Internet scanner finds metrics', source:'203.0.113.40', destination:'198.51.100.2', destinationPort:9090, expect:false},
+      {name:'Operator on the machine opens admin', source:'127.0.0.1', destination:'127.0.0.1', destinationPort:8080, expect:true},
+      {name:'Deck host reaches for admin', source:'10.20.0.31', destination:'10.20.0.5', destinationPort:8080, expect:false},
+      {name:'Internet scanner finds admin', source:'203.0.113.40', destination:'198.51.100.2', destinationPort:8080, expect:false}
+    ],
+    dials:[
+      {id:'portal', label:'Station portal · port 80', help:'Anyone who can reach the station should get this', value:'0.0.0.0', options:[
+        {value:'127.0.0.1', label:'127.0.0.1 · this machine'}, {value:'10.20.0.5', label:'10.20.0.5 · the deck'},
+        {value:'198.51.100.2', label:'198.51.100.2 · the uplink'}, {value:'0.0.0.0', label:'0.0.0.0 · all of them'}
+      ]},
+      {id:'metrics', label:'Metrics endpoint · port 9090', help:'The deck monitor scrapes this; the internet must not', value:'0.0.0.0', options:[
+        {value:'127.0.0.1', label:'127.0.0.1 · this machine'}, {value:'10.20.0.5', label:'10.20.0.5 · the deck'},
+        {value:'198.51.100.2', label:'198.51.100.2 · the uplink'}, {value:'0.0.0.0', label:'0.0.0.0 · all of them'}
+      ]},
+      {id:'admin', label:'Admin console · port 8080', help:'Nobody but this machine', value:'0.0.0.0', options:[
+        {value:'127.0.0.1', label:'127.0.0.1 · this machine'}, {value:'10.20.0.5', label:'10.20.0.5 · the deck'},
+        {value:'198.51.100.2', label:'198.51.100.2 · the uplink'}, {value:'0.0.0.0', label:'0.0.0.0 · all of them'}
+      ]}
+    ],
+    artifact:{
+      title:'The same three services, as the machine lists them',
+      note:'Every one of these lines is real output. The first column is the whole of the decision this mission is about.',
+      panes:[
+        {label:'ss -tlnp', code:'State  Local Address:Port   Process\nLISTEN 0.0.0.0:80           portal\nLISTEN 0.0.0.0:9090         metrics\nLISTEN 0.0.0.0:8080         admin', note:'Three services, all on every interface. Nothing here is misconfigured in the usual sense — this is simply the default almost every framework ships with.'},
+        {label:'after', code:'State  Local Address:Port   Process\nLISTEN 0.0.0.0:80           portal\nLISTEN 10.20.0.5:9090       metrics\nLISTEN 127.0.0.1:8080       admin', note:'The same three services. The admin console is now unreachable from anywhere but the machine itself, and no firewall was involved.'},
+        {label:'the five-tuple', code:'protocol  src address:port     dst address:port\ntcp       203.0.113.40:51314 → 198.51.100.2:80\ntcp       10.20.0.31:44002   → 10.20.0.5:9090\n\nthe kernel matches on the right-hand side', note:'A connection is identified by all five, which is how one server holds thousands at once on a single port. The listening socket is matched on the destination half alone.'},
+        {label:'the classic incident', code:'$ docker run -p 8080:8080 admin-panel\n$ curl http://<public-ip>:8080/\n{"users": [...]}\n\n-p publishes on 0.0.0.0 unless told\notherwise: -p 127.0.0.1:8080:8080', note:'Publishing a container port binds it to every interface by default and, on many setups, writes a firewall rule that bypasses the one you configured. The address in the bind is what actually decides.'}
+      ]
+    },
+    solution:{dials:{portal:'0.0.0.0', metrics:'10.20.0.5', admin:'127.0.0.1'}},
+    hints:['Take them one at a time and read which packets each has to answer. The portal has to answer on two different addresses; the metrics endpoint on exactly one; the admin console on the one nobody else can route to.','A service that has to answer on more than one address has to bind to all of them. A service that has to answer on exactly one should bind to that one and nothing else.'],
+    takeaway:'A socket is an address and a port, and the address half is an access-control decision people forget they are making. Binding to 0.0.0.0 publishes a service on every interface the host has now and every one it is given later.', reference:refs.sockets
+  },
+  {
     id:'one-address-many-decks', kind:'nat', chapter:'Networking', concept:'Address translation', name:'One address, many decks', location:'Station border router',
     objective:'The station has one public address. Let the replies home, keep the probes out, and publish only what has to be public.',
     intro:'Forty devices inside, one address outside. The border router makes that work by rewriting every packet on the way out and remembering what it did.',
-    lesson:'Source NAT rewrites the private source address to the router’s public one and picks a fresh source port for each flow. That port is the whole trick: two hosts can talk to the same server on the same port and still be told apart, because the router gave each flow a different outside port. Replies match the table and are rewritten back. An unsolicited inbound packet matches nothing — the router has no idea which of forty devices it was meant for — so it is dropped. That is why a device behind NAT is unreachable from outside by default, and why publishing a service means adding a forward. A forward is not a small thing: it opens that port to everyone who can find the address, not only to the people you had in mind.',
+    lesson:'Source NAT rewrites the private source address to the router’s public one and picks a fresh outside port for each flow. That port is the whole trick: two hosts can talk to the same server on the same port and still be told apart, because the router gave each flow a different outside port. It also means the pool is spent per flow rather than per host, and a flow is the whole five-tuple — source address, source port, destination address, destination port, protocol. Two different consoles using the same source port to the same server are two flows. One console opening a second tab is two flows. The same console talking to the same server on a different port is two flows. Run out of outside ports and there is nowhere to map the next one, which is why a carrier sharing one address between subscribers counts flows and not people. Replies match the table and are rewritten back; an unsolicited inbound packet matches nothing and is dropped, which is why a device behind NAT is unreachable from outside by default and why publishing a service means adding a forward. A forward is not a small thing: it opens that port to everyone who can find the address.',
     publicAddress:'198.51.100.2',
     flows:[
-      {direction:'out', source:'10.20.0.10', sourcePort:51000, destination:'203.0.113.9', destinationPort:443, name:'Crew console → weather service', expect:true},
-      {direction:'out', source:'10.20.0.11', sourcePort:51000, destination:'203.0.113.9', destinationPort:443, name:'Second console → weather service', expect:true},
+      {direction:'out', source:'10.20.0.10', sourcePort:51000, destination:'203.0.113.9', destinationPort:443, name:'Crew console → weather, port 443', expect:true},
+      {direction:'out', source:'10.20.0.11', sourcePort:51000, destination:'203.0.113.9', destinationPort:443, name:'Second console → weather, same source port', expect:true},
+      {direction:'out', source:'10.20.0.10', sourcePort:51001, destination:'203.0.113.9', destinationPort:443, name:'Crew console again, next source port', expect:true},
+      {direction:'out', source:'10.20.0.10', sourcePort:51000, destination:'203.0.113.9', destinationPort:80, name:'Crew console → weather, port 80', expect:true},
+      {direction:'out', source:'10.20.0.12', sourcePort:60000, destination:'198.51.100.50', destinationPort:123, name:'Clock → time service', expect:true},
       {direction:'in', source:'203.0.113.9', sourcePort:443, replyTo:0, name:'Weather service replies', expect:true},
       {direction:'in', source:'198.51.100.7', sourcePort:40112, destinationPort:22, name:'Unknown host probes port 22', expect:false},
       {direction:'in', source:'198.51.100.7', sourcePort:40113, destinationPort:80, name:'Visitor loads the station portal', expect:true}
@@ -1259,12 +1327,18 @@ export const levels = [
       {id:'web', label:'Publish 80 → portal', rules:[{publicPort:80, inside:'10.20.0.12', insidePort:8080}]},
       {id:'both', label:'Publish 22 and 80', rules:[{publicPort:22, inside:'10.20.0.10', insidePort:22}, {publicPort:80, inside:'10.20.0.12', insidePort:8080}]}
     ],
-    dials:[{id:'forward', label:'Published ports', help:'What the outside world is allowed to start a connection to', value:'none', options:[
-      {value:'none', label:'Publish nothing'},
-      {value:'ssh', label:'Publish 22 → console'},
-      {value:'web', label:'Publish 80 → portal'},
-      {value:'both', label:'Publish 22 and 80'}
-    ]}],
+    dials:[
+      {id:'ports', label:'Outside ports in the pool', help:'One is spent per flow, and held until the flow closes', value:2, options:[
+        {value:2, label:'2 ports'}, {value:4, label:'4 ports'}, {value:8, label:'8 ports'},
+        {value:16, label:'16 ports'}, {value:32, label:'32 ports'}
+      ]},
+      {id:'forward', label:'Published ports', help:'What the outside world is allowed to start a connection to', value:'none', options:[
+        {value:'none', label:'Publish nothing'},
+        {value:'ssh', label:'Publish 22 → console'},
+        {value:'web', label:'Publish 80 → portal'},
+        {value:'both', label:'Publish 22 and 80'}
+      ]}
+    ],
     artifact:{
       title:'The same two flows, three ways to look at them',
       note:'Two consoles are talking to the same server on the same port. Only the translation table tells them apart.',
@@ -1274,9 +1348,61 @@ export const levels = [
         {label:'the dropped probe', code:'IN=eth0 SRC=198.51.100.7 DST=198.51.100.2\n  PROTO=TCP SPT=40112 DPT=22 SYN\n  → no conntrack entry, no forward: DROP', note:'Nothing inside started a flow on port 22, so there is no row to match and nowhere to send it.'}
       ]
     },
-    solution:{dials:{forward:'web'}},
-    hints:['Replies are already handled: the router remembers the flows it started, so nothing needs publishing for them.','The portal is meant to be public and the console’s SSH is not. Publishing a port opens it to the whole internet, so publish the fewest that meet the requirement.'],
+    solution:{dials:{ports:8, forward:'web'}},
+    hints:['Count the outbound flows before sizing the pool, and count them by the whole five-tuple rather than by host: two of these share a source port, two share a source address, and every one of them still needs its own outside port.','Five flows are open at once, so the pool has to hold five. Then the published ports: the portal is meant to be public and the console’s SSH is not, and publishing a port opens it to everyone who can find the address.'],
     takeaway:'NAT gives you one address and, as a side effect, a default-closed border. That side effect is not a security model — it is an accident of having nothing to match — but the decision it forces, publish only what must be public, is a real one.', reference:refs.nat
+  },
+  {
+    id:'window-of-opportunity', kind:'transport', chapter:'Networking', concept:'Sliding windows', name:'Fill the pipe', location:'Relay uplink',
+    objective:'Send 8 MiB across a 50 Mbps, 200 ms link in under 2 seconds.',
+    intro:'The link is fast and the distance is long. Sending one packet and waiting for its acknowledgement wastes almost all of the capacity.',
+    lesson:'A sender may keep a window of unacknowledged data in flight. The amount that fits in the network at once is the bandwidth-delay product: capacity × round-trip time, here 50 Mbps × 0.2 s = 1.25 MB, about 857 packets. With a smaller window the sender runs out of permission and waits for an acknowledgement while the link sits idle. Beyond one bandwidth-delay product the window is no longer the limit, so nothing more is gained; in a real network an oversized window fills router queues and adds delay, which this model does not simulate.',
+    link:{rttMs:200, capacityMbps:50, mss:1460, lossEvery:0}, bytes:8388608, target:{seconds:1.6},
+    dials:[{id:'window', label:'Send window', help:'Unacknowledged packets allowed in flight', value:200, options:[
+      {value:200, label:'200 packets'}, {value:400, label:'400 packets'}, {value:600, label:'600 packets'},
+      {value:700, label:'700 packets'}, {value:800, label:'800 packets'}, {value:857, label:'857 packets'},
+      {value:900, label:'900 packets'}, {value:1200, label:'1,200 packets'}, {value:2048, label:'2,048 packets'}
+    ]}],
+    artifact:{
+      title:'The same link, measured',
+      note:'Nothing here is about bandwidth. Every number is about how much data is allowed to be unacknowledged at once.',
+      panes:[
+        {label:'ss -ti', code:'cwnd:10 ssthresh:7 bytes_acked:1448000\n rtt:201.3/1.2 mss:1460\n delivery_rate:0.58Mbps\n\n(a 50 Mbps link, delivering 0.58)', note:'A window of ten packets on a 200 ms path is 14.6 KB in flight against a link that can hold 1.25 MB. The sender spends 97% of every round trip waiting, and no amount of extra bandwidth changes that number.'},
+        {label:'the product', code:'50 Mbps x 0.200 s = 10,000,000 bits\n                  = 1,250,000 bytes\n                  = 856.2 packets of 1460\n\n  window >= 857 to keep it busy', note:'Bandwidth times delay is a volume: how much fits in the pipe between the two ends. Below it the link idles; above it the surplus waits in a queue somewhere and adds latency without adding throughput.'},
+        {label:'iperf3', code:'-w 64K   :  2.6 Mbit/s\n-w 256K  : 10.4 Mbit/s\n-w 1M    : 41.0 Mbit/s\n-w 2M    : 49.6 Mbit/s\n-w 8M    : 49.6 Mbit/s', note:'Throughput rises with the window and then stops dead at the link rate. Everything past 2 MB is memory reserved on both ends that buys nothing — which is why the answer is the smallest window that saturates, not the largest one available.'},
+        {label:'why it is the default no longer', code:'net.ipv4.tcp_rmem = 4096 131072 6291456\n                    min  default max\n\n(auto-tuning: the kernel grows the\n window to fit the path it measures)', note:'Sizing a window by hand is a thing operating systems stopped asking of you around 2005. The arithmetic is still worth knowing, because it is what the auto-tuner is doing and what you check when it has got it wrong.'}
+      ]
+    },
+    solution:{dials:{window:857}},
+    hints:['Work out how much data fits in the link at once: 50 Mbps for 200 ms, in bytes. Then divide by the 1,460-byte packet size. The answer is not one of the round numbers.','Every window at or above that figure finishes in the same 1.542 s, and every one below it leaves the link waiting. The smallest of them is the one to keep, because the rest is buffer you reserve and never use.'],
+    takeaway:'Throughput on a long link is set by the window, not by the bandwidth. Until the window covers one bandwidth-delay product, most of the capacity you are paying for is idle.', reference:refs.tcp
+  },
+  {
+    id:'lost-in-transit', kind:'transport', chapter:'Networking', concept:'Reliable delivery', name:'Lost in transit', location:'Deep-space array',
+    objective:'Deliver 8 MiB over a lossy link within 2.6 seconds while retransmitting under 10% of it.',
+    intro:'This link drops a packet every so often. Delivery still has to be complete, so anything lost must be sent again — the question is how much else goes with it.',
+    lesson:'Reliability comes from acknowledgements and retransmission: the sender keeps data until the receiver confirms it, and a timeout means resend. What gets resent is the protocol’s choice. Go-Back-N acknowledges cumulatively, so a single loss makes the sender repeat every packet from the lost one onward, including ones that already arrived. Selective repeat acknowledges packets individually and resends only what was lost, at the cost of tracking each one. Both deliver the same bytes; they differ in how much of the link they waste doing it.',
+    link:{rttMs:200, capacityMbps:50, mss:1460, lossEvery:256}, bytes:8388608, target:{seconds:2.6, wasted:0.1},
+    dials:[
+      {id:'window', label:'Send window', value:512, options:[
+        {value:512, label:'512 packets'}, {value:857, label:'857 packets'}, {value:1024, label:'1,024 packets'},
+        {value:1500, label:'1,500 packets'}, {value:2048, label:'2,048 packets'}, {value:3000, label:'3,000 packets'}
+      ]},
+      {id:'protocol', label:'Recovery strategy', value:'go-back-n', options:[{value:'go-back-n', label:'Go-Back-N'},{value:'selective-repeat', label:'Selective repeat'}]}
+    ],
+    artifact:{
+      title:'One lost packet, two recovery strategies',
+      note:'Both of these deliver every byte. The difference is entirely in which packets get sent a second time.',
+      panes:[
+        {label:'Go-Back-N', code:'sent   41 42 43 44 45 46 47 48\nlost      42\nacked  41 -- -- -- -- -- -- --\nresent    42 43 44 45 46 47 48\n\n7 packets resent, 6 of them arrived\nperfectly well the first time', note:'A cumulative acknowledgement can only say "everything up to here". With a gap at 42, the sender learns nothing about 43 to 48 and repeats them all, which is simple to implement and expensive to run.'},
+        {label:'selective repeat', code:'sent   41 42 43 44 45 46 47 48\nlost      42\nSACK   41 ---- 43-48\nresent    42\n\n1 packet resent', note:'A selective acknowledgement names the blocks that did arrive, so the sender resends the hole and nothing else. The cost is a receiver that buffers out-of-order data and a sender that tracks each packet rather than a single number.'},
+        {label:'netstat -s', code:'    2874 segments sent\n      14 segments retransmitted   (0.4%)\n     129 SACK blocks received\n\n    2874 segments sent\n    1405 segments retransmitted  (48.9%)\n       0 SACK blocks received', note:'The same transfer over the same link, with and without selective acknowledgement. A retransmission rate near half on a link losing well under one percent is the signature of a receiver that is not sending SACK.'},
+        {label:'what loss is not', code:'loss on a wireless link : interference\nloss on a wired link    : a full queue\n\nTCP treats both as congestion,\nwhich is right for one of them', note:'Almost all loss on the wired internet is a router dropping from a queue that is already full, so treating it as a signal to slow down is correct. On a lossy radio link it is not, which is why mobile networks retransmit below IP rather than let TCP see it.'}
+      ]
+    },
+    solution:{dials:{window:2048, protocol:'selective-repeat'}},
+    hints:['Two targets bind here, and they pull in different directions. The deadline needs a window large enough to keep sending through the gaps recovery leaves; the waste limit is about which packets get resent when one goes missing.','One bandwidth-delay product is not enough on a lossy link, because recovery keeps stalling the window. Go-Back-N resends about half of everything whatever the window, so the protocol is settled first and then the smallest window that still makes the deadline.'],
+    takeaway:'A loss rate of well under 1% cost either 0.4% or 49% of the link, depending only on which packets the protocol chose to resend.', reference:refs.tcp
   },
   {
     id:'ramp-up-carefully', kind:'congestion', chapter:'Networking', concept:'Congestion control', name:'Ramp up carefully', location:'Transfer control',
@@ -1290,10 +1416,15 @@ export const levels = [
     ],
     dials:[
       {id:'sender', label:'How the sender chooses its window', help:'A size fixed in advance, or one discovered while sending', value:'fixed-16', options:[
-        {value:'fixed-16', label:'Fixed · 16 packets'},
-        {value:'fixed-64', label:'Fixed · 64 packets'},
-        {value:'fixed-274', label:'Fixed · 274 packets'},
-        {value:'fixed-512', label:'Fixed · 512 packets'},
+        {value:'fixed-16', label:'Fixed · 16'},
+        {value:'fixed-32', label:'Fixed · 32'},
+        {value:'fixed-64', label:'Fixed · 64'},
+        {value:'fixed-96', label:'Fixed · 96'},
+        {value:'fixed-128', label:'Fixed · 128'},
+        {value:'fixed-256', label:'Fixed · 256'},
+        {value:'fixed-274', label:'Fixed · 274'},
+        {value:'fixed-400', label:'Fixed · 400'},
+        {value:'fixed-1024', label:'Fixed · 1,024'},
         {value:'slow-start', label:'Slow start, then additive increase'}
       ]}
     ],
@@ -1307,11 +1438,166 @@ export const levels = [
       ]
     },
     solution:{dials:{sender:'slow-start'}},
-    hints:['Try each fixed window on both links and read the two bars. One window is too small for the spine; another is fast on the relay but throws away most of what it sends.','No single fixed number meets both targets, which is the point: the sender has to discover the path rather than assume it.'],
+    hints:['Work out one bandwidth-delay product for each link before touching a dial: 400 Mbps over 8 ms is one number and 1.5 Mbps over 500 ms is a very different one. Anything sized for one of them is wrong for the other.','The two paths hold 274 packets and 64 packets. Below 64 the relay is too slow, at 64 the spine is, and above 96 the relay throws away what will not fit — so there is no number in between, which is the point.'],
     takeaway:'A window tuned to a path is a guess that stops being true the moment the path changes. Slow start trades a few round trips at the beginning for being right on every link, which is why it is what actually runs.', reference:refs.congestion
   },
-
-  // -------------------------------------------------- chapter 4: system design
+  {
+    id:'one-file-holds-the-rest', kind:'multiplex', chapter:'Networking', concept:'Head-of-line blocking', name:'One file holds the rest', location:'Portal front end',
+    objective:'Load the twelve files of the station portal within 250 ms, with one packet lost, and without that loss delaying anything else.',
+    intro:'Twelve files, one origin, forty milliseconds of round trip, and one packet dropped in the stylesheet. Eleven of the twelve do not depend on the stylesheet in any way. What they wait for depends entirely on how the bytes underneath are arranged.',
+    lesson:'Head-of-line blocking is what happens when something has to be delivered in order and the first thing in the queue is late. It appears at every layer and the answers have chased it up the stack. HTTP/1.1 sends one request at a time on a connection, so the second waits for the first — and browsers worked around it by opening six connections per origin, which is six handshakes, six congestion windows all starting from nothing, and six times the state on the server. HTTP/2 fixed the protocol by interleaving many requests over one connection, and then discovered the problem had only moved: TCP hands the application its bytes strictly in order, so one lost segment stalls delivery of every stream that shares the connection, related or not. The streams are independent in the protocol and not in the transport, which means they are not independent. QUIC moves the ordering down with the streams, so a gap in one is a gap in one. That is the whole reason a new transport was worth building.',
+    streams:[
+      {name:'index.html', rounds:1}, {name:'app.css', rounds:1}, {name:'app.js', rounds:4},
+      {name:'logo.svg', rounds:1}, {name:'hero.jpg', rounds:3}, {name:'font.woff2', rounds:2},
+      {name:'icons.svg', rounds:1}, {name:'analytics.js', rounds:1}, {name:'photo-1.jpg', rounds:2},
+      {name:'photo-2.jpg', rounds:2}, {name:'photo-3.jpg', rounds:2}, {name:'api/session', rounds:1}
+    ],
+    rttMs:40, lossAt:1, handshakeRounds:2, target:{ms:250},
+    dials:[
+      {id:'pool', label:'Connections, and requests in flight on each', help:'A connection is a handshake and a congestion window of its own', value:'1:1', options:[
+        {value:'1:1', label:'1 · one at a time'},
+        {value:'2:1', label:'2 · one at a time'},
+        {value:'6:1', label:'6 · one at a time'},
+        {value:'1:100', label:'1 · interleaved'},
+        {value:'2:100', label:'2 · interleaved'},
+        {value:'6:100', label:'6 · interleaved'}
+      ]},
+      {id:'ordering', label:'How the transport delivers', help:'What the layer underneath promises about order', value:'tcp', options:[
+        {value:'tcp', label:'One ordered byte stream'},
+        {value:'streams', label:'Independent streams'}
+      ]}
+    ],
+    artifact:{
+      title:'The same twelve files, three transports',
+      note:'A waterfall is the only place this is visible. Read the third column of each: what a file was waiting for when it was not being sent.',
+      panes:[
+        {label:'HTTP/1.1', code:'index.html   ▓▓            80ms\napp.css      ▓▓            80ms  ← lost\napp.js         ▓▓▓▓▓      240ms\nlogo.svg     ▓▓            80ms\nhero.jpg       ▓▓▓▓       200ms\n(six at a time, the rest queue)', note:'Six connections hide the blocking by not sharing. The cost is paid at setup and in congestion control, where six senders each discover the same path separately and compete with each other doing it.'},
+        {label:'HTTP/2', code:'index.html   ▓▓░░          120ms\napp.css      ▓▓░░          120ms  ← lost\napp.js         ▓▓▓▓▓░░     280ms\nlogo.svg     ▓▓░░          120ms\nhero.jpg       ▓▓▓▓░░      240ms\n(░ = waiting for a gap in a file\n    it does not use)', note:'Nothing queues any more and everything still waits. One lost segment in app.css and the kernel will not hand the application anything that arrived after it, because a byte stream has one order and one gap.'},
+        {label:'QUIC', code:'index.html   ▓▓             80ms\napp.css      ▓▓░            120ms ← lost\napp.js         ▓▓▓▓▓       240ms\nlogo.svg     ▓▓             80ms\nhero.jpg       ▓▓▓▓         200ms', note:'The loss costs the stream that lost something and nothing else. Ordering moved down to sit with the streams instead of underneath all of them.'},
+        {label:'why it needed a new transport', code:'TCP is in kernels, middleboxes,\nload balancers and firmware.\n\nQUIC runs over UDP in user space\nbecause changing TCP on the actual\ninternet is not a thing you can do.', note:'The fix was known for years before it shipped. What took the time was that the layer needing the change is the one nobody can deploy a change to, so it was rebuilt on top of the one layer middleboxes still pass through.'}
+      ]
+    },
+    solution:{dials:{pool:'1:100', ordering:'streams'}},
+    hints:['Try the six configurations against one transport first and watch two different things go wrong: below six connections the requests queue, and at six they stop queueing. Then switch the transport and read the stalled count instead of the clock.','Interleaving fixes the queueing and does nothing about the loss. Six connections fix the loss for five of the files by not sharing, and cost six handshakes to do it. Only one of the two transports makes a lost packet cost one file.'],
+    takeaway:'Streams that are independent in the protocol are only independent if they are independent in the transport underneath. HTTP/2 multiplexed requests over a connection that still delivers one ordered stream of bytes, and a single lost segment stalls all of them — which is what QUIC was built to fix.', reference:refs.quic
+  },
+  {
+    id:'name-the-archive', kind:'sequence', chapter:'Networking', concept:'DNS', name:'Ask for it by name', location:'Name service',
+    objective:'Order a DNS resolution and answer it within 60 ms.',
+    intro:'The archive has a name, not an address. Finding the address means walking down the name hierarchy — unless somebody already wrote the answer down.',
+    lesson:'DNS is a hierarchy resolved from the top. A resolver asks a root server which servers know the top-level domain, asks one of those which server is authoritative for the domain, and asks that one for the record. Each step is a round trip, which is why the whole chain is slow and why every answer carries a time-to-live telling resolvers how long they may reuse it. A resolver holding the delegations skips straight to the authoritative server; one holding the record answers immediately, with no network at all.',
+    instructions:'Put the steps in the order they happen, then decide what the resolver already knows.',
+    items:[
+      {id:'stub', name:'Station resolver checks its own cache', ms:1, note:'no network'},
+      {id:'recursive', name:'Recursive resolver accepts the query', ms:4},
+      {id:'root', name:'Root server names the .quest servers', ms:80, note:'one round trip'},
+      {id:'tld', name:'.quest server names the authoritative server', ms:60, note:'one round trip'},
+      {id:'authoritative', name:'Authoritative server returns the address record', ms:45},
+      {id:'answer', name:'Address returns to the station', ms:4}
+    ],
+    order:['stub','recursive','root','tld','authoritative','answer'],
+    orderHint:'Resolution starts at the station and walks down the hierarchy: root, then the top-level domain, then the server authoritative for the name.',
+    dials:[{id:'cache', label:'Resolver cache', help:'What the recursive resolver already holds', value:'cold', options:[{value:'cold', label:'Cold — nothing cached'},{value:'warm', label:'Warm — delegations still within their TTL'}]}],
+    skipWhen:{dial:'cache', value:'warm', skip:['root','tld']},
+    target:{ms:60},
+    artifact:{
+      title:'A name resolved, one step at a time',
+      note:'Every line is a separate question to a separate server. Nobody holds the whole tree, which is why it has survived being the internet’s single point of failure.',
+      panes:[
+        {label:'dig +trace', code:'.            NS  a.root-servers.net.\nexample.     NS  a.iana-servers.net.\nstation.example. NS ns1.station.example.\narchive.station.example. A 198.51.100.44\n\n4 questions, 4 different servers', note:'Each answer is a referral to something that knows more, not the answer itself. The root knows who runs .example and nothing whatsoever about archive.station.example.'},
+        {label:'the cache', code:'$ dig archive.station.example\n;; Query time: 74 msec\n\n$ dig archive.station.example\n;; Query time: 0 msec\n;; ANSWER: archive.station.example. 3521 IN A ...', note:'The second query never left the machine. That 3521 is what remains of a 3600-second TTL, and it is why a DNS change appears instantly for you and an hour later for everyone else.'},
+        {label:'what a TTL costs', code:'TTL 86400 : one lookup a day per resolver\n            a change takes a day to land\nTTL 60    : a lookup a minute\n            a change lands in a minute\n\n(lower it before you migrate,\n raise it after)', note:'The TTL is a straight trade between lookup traffic and how long a mistake lasts. The standard move before moving a service is to drop it days ahead, so the cutover is fast when it comes.'},
+        {label:'why it is not one round trip', code:'first visit  : 4 lookups + TCP + TLS\nreturn visit : 0 lookups (cached)\n\n(and the four are why a resolver\n close to the user matters more\n than a fast one far away)', note:'The resolution in this mission is the cold case. Warm, it disappears entirely — which is why measuring a page load once tells you almost nothing about what it costs anybody else.'}
+      ]
+    },
+    solution:{order:['stub','recursive','root','tld','authoritative','answer'], dials:{cache:'warm'}},
+    hints:['The order is fixed by the hierarchy. The 60 ms budget is not reachable while the resolver has to ask the root and the top-level domain.','Warm the resolver cache. The delegations are still valid, so only the authoritative lookup remains: 1 + 4 + 45 + 4 = 54 ms.'],
+    takeaway:'A cold resolution spends 194 ms in round trips and a warm one 54 ms, for the same answer. Caching in DNS is not an optimisation bolted on afterwards; the TTL field is part of the protocol.', reference:refs.dns
+  },
+  {
+    id:'first-byte', kind:'sequence', chapter:'Networking', concept:'Connection setup', name:'Time to first byte', location:'Uplink terminal',
+    objective:'Order the steps of an HTTPS request and get the first byte inside 150 ms.',
+    intro:'The link has a 120 ms round-trip time. Before any of your data moves, the two ends have to agree that they are talking, and that nobody else is listening.',
+    lesson:'A new HTTPS request pays for three round trips: one for the TCP handshake, one for the TLS handshake, and one for the request and response. At 120 ms each, that is 360 ms before the first byte, none of it spent on bandwidth. Keeping the connection open removes the first two, so the next request costs one round trip. This is why connection reuse, and protocols that fold handshakes together, matter more to perceived speed than raw throughput does.',
+    instructions:'Order the exchange, then decide whether this is a new connection or a reused one.',
+    items:[
+      {id:'syn', name:'SYN — client opens the connection', ms:60},
+      {id:'synack', name:'SYN-ACK — server agrees', ms:60},
+      {id:'hello', name:'TLS ClientHello — client proposes keys', ms:60},
+      {id:'server-hello', name:'TLS ServerHello and Finished', ms:60},
+      {id:'request', name:'HTTP GET /archive', ms:60},
+      {id:'response', name:'First byte of the response', ms:60}
+    ],
+    order:['syn','synack','hello','server-hello','request','response'],
+    orderHint:'TCP first, then TLS on top of it, then the HTTP request. Nothing encrypted can precede the handshake that set up the keys.',
+    dials:[{id:'connection', label:'Connection', help:'Whether this request opens a new connection', value:'new', options:[{value:'new', label:'New connection'},{value:'reused', label:'Reused, already handshaken'}]}],
+    skipWhen:{dial:'connection', value:'reused', skip:['syn','synack','hello','server-hello']},
+    target:{ms:150},
+    artifact:{
+      title:'Where the time before the first byte goes',
+      note:'One request, broken into what it actually waited for. Every segment is a round trip somebody chose to require.',
+      panes:[
+        {label:'curl -w', code:'namelookup:     0.074\nconnect:        0.118   (+44 ms, 1 RTT)\nappconnect:     0.206   (+88 ms, 2 RTT)\nstarttransfer:  0.250   (+44 ms, 1 RTT)\ntotal:          0.281', note:'Four round trips before a byte of content arrives, and only the last one carries the request. The DNS lookup, the handshake and the TLS negotiation are all latency nobody asked for and everybody pays.'},
+        {label:'TLS 1.2 vs 1.3', code:'TLS 1.2 : ClientHello -> ServerHello ->\n          KeyExchange -> Finished     2 RTT\nTLS 1.3 : ClientHello+share ->\n          ServerHello+Finished        1 RTT\nresumed : 0 RTT (early data)', note:'TLS 1.3 removed a whole round trip by having the client guess the key exchange in its first message. On a 200 ms path that is 200 ms off every new connection, which is the single largest thing that happened to web latency in a decade.'},
+        {label:'the same page, further away', code:'40 ms RTT  : 160 ms to first byte\n200 ms RTT : 800 ms to first byte\n\n(same server, same code,\n same bandwidth)', note:'Multiply the round trips by the distance. This is why a CDN edge that does nothing but terminate the connection nearby is worth having even when the content still comes from the origin.'},
+        {label:'what cannot be removed', code:'speed of light, London -> Sydney\n  17,000 km / 200,000 km/s = 85 ms\n  round trip                170 ms\n\n(fibre is about 2/3 of c)', note:'Bandwidth is something you can buy more of. Latency below this floor is not for sale, which is the reason every serious optimisation is about making fewer round trips rather than faster ones.'}
+      ]
+    },
+    solution:{order:['syn','synack','hello','server-hello','request','response'], dials:{connection:'reused'}},
+    hints:['Handshakes happen bottom-up: the transport connection exists before TLS can negotiate on it, and TLS finishes before an encrypted request can be sent.','Three round trips is 360 ms, so a new connection cannot make 150 ms. Reuse the connection and only the request and response remain: 120 ms.'],
+    takeaway:'Round trips, not bandwidth, decide time to first byte. Every handshake you can avoid is a whole round trip saved.', reference:refs.tls
+  },
+  {
+    id:'who-says-so', kind:'chain', chapter:'Networking', concept:'Certificates & trust', name:'Who says so', location:'Uplink terminal',
+    objective:'The portal answers to two names. Make both of them verify, from a trust store that has one certificate in it, without sending anything the client already has.',
+    intro:'The portal’s certificate is installed and the browser on the operator’s desk is perfectly happy with it. Everything else that connects — the deck monitor, the backup script, the handset in the airlock — says the certificate cannot be verified. Nothing is expired and nothing is misspelled.',
+    lesson:'A certificate says that a name belongs to a key, and it is signed by somebody. That signature is worth exactly as much as your reason to believe the signer, so the client walks upward: this certificate was issued by that one, that one by another, until it reaches something already in its trust store — a root it trusted before the connection started. The client only has roots. It does not have the intermediates, and there can be several, so the server has to send everything between its own certificate and the root. Miss one and the path stops, which produces the most confusing failure in the whole protocol: browsers cache intermediates they have seen on other sites and will quietly fill the gap, so the site works for the person who set it up and fails for everything that has not been browsing the web all day. Sending the root as well is the opposite mistake and a much smaller one: a client that has it did not need it, a client that lacks it is not going to start trusting it because a stranger attached it, and everyone pays the bytes on every handshake. The name is checked separately, against the certificate’s subject alternative names, and one wildcard covers a single label — *.station.example is api.station.example but not deck.two.station.example.',
+    hosts:['portal.station.example', 'api.station.example'],
+    store:['Station Root CA'],
+    now:2026,
+    certificates:{
+      leaf:{leaf:true, issuer:'Station Issuing CA'},
+      intermediate:{subject:'Station Issuing CA', issuer:'Station Root CA', notAfter:2028},
+      root:{subject:'Station Root CA', issuer:'Station Root CA', notAfter:2030}
+    },
+    leaves:{
+      exact:{subject:'portal.station.example', names:['portal.station.example'], notAfter:2027},
+      wildcard:{subject:'*.station.example', names:['*.station.example'], notAfter:2027},
+      expired:{subject:'*.station.example', names:['*.station.example'], notAfter:2024}
+    },
+    chains:[
+      {id:'leaf', label:'The certificate on its own', certificates:['leaf']},
+      {id:'full', label:'Certificate, then issuer', certificates:['leaf', 'intermediate']},
+      {id:'withRoot', label:'Certificate, issuer, root', certificates:['leaf', 'intermediate', 'root']},
+      {id:'reversed', label:'Issuer, then certificate', certificates:['intermediate', 'leaf']}
+    ],
+    dials:[
+      {id:'certificate', label:'Which certificate is installed', help:'What names it vouches for, and until when', value:'exact', options:[
+        {value:'exact', label:'portal.station.example'},
+        {value:'wildcard', label:'*.station.example'},
+        {value:'expired', label:'*.station.example · last year’s'}
+      ]},
+      {id:'chain', label:'What the server sends with it', help:'The client has roots and nothing else', value:'leaf', options:[
+        {value:'leaf', label:'The certificate on its own'},
+        {value:'full', label:'Certificate, then issuer'},
+        {value:'withRoot', label:'Certificate, issuer, root'},
+        {value:'reversed', label:'Issuer, then certificate'}
+      ]}
+    ],
+    artifact:{
+      title:'The same server, from four clients',
+      note:'One configuration. The disagreement between these is not a bug in any of them — it is what happens when the path is incomplete and some clients happen to have the missing piece.',
+      panes:[
+        {label:'the browser', code:'$ open https://portal.station.example\n  🔒 Connection is secure\n\n(the intermediate was cached three\n weeks ago from an unrelated site)', note:'This is why the person who installed it sees nothing wrong. A browser fills a gap in the chain from certificates it has collected elsewhere, and never mentions that it did.'},
+        {label:'everything else', code:'$ curl https://portal.station.example\ncurl: (60) SSL certificate problem:\n  unable to get local issuer certificate\n\n$ python -c "import requests; requests.get(...)"\nSSLError: certificate verify failed:\n  unable to get local issuer certificate', note:'A client with only a root store and no cache has no way to bridge the gap, and says so in the same words every time. "Unable to get local issuer certificate" almost always means a missing intermediate.'},
+        {label:'what was sent', code:'$ openssl s_client -connect host:443\n---\nCertificate chain\n 0 s:CN=portal.station.example\n   i:CN=Station Issuing CA\n---\n(one certificate; the issuer is named\n but not attached)', note:'The chain the server actually sends, which is the only thing that matters. Position 0 is the leaf; anything the client needs above it should be at 1 and 2.'},
+        {label:'fixed', code:'Certificate chain\n 0 s:CN=*.station.example\n   i:CN=Station Issuing CA\n 1 s:CN=Station Issuing CA\n   i:CN=Station Root CA\n\nroot not sent: the client has it', note:'Two certificates, and the second one is the bridge. The root stays out — a client that trusts it already has it, and a client that does not will not be persuaded by a copy arriving from the server.'}
+      ]
+    },
+    solution:{dials:{certificate:'wildcard', chain:'full'}},
+    hints:['Two names have to verify, and only one of the three certificates vouches for more than one name. Settle that first and the failures stop being about names.','The client starts with roots and nothing else. Send it everything between your certificate and a root, in that order, and nothing above.'],
+    takeaway:'A certificate is worth the path from it to a root the client already had. The server has to send that path, because the client only has the roots — and a browser quietly filling in a missing link from its cache is the reason this fails for everything except the machine it was tested on.', reference:refs.certificates
+  },
   {
     id:'size-it-yourself', kind:'estimate', chapter:'System design', concept:'Estimation', name:'Size it yourself', location:'Planning table',
     objective:'Work out what the telemetry service will actually need, from five numbers and arithmetic you can do in your head.',

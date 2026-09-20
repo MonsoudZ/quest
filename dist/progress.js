@@ -47,13 +47,13 @@ export const sections = [
     id:'comms', name:'Comms tower', deck:'Deck 5',
     blurb:'The only thing between this station and everyone who is not on it.',
     at:[2.6, 4.3], size:[1.7, 1.6], height:2.3,
-    rooms:['Comms locker', 'Relay uplink', 'Uplink terminal', 'Deep-space array', 'Long-range relay', 'Name service', 'Transfer control']
+    rooms:['Comms locker', 'Relay uplink', 'Uplink terminal', 'Portal front end', 'Deep-space array', 'Long-range relay', 'Name service', 'Transfer control']
   },
   {
     id:'netops', name:'Network operations', deck:'Deck 3',
     blurb:'Addresses, routes, and the closet where somebody got the mask wrong.',
     at:[4.8, 4.2], size:[1.9, 1.7], height:1.4,
-    rooms:['Network operations', 'Address registry', 'Station router', 'Station border router', 'Wiring closet', 'Navigation core']
+    rooms:['Network operations', 'Address registry', 'Service registry', 'Station router', 'Station border router', 'Wiring closet', 'Navigation core']
   },
   {
     id:'operations', name:'Operations centre', deck:'Deck 4',

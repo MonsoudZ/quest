@@ -288,6 +288,24 @@ test('a mission set with dials has exactly one setting that wins', () => {
   }
 });
 
+test('no dial labels its own answer', () => {
+  // "857 packets (one BDP)" beside a lesson whose point is that the answer is
+  // one bandwidth-delay product hands the mission over in the option list.
+  for (const level of levels.filter(isPuzzle)) {
+    if (!level.dials || !level.solution?.dials) continue;
+    for (const dial of level.dials) {
+      const right = dial.options.find(option => option.value === level.solution.dials[dial.id]);
+      if (!right) continue;
+      const others = dial.options.filter(option => option !== right);
+      // An annotation is fine where it is on more than one option — "13 slots
+      // (prime)" among several sizes is a fact, not a nudge.
+      const annotated = option => /\(|\u00b7/.test(option.label);
+      assert.ok(!annotated(right) || others.some(annotated),
+        `${level.id}: "${right.label}" is the answer and the only option carrying an explanation`);
+    }
+  }
+});
+
 test('the missions that look interactive are not four clicks in a costume', () => {
   // Three missions here once offered four, six and ten settings, so the way to
   // solve them was to try all of them rather than to work anything out. What
@@ -300,7 +318,13 @@ test('the missions that look interactive are not four clicks in a costume', () =
     // This one stayed a single dial on purpose: the decision is which tile size,
     // and what makes it a decision is having the sizes either side of the answer.
     'the-loop-that-misses':[15, 1, 'every tile size worth trying, either side of the one that fits'],
-    'hash-it-out':[12, 2, 'a table size and what happens when two keys collide']
+    'hash-it-out':[12, 2, 'a table size and what happens when two keys collide'],
+    // Networking had five of these. The prefix mission is left alone: /24 to /30
+    // is the whole domain, and the arithmetic is the only way through it.
+    'one-address-many-decks':[20, 2, 'how many outside ports the pool holds, and what is published'],
+    'window-of-opportunity':[9, 1, 'every window worth trying either side of one bandwidth-delay product'],
+    'ramp-up-carefully':[10, 1, 'enough fixed windows to see that no single one suits both links'],
+    'lost-in-transit':[12, 2, 'a window and a recovery strategy']
   };
   for (const [id, [least, dials, why]] of Object.entries(deep)) {
     assert.ok(settings(byId(id)) >= least, `${id} is down to ${settings(byId(id))} settings; it is meant to be ${why}`);

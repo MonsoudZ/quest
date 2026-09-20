@@ -1,7 +1,7 @@
 # Signal Quest
 
 A game that teaches programming, computer science, networking, and system design by making you
-do each of them. Sixty-one missions across four chapters, plus an architecture lab where you
+do each of them. Sixty-five missions across four chapters, plus an architecture lab where you
 design a service against a latency, availability, and cost target.
 
 ## Play
@@ -88,21 +88,33 @@ Every mission with dials has exactly one setting that wins, and a test enforces 
 answers would make the shipped solution one of many and leave "which setting met the target?"
 unanswerable when the mission comes back for review.
 
-**Chapter 3 — Networking** (11 missions). Protocol layering and the maximum segment size, CIDR
-addressing, variable-length subnet planning inside a single /24, longest-prefix-match forwarding,
-window sizing against the bandwidth-delay product, retransmission strategy and wasted bandwidth
-under loss, DNS resolution and caching, and the round trips before an HTTPS response's first byte.
-Then three that go further:
+**Chapter 3 — Networking** (15 missions, bottom-up through the stack). The frame on the wire and
+the MTU; IPv4 addressing, variable-length subnetting and IPv6; whether a destination is on this
+link or past the gateway; longest-prefix forwarding; ports and sockets; NAT; sliding windows,
+reliable delivery, congestion control and head-of-line blocking; DNS, the handshake, and
+certificates. Every mission carries read-only evidence beside its lesson — real `tcpdump`,
+`ip route`, `ss -ti`, `dig +trace` and `openssl s_client` output — because most of what this
+chapter teaches is how to read the thing in front of you.
 
-- **local delivery** — a host that has been unreachable since a re-addressing. Its address is
-  right; its mask and gateway are not. A host decides whether a destination is a neighbour from
-  its own mask and nothing else, and both faults here follow from that;
-- **address translation** — one public address for the whole station. Replies find their way
-  home through the translation table, an unsolicited probe matches nothing and is dropped, and
-  publishing a port is a decision with a blast radius;
-- **congestion control** — the same 4 MiB over a short fat link and a long thin one. Every fixed
-  window fails one of them: too small and the link idles, too large and the excess sits in a
-  buffer until it overflows. Slow start meets both without being told either path's capacity.
+Four of them are worth calling out:
+
+- **Which door it knocks on** puts three services on one host and asks what address each listens
+  on. The portal has to answer on two interfaces, the metrics endpoint on exactly one, and the
+  admin console on none but the loopback. A socket is an address *and* a port, and the address
+  half is the cheapest access control there is — the one a forgotten firewall rule cannot undo.
+- **One address, many decks** is NAT sized twice over: which ports to publish, and how many
+  outside ports the pool needs. A flow is the whole five-tuple, so two consoles using the same
+  source port to the same server are two flows, and one console opening a second tab is two
+  more. Counting them is why a carrier can put a street behind one address or a building.
+- **One file holds the rest** loads twelve files with one packet lost in the stylesheet. Six
+  connections hide the blocking by not sharing and pay six handshakes for it; one multiplexed
+  TCP connection stops the queueing and stalls all twelve on a gap in a file none of them use;
+  a transport with real streams costs the loss to the one file that lost something. That is the
+  whole argument for QUIC, in a waterfall.
+- **The same prefix every time** numbers four decks of wildly different sizes inside a /48, and
+  the answer is /64 for every one of them. The bottom 64 bits belong to the device, which is what
+  lets it be plugged in and address itself — so the prefix stopped being a function of how many
+  hosts there are, which is the habit the two IPv4 missions before it just finished teaching.
 
 **Chapter 4 — System design** (6 missions plus the lab). Capacity estimation, queueing and tail
 latency, fan-out, redundancy arithmetic, and the trades behind eventual consistency, idempotency,
@@ -265,7 +277,7 @@ mission on a 1366×768 screen changed nothing visible at all.
 The colour scheme follows the operating system and can be overridden with the toggle in the
 header, which is then remembered. Text meets WCAG AA contrast in both schemes, icon-only
 controls on small screens keep their labels in the accessibility tree, and everything honours
-`prefers-reduced-motion`. The 61 missions are grouped into four collapsible chapters, each
+`prefers-reduced-motion`. The 65 missions are grouped into four collapsible chapters, each
 carrying its own progress and accent colour; on a phone the rail becomes a drawer over the
 mission it is currently on.
 

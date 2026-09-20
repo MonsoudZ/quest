@@ -6,7 +6,7 @@
 // is pure, so every mission can be checked in a test without a browser.
 import {evaluatePuzzle, evaluateNetwork, bitValue, toHex} from './engine.js';
 import {percent} from './format.js';
-import {subnet, smallestPrefixFor, allocate, longestPrefixMatch, encapsulate, transfer, timeline, reachability, translate, congestion} from './net.js';
+import {subnet, smallestPrefixFor, allocate, longestPrefixMatch, encapsulate, transfer, timeline, reachability, translate, congestion, demultiplex, multiplex, planV6, validate} from './net.js';
 import {evaluateArchitecture, estimators, nearestEstimate, errorBudget, catalog} from './systems.js';
 import {accumulate, exactValue, measure, truncate, traverse, hammingCheck, buildTree, representations, routineFaults, schedules} from './machine.js';
 
@@ -176,7 +176,7 @@ function deliveries(level, state) {
 
 function natRun(level, state) {
   const forwards = (level.forwardOptions.find(option => option.id === state.dials.forward)?.rules ?? []);
-  const run = translate({publicAddress:level.publicAddress, flows:level.flows, forwards});
+  const run = translate({publicAddress:level.publicAddress, flows:level.flows, forwards, ports:state.dials.ports ?? Infinity});
   const rows = run.flows.map((flow, index) => ({...flow, want:level.flows[index].expect, correct:flow.delivered === level.flows[index].expect}));
   return {...run, rows, forwards};
 }
@@ -257,6 +257,33 @@ function eccRun(level, state) {
 function raceRun(level, state) {
   const routine = state.order.map(id => level.items.find(item => item.id === id).step);
   return {routine, faults:routineFaults(routine), run:schedules(routine, {start:level.start ?? 0})};
+}
+
+function socketRun(level, state) {
+  const sockets = level.services.map(service => ({...service, address:state.dials[service.id], port:service.port}));
+  const run = demultiplex({interfaces:level.interfaces, sockets, packets:level.packets});
+  const rows = run.packets.map((packet, index) => ({...packet, want:level.packets[index].expect, correct:packet.delivered === level.packets[index].expect}));
+  return {...run, rows};
+}
+
+function multiplexRun(level, state) {
+  const [connections, perConnection] = String(state.dials.pool).split(':').map(Number);
+  return multiplex({
+    streams:level.streams, rttMs:level.rttMs, lossAt:level.lossAt,
+    transport:state.dials.ordering, connections, perConnection,
+    handshakeRounds:level.handshakeRounds ?? 2
+  });
+}
+
+function v6Run(level, state) {
+  return planV6({base:level.base, basePrefix:level.basePrefix, prefix:state.dials.prefix, decks:level.decks, addressing:state.dials.addressing});
+}
+
+function chainRun(level, state) {
+  const sent = level.chains.find(option => option.id === state.dials.chain).certificates
+    .map(id => ({...level.certificates[id], ...(id === 'leaf' ? level.leaves[state.dials.certificate] : {})}));
+  return {sent, result:validate({sent, store:level.store, host:level.hosts[0], now:level.now}),
+    others:level.hosts.slice(1).map(host => ({host, result:validate({sent, store:level.store, host, now:level.now})}))};
 }
 
 function orderedCorrect(level, state) {
@@ -418,7 +445,10 @@ export const kinds = {
     evaluate(level, state, {result}) {
       const late = result.seconds > level.target.seconds;
       const wasteful = level.target.wasted !== undefined && result.wasted > level.target.wasted;
-      if (late) return {success:false, message:`The dump took ${result.seconds} s against a ${level.target.seconds} s deadline, using ${percent(result.utilisation)} of the link. One bandwidth-delay product is ${result.bdpPackets} packets; a window smaller than that leaves the link idle waiting for acknowledgements.`, result};
+      // The figure the player is asked to work out stays out of the feedback: a
+      // window that is too small should say the link is idling, not hand over
+      // the number that would have stopped it idling.
+      if (late) return {success:false, message:`The dump took ${result.seconds} s against a ${level.target.seconds} s deadline, using ${percent(result.utilisation)} of the link. The sender spends most of each round trip with nothing left it is allowed to send, waiting for an acknowledgement to come back before it may carry on.`, result};
       if (wasteful) return {success:false, message:`Delivered in ${result.seconds} s, but ${percent(result.wasted)} of transmissions were retransmissions against a ${percent(level.target.wasted)} limit. Resending data that already arrived is paid for twice.`, result};
       // A window past one bandwidth-delay product buys no throughput and is not
       // free: the sender has to hold every unacknowledged byte in case it needs
@@ -439,7 +469,8 @@ export const kinds = {
     view(level, state, {result}) {
       return {
         instructions:`Size the window for a ${level.link.capacityMbps} Mbps link with ${level.link.rttMs} ms round-trip time.`,
-        legend:[`One bandwidth-delay product ≈ ${result.bdpPackets} packets`, `${result.packets} packets to send`, `${result.retransmissions} retransmitted`],
+        // The inputs, not the answer: the mission is the arithmetic between them.
+        legend:[`${level.link.capacityMbps} Mbps · ${level.link.rttMs} ms round trip · ${level.link.mss}-byte packets`, `${result.packets} packets to send`, `${result.retransmissions} retransmitted`],
         summary:`${result.seconds} s · ${result.throughputMbps} Mbps · ${percent(result.utilisation)} of link · ${percent(result.wasted)} wasted`
       };
     }
@@ -528,6 +559,132 @@ export const kinds = {
       };
     }
   },
+  // A packet arrives at a host and has to reach one program. Which one is decided
+  // by the address it was sent to as well as the port, and a socket bound to one
+  // address is a different thing from one bound to all of them.
+  // IPv6 subnetting is not IPv4 subnetting with longer numbers. The bottom 64
+  // bits are spoken for, so the prefix stops being a function of how many hosts
+  // a network has — which is the habit this mission is trying to break.
+  ipv6:{
+    derive:(level, state) => ({plan:v6Run(level, state)}),
+    evaluate(level, state, {plan}) {
+      if (!plan.enough) {
+        return {success:false, plan, message:`A /${plan.prefix} gives this /${plan.basePrefix} only ${plan.subnets} subnet${plan.subnets === 1n ? '' : 's'} and the station has ${level.decks.length} decks to number.`};
+      }
+      if (plan.addressing === 'slaac' && !plan.slaacWorks) {
+        return {success:false, plan, message:`A /${plan.prefix} leaves ${plan.hostBits} bits for the host, and a device building its own address needs 64. Below that, nothing configures itself and every device has to be told what it is.`};
+      }
+      if (plan.hostBits > 64) {
+        return {success:false, plan, message:`A /${plan.prefix} hands each deck ${plan.subnets < 100n ? plan.subnets : 'thousands of'} subnets' worth of space to use as one. The /48 has room for 65,536 subnets — spending them is not the constraint, and a deck that is one network should be given one.`};
+      }
+      if (plan.addressing !== 'slaac') {
+        return {success:false, plan, message:`The addresses work out, and the objective asks for devices that configure themselves the moment they are plugged in. ${plan.addressing === 'dhcpv6' ? 'DHCPv6 means a server that has to be running, and a device that cannot find one gets nothing.' : 'Assigning them by hand means somebody types every one of them.'}`};
+      }
+      return {success:true, plan, message:`Every deck gets a /64 — the same /64 whether it holds three devices or three thousand — and the /48 still has ${plan.subnets - BigInt(level.decks.length)} of them spare. The bottom 64 bits are the device's to fill in, which is what lets it arrive on the deck and address itself.`};
+    },
+    view(level, state, {plan}) {
+      return {
+        instructions:`Number ${level.decks.length} decks inside ${level.base}/${level.basePrefix}. Choose the prefix each one gets, and how devices on it get an address.`,
+        legend:[`${plan.subnets} subnets at /${plan.prefix}`, `${plan.hostBits} host bits`, plan.slaacWorks ? 'devices can address themselves' : 'devices cannot address themselves'],
+        summary:`/${plan.prefix} · ${plan.hostBits} host bits · ${plan.addressing}`,
+        diagram:{type:'table', caption:`${level.base}/${level.basePrefix} carved into /${plan.prefix}`,
+          columns:['Deck', 'Devices', 'Subnet', 'A device on it'],
+          rows:plan.rows.map(row => [row.name, String(row.hosts), row.cidr, row.example]),
+          problems:plan.rows.map(() => !plan.slaacWorks && plan.addressing === 'slaac')}
+      };
+    }
+  },
+  // A certificate is only worth the path from it to something you trusted
+  // beforehand. Most of what goes wrong here is the path, not the certificate.
+  chain:{
+    derive:(level, state) => ({run:chainRun(level, state)}),
+    evaluate(level, state, {run}) {
+      if (!run.result.ok) return {success:false, run, message:run.result.reason};
+      const failed = run.others.find(other => !other.result.ok);
+      if (failed) return {success:false, run, message:`${level.hosts[0]} is trusted and ${failed.host} is not. ${failed.result.reason}`};
+      if (run.result.sentRoot) {
+        return {success:false, run, message:`Every name is trusted, and the root is being sent with them. A client that does not already have that root will not trust it because you sent it, and a client that does have it did not need it — so it is bytes added to every handshake for nobody. Send the leaf and what links it to the root, and stop there.`};
+      }
+      return {success:true, run, message:`Both names verify, through ${run.result.path.length} certificates to ${run.result.anchored}, which the client trusted before the connection started. The chain carries what the client cannot be assumed to have and nothing it already does.`};
+    },
+    view(level, state, {run}) {
+      const chain = level.chains.find(option => option.id === state.dials.chain);
+      return {
+        instructions:`The portal answers to ${level.hosts.join(' and ')}. Choose the certificate and what the server sends with it.`,
+        legend:[`${run.sent.length} certificates sent`, `trust store: ${level.store.join(', ')}`, run.result.ok ? 'path found' : `no path (${run.result.fault})`],
+        summary:`${chain.label} · ${run.result.ok ? `anchored at ${run.result.anchored}` : run.result.fault}`,
+        diagram:{type:'table', caption:'What the server sends, in order',
+          columns:['#', 'Subject', 'Issued by', 'Good for'],
+          rows:run.sent.map((certificate, index) => [`${index + 1}`, certificate.subject, certificate.issuer, (certificate.names ?? ['—']).join(', ')]),
+          problems:run.sent.map((certificate, index) => !run.result.ok && index === 0)}
+      };
+    }
+  },
+  socket:{
+    derive:(level, state) => ({run:socketRun(level, state)}),
+    evaluate(level, state, {run}) {
+      const clash = run.sockets.find(socket => socket.clashed);
+      if (clash) {
+        return {success:false, run, message:`${clash.name} cannot bind to ${clash.address}:${clash.port} — something else already has that port on an address that overlaps it. Two programs cannot listen on the same address and port, and binding to every interface conflicts with binding to one of them.`};
+      }
+      const wrong = run.rows.find(row => !row.correct);
+      if (wrong) {
+        return {success:false, run, message:wrong.want
+          ? `${wrong.name} should reach its service and does not. ${wrong.reason}`
+          : `${wrong.name} should be refused and is not. ${wrong.reason} Binding to every interface is the one decision here that cannot be taken back by a firewall you forgot to configure.`};
+      }
+      return {success:true, run, message:`Every packet reaches the service it was meant for and nothing else gets in. A socket is an address and a port together, so what a service binds to is the first and cheapest access-control decision anyone makes about it.`};
+    },
+    view(level, state, {run}) {
+      return {
+        instructions:'Choose the address each service listens on. The port is fixed; the address is not.',
+        legend:[`${level.interfaces.length} interfaces`, `${run.delivered} of ${level.packets.length} packets delivered`, run.clashes ? `${run.clashes} bind clash` : 'no bind clashes'],
+        summary:run.sockets.map(socket => `${socket.name} on ${socket.address}:${socket.port}`).join(' · '),
+        diagram:{type:'table', caption:'Packets arriving at the host', columns:['Packet', 'Sent to', 'Reached', 'Outcome'],
+          rows:run.rows.map(row => [row.name, `${row.destination}:${row.destinationPort}`, row.socket?.name ?? '—', row.delivered ? 'delivered' : 'refused']),
+          problems:run.rows.map(row => !row.correct)}
+      };
+    }
+  },
+  // Twelve requests over one origin, and one packet lost. What that costs the
+  // eleven that had nothing to do with it is the whole question.
+  multiplex:{
+    derive:(level, state) => ({run:multiplexRun(level, state)}),
+    evaluate(level, state, {run}) {
+      const lost = run.rows[level.lossAt];
+      if (run.lastMs > level.target.ms) {
+        return {success:false, run, message:`The last byte arrives at ${run.lastMs} ms against a ${level.target.ms} ms target.${run.queued ? ` ${run.queued} of the ${run.rows.length} requests waited for a free slot before they could even be sent.` : ''}${run.stalled ? ` ${run.stalled} were held up by the packet lost in ${lost.name}.` : ''}`};
+      }
+      if (run.stalled > 0) {
+        return {success:false, run, message:`Fast enough, and ${run.stalled} of the ${run.rows.length} requests were held up waiting for a packet lost in ${lost.name} — a file they do not depend on and did not ask for. An ordered byte stream cannot hand over what comes after a gap, so everything sharing that connection waits for it.`};
+      }
+      // Connections are not free: each one is its own handshake, its own
+      // congestion window starting from nothing, and memory on both ends.
+      const pools = level.dials.find(dial => dial.id === 'pool').options.map(option => option.value);
+      const fewer = pools.filter(value => Number(value.split(':')[0]) < run.connections)
+        .filter(value => {
+          const other = multiplexRun(level, {...state, dials:{...state.dials, pool:value}});
+          return other.lastMs <= level.target.ms && other.stalled === 0;
+        })
+        .sort((first, second) => Number(second.split(':')[0]) - Number(first.split(':')[0]))[0];
+      if (fewer !== undefined) {
+        return {success:false, run, message:`Nothing is stalled and the deadline is met, with ${run.connections} connections where ${fewer.split(':')[0]} would do. Every connection is another handshake, another congestion window starting from one packet, and another slab of memory on the server — which is exactly what opening six of them to one origin was always paying for.`};
+      }
+      return {success:true, run, message:`Last byte at ${run.lastMs} ms on ${run.connections} connection${run.connections === 1 ? '' : 's'}, and the packet lost in ${lost.name} delayed ${lost.name} and nothing else. Streams that are independent in the protocol have to be independent in the transport too, or the protocol is only pretending.`};
+    },
+    view(level, state, {run}) {
+      return {
+        instructions:`Load ${level.streams.length} files from one origin. One packet is lost in ${level.streams[level.lossAt].name}.`,
+        legend:[`${run.connections} connection${run.connections === 1 ? '' : 's'}`, run.transport === 'tcp' ? 'one ordered byte stream' : 'independent streams', `last byte ${run.lastMs} ms`],
+        summary:`${run.lastMs} ms to the last byte · ${run.queued} queued · ${run.stalled} stalled by another file’s loss`,
+        diagram:{type:'timeline', caption:'When each file finished', total:Math.max(run.lastMs, level.target.ms),
+          rows:run.rows.map(row => ({
+            name:row.name, value:row.ms - row.started, at:row.ms,
+            detail:row.lost ? `${row.ms} ms · lost a packet` : row.stalled ? `${row.ms} ms · waiting on another file` : `${row.ms} ms`
+          }))}
+      };
+    }
+  },
   nat:{
     derive: (level, state) => ({run:natRun(level, state)}),
     evaluate(level, state, {run}) {
@@ -537,12 +694,22 @@ export const kinds = {
           ? `${wrong.name} should get through and does not. ${wrong.reason}`
           : `${wrong.name} should be dropped and is not. Publishing a port exposes it to everyone, not only to the hosts you had in mind.`};
       }
-      return {success:true, run, message:`${run.table.length} inside hosts share ${level.publicAddress}, told apart by port. Replies find their way home from the table; the only unsolicited traffic that gets in is the port you chose to publish.`};
+      // A pool larger than the flows need is address space reserved and never
+      // used, which on a carrier's NAT is the difference between one public
+      // address serving a street and serving a building.
+      const pools = level.dials.find(dial => dial.id === 'ports')?.options.map(option => option.value) ?? [];
+      const smaller = pools.filter(value => value < state.dials.ports)
+        .filter(value => natRun(level, {...state, dials:{...state.dials, ports:value}}).rows.every(row => row.correct))
+        .sort((first, second) => second - first)[0];
+      if (smaller !== undefined) {
+        return {success:false, run, message:`Every packet goes where it should, and a pool of ${smaller} ports does the same job: only ${run.table.length} flows are ever open at once. Ports reserved and never used are the reason a carrier can put a street behind one address or a building, depending on how tightly this is sized.`};
+      }
+      return {success:true, run, message:`${run.table.length} flows share ${level.publicAddress} across ${run.ports} ports, told apart by the port the router gave each one. Replies find their way home from the table; the only unsolicited traffic that gets in is the port you chose to publish.`};
     },
     view(level, state, {run}) {
       return {
         instructions:'One public address serves the whole station. Decide which port, if any, is published to the outside.',
-        legend:[`Public address ${level.publicAddress}`, `${run.table.length} translations in the table`, `${run.delivered} of ${level.flows.length} packets delivered`],
+        legend:[`Public address ${level.publicAddress}`, `${run.table.length} of ${run.ports} ports allocated`, `${run.delivered} of ${level.flows.length} packets delivered`],
         summary:run.forwards.length ? `Published: ${run.forwards.map(rule => `${rule.publicPort} → ${rule.inside}:${rule.insidePort}`).join(', ')}` : 'Nothing published to the outside',
         diagram:{type:'table', caption:'Packets through the router', columns:['Packet', 'Direction', 'Seen as', 'Outcome'],
           rows:run.rows.map(row => [row.name, row.direction === 'out' ? 'outbound' : 'inbound', row.seenAs ?? '—', row.delivered ? 'delivered' : 'dropped']),
@@ -556,7 +723,7 @@ export const kinds = {
       const late = runs.find(entry => !entry.onTime);
       const dirty = runs.find(entry => !entry.clean);
       if (late) {
-        return {success:false, runs, message:`On the ${late.link.name} this took ${late.result.seconds} s against a ${late.link.target.seconds} s target, using ${percent(late.result.utilisation)} of the link. One bandwidth-delay product there is ${late.result.bdpPackets} packets.`};
+        return {success:false, runs, message:`On the ${late.link.name} this took ${late.result.seconds} s against a ${late.link.target.seconds} s target, using ${percent(late.result.utilisation)} of the link. That link holds far more in flight than this window allows, so it spends most of every round trip idle.`};
       }
       if (dirty) {
         return {success:false, runs, message:`On the ${dirty.link.name} the deadline is met, but ${percent(dirty.result.wasted)} of transmissions were retransmissions against a ${percent(dirty.link.target.wasted)} limit. A window past what the path holds does not go faster; it just fills a buffer until it overflows.`};
