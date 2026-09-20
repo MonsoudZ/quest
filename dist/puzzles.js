@@ -5,12 +5,12 @@
 // renders generically, into a diagram description, and into a verdict. All of it
 // is pure, so every mission can be checked in a test without a browser.
 import {evaluatePuzzle, evaluateNetwork, bitValue, toHex} from './engine.js';
+import {percent} from './format.js';
 import {subnet, smallestPrefixFor, allocate, longestPrefixMatch, encapsulate, transfer, timeline, reachability, translate, congestion} from './net.js';
 import {evaluateArchitecture, estimators, nearestEstimate, errorBudget, catalog} from './systems.js';
 import {accumulate, exactValue, measure, truncate, traverse, hammingCheck, buildTree, representations} from './machine.js';
 
 const clone = value => Array.isArray(value) ? [...value] : value;
-const percent = value => `${(value * 100).toFixed(1)}%`;
 
 import {algoKinds} from './engine.js';
 // Everything that is not a grid program and not a function console is a puzzle:

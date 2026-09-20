@@ -1,11 +1,11 @@
 // The architecture lab: the second game mode. The model lives in systems.js;
 // this file is only the interface for it.
 import {reveal} from './ui.js';
+import {percent, readStore, writeStore} from './format.js';
 import {catalog, scenarios, shardOptions, replicaOptions, regionOptions, maxServers, maxWorkers, modelConstants, defaultDesign, evaluateArchitecture, search} from './systems.js';
 
 const saveKey = 'signal-quest-architecture-v1';
-const percent = value => `${(value * 100).toFixed(1)}%`;
-const rate = value => value >= 1000 ? `${(value / 1000).toFixed(value % 1000 === 0 ? 0 : 1)}k` : String(Math.round(value));
+const compact = value => value >= 1000 ? `${(value / 1000).toFixed(value % 1000 === 0 ? 0 : 1)}k` : String(Math.round(value));
 
 const option = (label, note, selected, attributes) =>
   `<button class="component-option ${selected ? 'chosen' : ''}" ${attributes} aria-pressed="${selected}"><span>${label}</span><span>${note}</span></button>`;
@@ -22,7 +22,7 @@ export function mountBuilder(container, {onContract = () => {}} = {}) {
   let completed = [];
   let verdict = null;
   try {
-    const saved = JSON.parse(localStorage.getItem(saveKey) || 'null');
+    const saved = readStore(saveKey);
     if (saved) {
       evaluateArchitecture(saved.design, saved.index);
       design = {...defaultDesign, ...saved.design};
@@ -30,7 +30,7 @@ export function mountBuilder(container, {onContract = () => {}} = {}) {
       completed = Array.isArray(saved.completed) ? saved.completed.filter(entry => Number.isInteger(entry) && scenarios[entry]) : [];
     }
   } catch { /* a stored design that no longer validates is discarded */ }
-  const persist = () => { try { localStorage.setItem(saveKey, JSON.stringify({design, index, completed})); } catch { /* play continues without saved progress */ } };
+  const persist = () => writeStore(saveKey, {design, index, completed});
 
   function change(update) {
     const next = {...design, ...update};
@@ -61,7 +61,7 @@ export function mountBuilder(container, {onContract = () => {}} = {}) {
         <div class="eyebrow">CONTRACT ${index + 1}</div>
         <h3>${scenario.name}</h3>
         <p>${scenario.description}</p>
-        <p class="contract-targets"><span>${rate(scenario.traffic.rps)} req/s</span><span>${Math.round(scenario.traffic.readFraction * 100)}% reads</span><span>${scenario.traffic.workingSetGb} GB working set</span><span>p99 ≤ ${target.p99Ms} ms</span><span>≥ ${(target.availability * 100).toFixed(2)}% available</span><span>≤ ${target.budget} credits</span></p>
+        <p class="contract-targets"><span>${compact(scenario.traffic.rps)} req/s</span><span>${Math.round(scenario.traffic.readFraction * 100)}% reads</span><span>${scenario.traffic.workingSetGb} GB working set</span><span>p99 ≤ ${target.p99Ms} ms</span><span>≥ ${(target.availability * 100).toFixed(2)}% available</span><span>≤ ${target.budget} credits</span></p>
       </div>
       <label>Choose contract <select id="contract">${scenarios.map((item, i) => `<option value="${i}" ${i === index ? 'selected' : ''}>${i + 1}. ${item.name}${completed.includes(i) ? ' ✓' : ''}</option>`).join('')}</select></label>
     </div>
@@ -70,19 +70,19 @@ export function mountBuilder(container, {onContract = () => {}} = {}) {
       <section class="component-bay">
         <div class="eyebrow">TIER 01 · REQUEST HANDLING</div>
         <h3>Edge nodes</h3>
-        <strong class="component-capacity">${rate(web.rps * design.servers * design.regions)} <span>req / s served</span></strong>
+        <strong class="component-capacity">${compact(web.rps * design.servers * design.regions)} <span>req / s served</span></strong>
         <div class="stepper" role="group" aria-label="Edge node count">
           <button data-servers="${Math.max(1, design.servers - 1)}" aria-label="Fewer edge nodes">−</button>
           <span>${design.servers} node${design.servers === 1 ? '' : 's'}${design.regions > 1 ? ' per region' : ''}</span>
           <button data-servers="${Math.min(maxServers, design.servers + 1)}" aria-label="More edge nodes">+</button>
         </div>
-        <div class="component-options">${catalog.web.map((item, i) => option(item.name, `${rate(item.rps)} rps · ${item.cost} cr`, design.web === i, `data-web="${i}"`)).join('')}</div>
+        <div class="component-options">${catalog.web.map((item, i) => option(item.name, `${compact(item.rps)} rps · ${item.cost} cr`, design.web === i, `data-web="${i}"`)).join('')}</div>
       </section>
 
       <section class="component-bay">
         <div class="eyebrow">TIER 02 · DURABLE STATE</div>
         <h3>Datastore</h3>
-        <strong class="component-capacity">${rate(db.readRps)} <span>reads/s per node · ${rate(db.writeRps)} writes/s per primary</span></strong>
+        <strong class="component-capacity">${compact(db.readRps)} <span>reads/s per node · ${compact(db.writeRps)} writes/s per primary</span></strong>
         <div class="component-options">${catalog.db.map((item, i) => option(item.name, `${item.cost} cr`, design.db === i, `data-db="${i}"`)).join('')}</div>
         <div class="bay-row"><span>Read replicas per shard</span><div class="segmented">${replicaOptions.map(value => option(String(value), '', design.replicas === value, `data-replicas="${value}"`)).join('')}</div></div>
         ${allow.shards === false ? '' : `<div class="bay-row"><span>Shards</span><div class="segmented">${shardOptions.map(value => option(String(value), '', design.shards === value, `data-shards="${value}"`)).join('')}</div></div>`}
@@ -94,7 +94,7 @@ export function mountBuilder(container, {onContract = () => {}} = {}) {
         <strong class="component-capacity">${percent(result.hitRatio)} <span>of reads served from cache</span></strong>
         <div class="component-options">${catalog.cache.map((item, i) => option(item.name, item.cost ? `${item.cost} cr` : 'free', design.cache === i, `data-cache="${i}"`)).join('')}</div>
         ${allow.queue === false ? '' : `<div class="bay-row"><span>Write queue</span><div class="segmented">${option('Synchronous', '', !design.queue, 'data-queue="0"')}${option('Queued', '', design.queue, 'data-queue="1"')}</div></div>
-        ${design.queue ? `<div class="stepper" role="group" aria-label="Queue workers"><button data-workers="${Math.max(0, design.workers - 1)}" aria-label="Fewer workers">−</button><span>${design.workers} worker${design.workers === 1 ? '' : 's'} · ${rate(design.workers * modelConstants.workerRps)} writes/s</span><button data-workers="${Math.min(maxWorkers, design.workers + 1)}" aria-label="More workers">+</button></div>` : ''}`}
+        ${design.queue ? `<div class="stepper" role="group" aria-label="Queue workers"><button data-workers="${Math.max(0, design.workers - 1)}" aria-label="Fewer workers">−</button><span>${design.workers} worker${design.workers === 1 ? '' : 's'} · ${compact(design.workers * modelConstants.workerRps)} writes/s</span><button data-workers="${Math.min(maxWorkers, design.workers + 1)}" aria-label="More workers">+</button></div>` : ''}`}
         ${allow.regions === false ? '' : `<div class="bay-row"><span>Regions</span><div class="segmented">${regionOptions.map(value => option(String(value), '', design.regions === value, `data-regions="${value}"`)).join('')}</div></div>`}
       </section>
     </div>
@@ -112,7 +112,7 @@ export function mountBuilder(container, {onContract = () => {}} = {}) {
         ${meter('Edge nodes', result.utilisation.app, percent(result.utilisation.app), result.utilisation.app >= 0.85)}
         ${meter('Datastore reads', result.utilisation.read, percent(result.utilisation.read), result.utilisation.read >= 0.85)}
         ${meter(design.queue ? 'Queue workers' : 'Datastore writes', result.utilisation.write, percent(result.utilisation.write), result.utilisation.write >= 0.85)}
-        <p class="model-note">${rate(result.reads)} reads/s and ${rate(result.writes)} writes/s arrive. The cache absorbs ${percent(result.hitRatio)} of reads, so ${rate(result.databaseReads)} reads/s reach the datastore. A tier at 100% utilisation has an unbounded queue, which is why latency is reported as overloaded rather than as a number.</p>
+        <p class="model-note">${compact(result.reads)} reads/s and ${compact(result.writes)} writes/s arrive. The cache absorbs ${percent(result.hitRatio)} of reads, so ${compact(result.databaseReads)} reads/s reach the datastore. A tier at 100% utilisation has an unbounded queue, which is why latency is reported as overloaded rather than as a number.</p>
       </section>
       <section class="panel-block">
         <div class="eyebrow">WHERE THE 99TH PERCENTILE GOES</div>

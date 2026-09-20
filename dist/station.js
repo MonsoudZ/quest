@@ -1,11 +1,11 @@
 // The station screen: the premise the game has always had, finally drawn. One
 // module per section, lit by the missions done inside it, with the achievements
 // and the ranks that earned the power alongside.
+import {kilowatts} from './format.js';
 import {createStage} from './stage.js';
 import {stationScene} from './scenes.js';
 import {sections, conduits, stationState, earnedAchievements, ranks, rankOrder} from './progress.js';
 
-const kilowatts = value => `${value.toLocaleString('en-US')} kW`;
 
 export function mountStation(container, {getRecords, getFeats, onPick}) {
   let stage = null;

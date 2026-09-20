@@ -1,6 +1,7 @@
 // Signal City: the interface for the networking build mode. The model lives in
 // city.js; this file draws the map and collects what the player lays down.
 import {reveal} from './ui.js';
+import {percent as share, readStore, writeStore} from './format.js';
 import {createStage} from './stage.js';
 import {cityScene} from './scenes.js';
 import {grid, districts, technologies, scenarios, scenarioDistricts, referenceDesigns, evaluateCity, blocksBetween} from './city.js';
@@ -19,7 +20,8 @@ function frame(list) {
   const bottom = Math.max(...points.map(point => point.y)) + pad.y;
   return {left, top, width:right - left, height:bottom - top};
 }
-const percent = value => `${Math.round(value * 100)}%`;
+// The city has always shown whole percentages; the shared helper is told so.
+const percent = value => share(value, 0);
 const rate = mbps => mbps >= 1000 ? `${(mbps / 1000).toFixed(mbps % 1000 === 0 ? 0 : 1)} Gbps` : `${mbps} Mbps`;
 const nameOf = id => districts.find(district => district.id === id).name;
 const pairKey = (a, b) => [a, b].sort().join('|');
@@ -38,7 +40,7 @@ export function mountCity(container, {onContract = () => {}} = {}) {
   let completed = [];
   const contractId = () => scenarios[index].id;
   try {
-    const saved = JSON.parse(localStorage.getItem(saveKey) || 'null');
+    const saved = readStore(saveKey);
     if (saved) {
       index = Number.isInteger(saved.index) && scenarios[saved.index] ? saved.index : 0;
       // A stored city is kept only if it still validates against its own
@@ -56,7 +58,7 @@ export function mountCity(container, {onContract = () => {}} = {}) {
   } catch { /* a stored city that no longer validates is discarded */ }
   const persist = () => {
     designs[contractId()] = links;
-    try { localStorage.setItem(saveKey, JSON.stringify({index, designs, tech, completed})); } catch { /* play continues without saved progress */ }
+    writeStore(saveKey, {index, designs, tech, completed});
   };
 
   const available = () => scenarioDistricts(scenarios[index]);

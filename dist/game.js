@@ -12,13 +12,13 @@ import {rankFor, bestRank, ranks, stationState, earnedAchievements, sectionOf, s
 import {registerGameTools} from './webmcp.js';
 import {createScene} from './scene.js';
 import {reveal, reduceMotion} from './ui.js';
+import {readStore, writeStore, count} from './format.js';
 import {createStage} from './stage.js';
 import {sceneFor} from './scenes.js';
 
 const $ = id => document.getElementById(id);
 const saveKey = 'signal-quest-v2';
-let saved = {};
-try { saved = JSON.parse(localStorage.getItem(saveKey) || '{}'); } catch { /* storage is optional */ }
+const saved = readStore(saveKey, {}) ?? {};
 const completed = new Set(Array.isArray(saved?.completed) ? saved.completed.filter(id => levels.some(level => level.id === id)) : []);
 // How each mission went, not just whether it went. The best attempt is the one
 // kept, so a mission solved again without help upgrades its own rank.
@@ -60,8 +60,8 @@ let stage = null, stageKind = null;
 const level = () => levels[current];
 
 function persist() {
-  try { localStorage.setItem(saveKey, JSON.stringify({completed:[...completed], records, feats, reviews, current:level().id, drafts, collapsed:[...collapsed]})); }
-  catch {
+  const stored = writeStore(saveKey, {completed:[...completed], records, feats, reviews, current:level().id, drafts, collapsed:[...collapsed]});
+  if (!stored) {
     const note = document.querySelector('.save-note');
     if (note) note.textContent = 'Browser storage is unavailable. Progress lasts until this page closes.';
   }
@@ -146,7 +146,7 @@ function navigation() {
   const station = stationState(records);
   $('power').max = station.capacity;
   $('power').value = station.power;
-  $('power-count').textContent = `${station.power.toLocaleString('en-US')} / ${station.capacity.toLocaleString('en-US')} kW`;
+  $('power-count').textContent = `${count(station.power)} / ${count(station.capacity)} kW`;
   $('power-count').title = `${station.complete} of ${station.total} missions · ${station.restored} of ${station.sections.length} sections online`;
 }
 
@@ -562,8 +562,8 @@ function renderCases(result = null) {
       ? testCase.note ?? ''
       : outcome.error ? outcome.error
       : !outcome.passed ? `returned ${describe(outcome.actual)}`
-      : outcome.overGate ? `${outcome.operations.toLocaleString('en-US')} steps, over the ${outcome.maxOperations.toLocaleString('en-US')} allowed`
-      : `${outcome.operations.toLocaleString('en-US')} steps${testCase.maxOperations ? ` of ${testCase.maxOperations.toLocaleString('en-US')} allowed` : ''}`;
+      : outcome.overGate ? `${count(outcome.operations)} steps, over the ${count(outcome.maxOperations)} allowed`
+      : `${count(outcome.operations)} steps${testCase.maxOperations ? ` of ${count(testCase.maxOperations)} allowed` : ''}`;
     return `<div class="case-row ${className}"><span class="case-status">${status}</span><code>${item.fn}(${testCase.args.map(argument => short(describe(argument))).join(', ')})</code><span class="case-expect">→ ${short(describe(testCase.expect))}</span><span class="case-detail">${detail}</span></div>`;
   }).join('');
   // A refactor mission can pass every case and still be refused, so the panel
@@ -587,12 +587,12 @@ const outcomePanel = () => document.querySelector('.trace-panel');
 // Counting up to a number reads as something being restored, where the number
 // appearing reads as a number appearing.
 function countUp(element, to, from = 0) {
-  if (reduceMotion() || to === from) { element.textContent = `${to.toLocaleString('en-US')} kW`; return; }
+  if (reduceMotion() || to === from) { element.textContent = `${count(to)} kW`; return; }
   const started = performance.now();
   const step = now => {
     const through = Math.min(1, (now - started) / 700);
     const eased = 1 - (1 - through) ** 3;
-    element.textContent = `${Math.round(from + (to - from) * eased).toLocaleString('en-US')} kW`;
+    element.textContent = `${count(Math.round(from + (to - from) * eased))} kW`;
     if (through < 1) requestAnimationFrame(step);
   };
   requestAnimationFrame(step);
@@ -867,7 +867,6 @@ const station = mountStation($('station'), {
     document.querySelector('.workspace')?.scrollIntoView({behavior:reduceMotion() ? 'auto' : 'smooth', block:'start'});
   }
 });
-station.render();
 const review = mountReview($('review'), {
   getReviews:() => reviews,
   getRecords:() => records,
@@ -907,6 +906,8 @@ function setMode(nextMode) {
   }
 }
 // Colour scheme: follows the system until the player chooses, then stays put.
+// Stored as a bare string rather than through writeStore, because a saved theme
+// from before this existed is "dark", not "\"dark\"".
 const themeKey = 'signal-quest-theme';
 let theme = null;
 try { theme = localStorage.getItem(themeKey); } catch { /* storage is optional */ }
