@@ -16,7 +16,7 @@ const meter = (label, value, detail, warn) => `<div class="util-row ${warn ? 'wa
   <strong>${detail}</strong>
 </div>`;
 
-export function mountBuilder(container) {
+export function mountBuilder(container, {onContract = () => {}} = {}) {
   let design = {...defaultDesign};
   let index = 0;
   let completed = [];
@@ -171,6 +171,7 @@ export function mountBuilder(container) {
     container.querySelector('#benchmark').addEventListener('click', () => {
       verdict = evaluateArchitecture(design, index);
       if (verdict.success && !completed.includes(index)) completed.push(index);
+      if (verdict.success) onContract({spare:1 - verdict.cost / verdict.scenario.slo.budget});
       persist();
       render();
       reveal(container.querySelector('#benchmark-result'));

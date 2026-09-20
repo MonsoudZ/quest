@@ -24,8 +24,8 @@
     </a>
     <div class="station-status">
       <span id="station-label">Station power</span>
-      <progress id="power" max="54" value="0" aria-labelledby="station-label"></progress>
-      <span id="power-count">0 / 54</span>
+      <progress id="power" max="5400" value="0" aria-labelledby="station-label"></progress>
+      <span id="power-count">0 / 5,400 kW</span>
     </div>
     <button id="theme" class="icon-button" aria-pressed="false" title="Switch between the dark and light colour scheme">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.2M12 19.3v2.2M4.2 4.2l1.6 1.6M18.2 18.2l1.6 1.6M2.5 12h2.2M19.3 12h2.2M4.2 19.8l1.6-1.6M18.2 5.8l1.6-1.6"/></svg>
@@ -42,6 +42,7 @@
       <button id="campaign-mode" class="mode-button active" aria-pressed="true">01 · Missions</button>
       <button id="builder-mode" class="mode-button" aria-pressed="false">02 · Architecture lab</button>
       <button id="city-mode" class="mode-button" aria-pressed="false">03 · Signal City</button>
+      <button id="station-mode" class="mode-button" aria-pressed="false">04 · Station</button>
     </div>
     <span>4 chapters · 54 missions</span>
   </nav>
@@ -112,9 +113,17 @@
 
       <div id="result" class="result" hidden>
         <div>
-          <div class="eyebrow">System restored</div>
+          <div class="result-head">
+            <div class="eyebrow">System restored</div>
+            <span id="result-rank" class="rank-chip"></span>
+          </div>
           <h3 id="result-title">Mission complete.</h3>
           <p id="takeaway"></p>
+          <div class="result-power">
+            <strong id="result-power" hidden>0 kW</strong>
+            <span id="result-note"></span>
+          </div>
+          <div id="result-badges" class="result-badges"></div>
         </div>
         <button id="next" class="primary">Next mission →</button>
       </div>
@@ -150,6 +159,7 @@
   </main>
 
   <main id="builder" class="builder-workspace" hidden></main>
+  <main id="station" class="station-workspace" hidden></main>
   <main id="city" class="builder-workspace" hidden></main>
 
   <footer>

@@ -28,7 +28,7 @@ const pairKey = (a, b) => [a, b].sort().join('|');
 // the contracts set.
 const band = utilisation => utilisation >= 0.85 ? 'hot' : utilisation >= 0.6 ? 'warm' : 'cool';
 
-export function mountCity(container) {
+export function mountCity(container, {onContract = () => {}} = {}) {
   let index = 0;
   let designs = {};            // contract id -> the cables laid for it
   let links = [];              // the cables for the contract on screen
@@ -240,6 +240,7 @@ export function mountCity(container) {
     container.querySelector('#city-run').addEventListener('click', () => {
       verdict = evaluateCityQuietly();
       if (verdict?.success && !completed.includes(index)) completed.push(index);
+      if (verdict?.success) onContract({spare:1 - verdict.cost / scenarios[index].budget});
       persist();
       render();
       reveal(container.querySelector('#city-result'));

@@ -3,6 +3,8 @@ import {simulate, evaluateAlgorithm, evaluateNetwork, describe, algoKinds, evalu
 import {isPuzzle, initialState, solutionState, applyAction, widgets, view, evaluate} from './puzzles.js';
 import {mountBuilder} from './builder.js';
 import {mountCity} from './citylab.js';
+import {mountStation} from './station.js';
+import {rankFor, bestRank, ranks, stationState, earnedAchievements, sectionOf} from './progress.js';
 import {registerGameTools} from './webmcp.js';
 import {createScene} from './scene.js';
 import {reveal, reduceMotion} from './ui.js';
@@ -14,6 +16,27 @@ const saveKey = 'signal-quest-v2';
 let saved = {};
 try { saved = JSON.parse(localStorage.getItem(saveKey) || '{}'); } catch { /* storage is optional */ }
 const completed = new Set(Array.isArray(saved?.completed) ? saved.completed.filter(id => levels.some(level => level.id === id)) : []);
+// How each mission went, not just whether it went. The best attempt is the one
+// kept, so a mission solved again without help upgrades its own rank.
+const records = {};
+for (const [id, record] of Object.entries(saved?.records ?? {})) {
+  if (!levels.some(level => level.id === id)) continue;
+  if (!ranks[record?.rank]) continue;
+  records[id] = {rank:record.rank, firstTry:!!record.firstTry, runs:Number(record.runs) || 0};
+}
+// Missions completed before ranks existed are kept, at the rank they would have
+// earned if nothing was recorded about how.
+for (const id of completed) if (!records[id]) records[id] = {rank:'silver', firstTry:false, runs:0};
+const feats = {
+  tightestSuite:Number(saved?.feats?.tightestSuite) || undefined,
+  bestGateRatio:Number(saved?.feats?.bestGateRatio) || undefined,
+  citySpare:Number(saved?.feats?.citySpare) || undefined,
+  labSpare:Number(saved?.feats?.labSpare) || undefined,
+  languagesRead:Number(saved?.feats?.languagesRead) || 0
+};
+// Per-mission attempt state, reset whenever a mission is loaded.
+let attempt = {hints:0, solutionShown:false, runs:0};
+let earnedBefore = new Set();
 let current = Math.max(0, levels.findIndex(level => level.id === saved?.current));
 let drafts = saved?.drafts && typeof saved.drafts === 'object' ? saved.drafts : {};
 const collapsed = new Set(Array.isArray(saved?.collapsed) ? saved.collapsed : []);
@@ -24,7 +47,7 @@ let stage = null, stageKind = null;
 const level = () => levels[current];
 
 function persist() {
-  try { localStorage.setItem(saveKey, JSON.stringify({completed:[...completed], current:level().id, drafts, collapsed:[...collapsed]})); }
+  try { localStorage.setItem(saveKey, JSON.stringify({completed:[...completed], records, feats, current:level().id, drafts, collapsed:[...collapsed]})); }
   catch {
     const note = document.querySelector('.save-note');
     if (note) note.textContent = 'Browser storage is unavailable. Progress lasts until this page closes.';
@@ -92,7 +115,9 @@ function navigation() {
       const button = document.createElement('button');
       button.className = `mission-button ${index === current ? 'active' : ''} ${completed.has(item.id) ? 'done' : ''}`;
       button.setAttribute('aria-current', index === current ? 'step' : 'false');
-      button.innerHTML = `<span class="mission-number">${completed.has(item.id) ? '✓' : String(index + 1).padStart(2, '0')}</span><span class="mission-name">${item.name}</span>`;
+      const record = records[item.id];
+      const rank = record?.rank ? ranks[record.rank] : null;
+      button.innerHTML = `<span class="mission-number">${rank ? rank.mark : String(index + 1).padStart(2, '0')}</span><span class="mission-name">${item.name}</span>${rank ? `<span class="rank-chip ${rank.id}" title="${rank.note}">${rank.power} kW</span>` : ''}`;
       button.addEventListener('click', () => {
         loadMission(index);
         closeRail();
@@ -105,9 +130,11 @@ function navigation() {
   $('campaign').dataset.chapter = slug(level().chapter);
   keepActiveVisible(container);
   $('rail-current').textContent = `${String(current + 1).padStart(2, '0')} · ${level().name}`;
-  $('power').max = levels.length;
-  $('power').value = completed.size;
-  $('power-count').textContent = `${completed.size} / ${levels.length}`;
+  const station = stationState(records);
+  $('power').max = station.capacity;
+  $('power').value = station.power;
+  $('power-count').textContent = `${station.power.toLocaleString('en-US')} / ${station.capacity.toLocaleString('en-US')} kW`;
+  $('power-count').title = `${station.complete} of ${station.total} missions · ${station.restored} of ${station.sections.length} sections online`;
 }
 
 // Centre the active mission inside whichever element actually scrolls, rather
@@ -165,6 +192,7 @@ function commandReference(item) {
 // tool output an engineer would actually have been looking at. Nothing here
 // runs — it is there to be read against what the mission is asking.
 let panelChoice = 0;
+const read = new Set();
 function readingPanel(item) {
   const source = item.polyglot ?? item.artifact ?? null;
   const panes = (source?.samples ?? source?.panes ?? []).map(pane => ({
@@ -187,7 +215,13 @@ function readingPanel(item) {
     tab.role = 'tab';
     tab.setAttribute('aria-selected', String(index === panelChoice));
     tab.textContent = pane.label;
-    tab.addEventListener('click', () => { panelChoice = index; readingPanel(item); });
+    tab.addEventListener('click', () => {
+      panelChoice = index;
+      read.add(`${item.id}:${index}`);
+      feats.languagesRead = Math.max(feats.languagesRead ?? 0, [...read].filter(key => key.startsWith(`${item.id}:`)).length);
+      persist();
+      readingPanel(item);
+    });
     return tab;
   }));
   const pane = panes[panelChoice];
@@ -201,7 +235,7 @@ function loadMission(index) {
   running = false;
   current = Math.max(0, Math.min(levels.length - 1, index));
   const item = level();
-  hintIndex = 0; panelChoice = 0; trace = null; traceIndex = 0; visited = []; networkResult = null; algoResult = null;
+  hintIndex = 0; panelChoice = 0; attempt = {hints:0, solutionShown:false, runs:0}; trace = null; traceIndex = 0; visited = []; networkResult = null; algoResult = null;
   unit = item.start ? {x:item.start[0], y:item.start[1], dir:item.start[2]} : null;
   scene?.destroy(); scene = null; sceneLevel = null;
   stage?.destroy(); stage = null; stageKind = null;
@@ -498,17 +532,72 @@ function act(action) {
 
 const outcomePanel = () => document.querySelector('.trace-panel');
 
+// Counting up to a number reads as something being restored, where the number
+// appearing reads as a number appearing.
+function countUp(element, to, from = 0) {
+  if (reduceMotion() || to === from) { element.textContent = `${to.toLocaleString('en-US')} kW`; return; }
+  const started = performance.now();
+  const step = now => {
+    const through = Math.min(1, (now - started) / 700);
+    const eased = 1 - (1 - through) ** 3;
+    element.textContent = `${Math.round(from + (to - from) * eased).toLocaleString('en-US')} kW`;
+    if (through < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
 function win() {
   const item = level();
+  const before = stationState(records);
+  const beforeBadges = new Set(earnedAchievements(records, feats).filter(badge => badge.done).map(badge => badge.id));
+  const previous = records[item.id] ?? null;
+  const earnedRank = rankFor(attempt);
+  const rank = ranks[previous ? bestRank(previous.rank, earnedRank.id) : earnedRank.id];
+  const improved = previous && rank.id !== previous.rank;
+
   completed.add(item.id);
+  records[item.id] = {
+    rank:rank.id,
+    firstTry:(previous?.firstTry ?? false) || (attempt.runs <= 1 && earnedRank.id === 'gold'),
+    runs:(previous?.runs ?? 0) + attempt.runs
+  };
   persist();
   navigation();
+  station.render();
   scene?.celebrate();
+
+  const after = stationState(records);
+  const section = sectionOf(item);
+  const sectionNow = after.sections.find(entry => entry.id === section?.id);
+  const sectionBefore = before.sections.find(entry => entry.id === section?.id);
+  const newBadges = earnedAchievements(records, feats).filter(badge => badge.done && !beforeBadges.has(badge.id));
+
   $('result').hidden = false;
-  $('result-title').textContent = completed.size === levels.length ? 'Station restored. You did that.' : 'Mission complete.';
+  $('result-title').textContent = after.online ? 'Station restored. You did that.'
+    : sectionNow && sectionBefore && sectionNow.status === 'online' && sectionBefore.status !== 'online' ? `${sectionNow.name} is back online.`
+    : 'Mission complete.';
   $('takeaway').textContent = item.takeaway;
+  $('result-rank').className = `rank-chip ${rank.id}`;
+  $('result-rank').textContent = `${rank.mark} ${rank.name}`;
+  $('result-rank').title = rank.note;
+  $('result-power').hidden = false;
+  countUp($('result-power'), after.power, before.power);
+  $('result-note').textContent = earnedRank.id === 'gold' && !previous ? 'Full power for this system: no hints, no solution.'
+    : improved ? `Re-solved at ${rank.name.toLowerCase()} — this system now runs at ${rank.power} kW.`
+    : earnedRank.id === 'bronze' ? `${rank.power} kW of ${ranks.gold.power}. Reset it and solve it yourself to restore the rest.`
+    : `${rank.power} kW of ${ranks.gold.power}.${sectionNow ? ` ${sectionNow.name}: ${sectionNow.complete} of ${sectionNow.total}.` : ''}`;
+  $('result-badges').replaceChildren(...newBadges.map(badge => {
+    const chip = document.createElement('span');
+    chip.className = 'badge-won';
+    chip.textContent = `Achievement · ${badge.name}`;
+    return chip;
+  }));
   $('next').textContent = current === levels.length - 1 ? 'Replay the expedition ↺' : 'Next mission →';
   log('Objective achieved. System restored.', 'success');
+  for (const badge of newBadges) log(`Achievement unlocked — ${badge.name}.`, 'success');
+  if (sectionNow && sectionBefore && sectionNow.status === 'online' && sectionBefore.status !== 'online') {
+    log(`${sectionNow.name} is fully powered. Open the station to see it.`, 'success');
+  }
   tone();
   reveal($('result'));
 }
@@ -555,12 +644,14 @@ const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 async function run() {
   if (running) return;
+  attempt.runs++;
   const item = level();
   if (item.kind === 'spec') {
     drafts[item.id] = $('code').value;
     persist();
     $('log').replaceChildren();
     algoResult = evaluateSpec(item, $('code').value);
+    if (algoResult.success) feats.tightestSuite = Math.min(feats.tightestSuite ?? Infinity, algoResult.cases.length);
     renderSpec(algoResult);
     for (const line of algoResult.output.slice(0, 12)) log(`print → ${line}`);
     $('step-count').textContent = algoResult.mutants.length
@@ -575,6 +666,14 @@ async function run() {
     persist();
     $('log').replaceChildren();
     algoResult = evaluateAlgorithm(item, $('code').value);
+    if (algoResult.success) {
+      // How far under the tightest budget this mission set, for the achievement
+      // that is about beating a gate rather than merely passing it.
+      for (const entry of algoResult.cases) {
+        if (!entry.maxOperations || !entry.operations) continue;
+        feats.bestGateRatio = Math.min(feats.bestGateRatio ?? Infinity, entry.operations / entry.maxOperations);
+      }
+    }
     renderCases(algoResult);
     for (const line of algoResult.output.slice(0, 12)) log(`print → ${line}`);
     $('step-count').textContent = `${algoResult.cases.filter(entry => entry.passed && !entry.overGate).length} / ${item.cases.length} cases`;
@@ -644,12 +743,14 @@ $('reset').addEventListener('click', () => {
   loadMission(current);
 });
 $('hint').addEventListener('click', () => {
+  attempt.hints++;
   const hints = level().hints;
   $('hint-text').textContent = hints[Math.min(hintIndex++, hints.length - 1)];
   $('hint').textContent = hintIndex >= hints.length ? 'All hints shown' : 'Another hint';
   $('hint').disabled = hintIndex >= hints.length;
 });
 $('solution').addEventListener('click', () => {
+  attempt.solutionShown = true;
   runToken++;
   running = false;
   controls();
@@ -679,14 +780,33 @@ $('sound').addEventListener('click', () => {
 });
 
 loadMission(current);
-const builder = mountBuilder($('builder'));
-const city = mountCity($('city'));
-const modes = ['campaign', 'builder', 'city'];
+const recordSpare = key => ({spare}) => {
+  if (!(spare > (feats[key] ?? 0))) return;
+  feats[key] = spare;
+  persist();
+  station.render();
+};
+const builder = mountBuilder($('builder'), {onContract:recordSpare('labSpare')});
+const city = mountCity($('city'), {onContract:recordSpare('citySpare')});
+const station = mountStation($('station'), {
+  getRecords:() => records,
+  getFeats:() => feats,
+  onPick:id => {
+    const index = levels.findIndex(level => level.id === id);
+    if (index < 0) return;
+    setMode('campaign');
+    loadMission(index);
+    document.querySelector('.workspace')?.scrollIntoView({behavior:reduceMotion() ? 'auto' : 'smooth', block:'start'});
+  }
+});
+station.render();
+const modes = ['campaign', 'builder', 'city', 'station'];
 function setMode(nextMode) {
   runToken++;
   running = false;
   controls();
   mode = nextMode;
+  if (nextMode === 'station') station.render();
   for (const name of modes) {
     $(name).hidden = name !== mode;
     $(`${name}-mode`).classList.toggle('active', name === mode);

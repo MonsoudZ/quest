@@ -357,3 +357,112 @@ export const cityScene = {
 
 export const scenes = {bits, sort, layers, transport, network};
 export const sceneFor = level => scenes[level.kind] ?? null;
+
+// ------------------------------------------------------------- station
+
+// The station itself: one module per section, dark until its missions are done
+// and lit in proportion to the power restored to it. The conduits carry light
+// only where both ends are awake, which is what makes progress read as a system
+// coming back rather than as a list being ticked off.
+const sectionColour = {
+  docking:'#6fb8f5', habitat:'#7ce0b4', reactor:'#ffb45e', sensors:'#b6a8ff',
+  core:'#6fe3ff', command:'#ffd479', comms:'#ff9d81', netops:'#8fd6ff', operations:'#ffe08a'
+};
+
+export const stationScene = {
+  aspect:0.5,
+  bounds:state => {
+    const xs = state.sections.flatMap(section => [section.at[0], section.at[0] + section.size[0]]);
+    const ys = state.sections.flatMap(section => [section.at[1], section.at[1] + section.size[1]]);
+    return {
+      minX:Math.min(...xs) - 0.5, maxX:Math.max(...xs) + 0.5,
+      minY:Math.min(...ys) - 0.5, maxY:Math.max(...ys) + 0.7,
+      maxZ:3.6, ratio:0.7, maxUnit:112
+    };
+  },
+  describe:state => `A cutaway of the station. ${state.restored} of ${state.sections.length} sections are online. ${state.sections.map(section => `${section.name}: ${section.complete} of ${section.total}`).join('. ')}.`,
+  build(scene, {state, time, hovered}) {
+    const colours = palette();
+    const centre = section => [section.at[0] + section.size[0] / 2, section.at[1] + section.size[1] / 2];
+    const find = id => state.sections.find(section => section.id === id);
+
+    const xs = state.sections.flatMap(section => [section.at[0], section.at[0] + section.size[0]]);
+    const ys = state.sections.flatMap(section => [section.at[1], section.at[1] + section.size[1]]);
+    const left = Math.min(...xs) - 0.8, right = Math.max(...xs) + 0.8;
+    const top = Math.min(...ys) - 0.8, bottom = Math.max(...ys) + 0.8;
+    scene.tile({x:left, y:top, w:right - left, d:bottom - top, colour:shade(colours.deckDark, -0.34)});
+    for (let x = Math.ceil(left); x <= right; x++) scene.tube({from:[x, top, 0.004], to:[x, bottom, 0.004], radius:0.7, colour:colours.metal, alpha:0.22});
+    for (let y = Math.ceil(top); y <= bottom; y++) scene.tube({from:[left, y, 0.004], to:[right, y, 0.004], radius:0.7, colour:colours.metal, alpha:0.22});
+
+    // Conduits first, at floor level, so the modules stand on top of them.
+    for (const [fromId, toId] of state.conduits) {
+      const from = find(fromId), to = find(toId);
+      if (!from || !to) continue;
+      const live = from.status !== 'dark' && to.status !== 'dark';
+      const a = centre(from), b = centre(to);
+      scene.tube({
+        from:[a[0], a[1], 0.05], to:[b[0], b[1], 0.05],
+        radius:live ? 5 : 3,
+        colour:live ? colours.accent : colours.metal,
+        alpha:live ? 0.85 : 0.3, glow:live
+      });
+      if (live && time) {
+        const beads = 3;
+        for (let bead = 0; bead < beads; bead++) {
+          const offset = ((time * 0.22) + bead / beads) % 1;
+          scene.orb({x:a[0] + (b[0] - a[0]) * offset, y:a[1] + (b[1] - a[1]) * offset, z:0.05, radius:3.5, colour:shade(colours.accent, 0.4)});
+        }
+      }
+    }
+
+    for (const section of state.sections) {
+      const [w, d] = section.size;
+      const x = section.at[0], y = section.at[1];
+      const base = sectionColour[section.id] ?? colours.metal;
+      const dark = section.status === 'dark';
+      // A module stands at its full height once it is online, and lower while
+      // it is still coming up, so the skyline is the progress bar.
+      const lit = Math.max(0.12, section.share);
+      const tall = section.height * (0.42 + 0.58 * lit);
+      const picked = hovered === `section-${section.id}`;
+      const colour = dark ? shade(colours.metalDark, -0.1) : shade(base, -0.5 + 0.26 * lit);
+
+      scene.shadow({x:x - 0.1, y:y - 0.1, w:w + 0.2, d:d + 0.2, strength:0.45});
+      if (!dark) scene.glow({x:x + w / 2, y:y + d / 2, radius:Math.max(w, d) * 0.95, colour:base, strength:0.08 + 0.2 * lit * (picked ? 1.7 : 1)});
+      scene.box({x:x - 0.1, y:y - 0.1, z:0, w:w + 0.2, d:d + 0.2, h:0.14, colour:shade(colours.metalDark, -0.25), outline:false, id:`section-${section.id}`});
+      scene.box({
+        x, y, z:0.14, w, d, h:tall,
+        colour, top:dark ? shade(colours.metalDark, 0.05) : shade(base, -0.28 + 0.2 * lit),
+        glow:dark ? 0 : 0.05 + 0.14 * lit,
+        id:`section-${section.id}`
+      });
+
+      // Lit windows: one per completed mission, so the count is readable at a glance.
+      const windows = Math.min(section.complete, 12);
+      for (let index = 0; index < windows; index++) {
+        const across = (index % 4 + 0.5) / 4;
+        const up = 0.3 + Math.floor(index / 4) * 0.22;
+        scene.tile({
+          x:x + w * across - 0.1, y:y + d + 0.002, z:0,
+          w:0.2, d:0.001, colour:shade(base, 0.55), alpha:0.9, bias:tall * up
+        });
+      }
+      if (section.status === 'online') {
+        scene.tube({from:[x + w / 2, y + d / 2, 0.14 + tall], to:[x + w / 2, y + d / 2, 0.14 + tall + 0.8], radius:4, colour:base, alpha:0.55, glow:true});
+        scene.orb({x:x + w / 2, y:y + d / 2, z:0.14 + tall + 0.9, radius:6, colour:base, glow:true});
+      }
+      // The name sits on the module's own roof rather than floating above it,
+      // so a tall section never labels the one standing behind it.
+      scene.label({
+        x:x + w / 2, y:y + d / 2 - 0.16, z:0.14 + tall + 0.01,
+        text:section.name, size:12, weight:600,
+        colour:dark ? colours.dim : picked ? colours.accent : colours.text
+      });
+      scene.label({
+        x:x + w / 2, y:y + d / 2 + 0.3, z:0.14 + tall + 0.01,
+        text:`${section.complete} / ${section.total}`, size:11, weight:600,
+        colour:dark ? colours.dim : shade(base, 0.45)
+      });
+    }
+  }
+};

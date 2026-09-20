@@ -101,6 +101,28 @@ for the unreachable host, `conntrack` rows for the NAT, `ss -ti` for the congest
 SLO definition and an error budget policy, the page and dashboard for the incident. Same panel as
 Chapter 1's language comparison, different material.
 
+### The station
+
+Every mission belongs to one of nine sections of the station — the room names the
+missions already carried, grouped into decks — and finishing it restores power there.
+The fourth mode draws the station as an isometric cutaway: dark modules, modules
+rising as their power comes back, lit windows counting completed missions, and
+conduits that carry light only between sections that are both awake. Bringing every
+mission in a section home turns its beacon on.
+
+Power is not a mission count. A mission restores 100 kW when it is solved with no
+hints and without reading the solution, 80 kW after a hint, and 50 kW after the
+answer was shown — and the best attempt is the one kept, so resetting a mission and
+solving it yourself restores the rest. The rank shows on the mission list, on the
+win panel, and in the section breakdown. Twelve achievements come from signals the
+game already measures: rejecting every broken version in the spec mission with five
+cases, coming in at a tenth of a step budget, solving a debug mission on the first
+run, meeting a contract with a fifth of the budget unspent, reading all five
+languages in a language panel.
+
+None of it is a timer, a streak, or a leaderboard. The only things measured are what
+you solved and how much help you took.
+
 ### The two build modes
 
 The missions teach a concept each; the build modes are where you apply them at scale, against
@@ -243,7 +265,7 @@ and the tests check them against independent implementations.
 
 ## Validation
 
-Run `npm test` and `npm run check`. 127 tests across eleven files:
+Run `npm test` and `npm run check`. 134 tests across twelve files:
 
 - `tests/lang.test.mjs` — 30 programs run in both the interpreter and real JavaScript via
   `node:vm` and compared, plus the refusals, the deliberate deviations, and the bounds.
@@ -257,6 +279,10 @@ Run `npm test` and `npm run check`. 127 tests across eleven files:
   contract requires, the availability and cost arithmetic, the 99th-percentile formula checked
   against a simulated M/M/1 queue, each estimator against the arithmetic done by hand, and the
   error budget against a worked month.
+- `tests/progress.test.mjs` — every mission belongs to exactly one section, every
+  section is reachable from the reactor, ranks never pay more for more help, the
+  station lights up section by section, and every achievement is unearned at the
+  start and reachable by doing the thing it describes.
 - `tests/machine.test.mjs` — the exact decimal expansion of a double rebuilt from its bit pattern
   with BigInt, UTF-8 output compared byte for byte against `TextEncoder`, cache misses against
   the compulsory floor, every four-bit message with every single-bit error in all seven positions,

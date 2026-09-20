@@ -651,3 +651,83 @@ kbd { padding:2px 5px; border:1px solid var(--line-strong); border-radius:4px; b
 .city-swatch.is-starved, .city-swatch.is-offline { width:18px; height:12px; border:1.5px solid var(--warn); border-radius:4px; }
 .city-swatch.is-offline { border-color:var(--danger); border-style:dashed; }
 .iso-stage { display:block; width:100%; height:auto; touch-action:manipulation; }
+
+/* --------------------------------------------------- the station screen */
+
+.station-workspace { display:flex; flex-direction:column; gap:var(--s-5); padding:var(--s-6) var(--s-7) var(--s-8); max-width:1500px; margin:0 auto; width:100%; }
+.station-head { display:flex; flex-wrap:wrap; align-items:flex-end; justify-content:space-between; gap:var(--s-5); }
+.station-head h2 { margin:var(--s-2) 0; }
+.station-head p { max-width:62ch; color:var(--text-muted); line-height:1.7; }
+.station-gauge { display:flex; flex-direction:column; gap:var(--s-1); min-width:240px; }
+.station-gauge strong { font:600 var(--text-2xl)/1 var(--font-display); color:var(--accent); font-variant-numeric:tabular-nums; }
+.station-gauge span { font-size:var(--text-xs); color:var(--text-dim); }
+.gauge-track, .section-track { position:relative; height:8px; border-radius:999px; background:var(--surface-sunken); overflow:hidden; border:1px solid var(--line); }
+.gauge-track i, .section-track i { position:absolute; inset:0 auto 0 0; border-radius:999px; background:linear-gradient(90deg, var(--accent-quiet), var(--accent)); transition:width var(--slow); }
+
+.station-stage { display:flex; flex-direction:column; gap:var(--s-3); }
+.station-canvas { border:1px solid var(--line); border-radius:var(--r-sm); background:var(--viewport); overflow:hidden; }
+.station-columns { display:grid; grid-template-columns:1.25fr 1fr; gap:var(--s-5); align-items:start; }
+
+.section-list { display:flex; flex-direction:column; gap:var(--s-2); margin-top:var(--s-3); }
+.section-row {
+  display:grid; grid-template-columns:minmax(0,1.3fr) minmax(70px,1fr) auto; gap:var(--s-3); align-items:center;
+  padding:var(--s-3); border:1px solid var(--line); border-radius:var(--r-sm); background:var(--surface-2);
+  text-align:left; cursor:pointer; transition:border-color var(--fast), background var(--fast);
+}
+.section-row:hover { border-color:var(--accent-quiet); }
+.section-row.chosen { border-color:var(--accent); background:var(--accent-wash); }
+.section-row.dark { opacity:.68; }
+.section-row.online { border-color:color-mix(in srgb, var(--success) 45%, transparent); }
+.section-name { display:flex; flex-direction:column; gap:2px; min-width:0; }
+.section-name strong { font-size:var(--text-base); }
+.section-name small, .section-mission small { display:block; font:var(--text-2xs)/1.4 var(--font-mono); color:var(--text-dim); }
+.section-power { font:500 var(--text-xs)/1 var(--font-mono); color:var(--text-muted); white-space:nowrap; font-variant-numeric:tabular-nums; }
+.section-detail { margin-top:var(--s-4); padding-top:var(--s-4); border-top:1px solid var(--line-soft); }
+.section-detail p { color:var(--text-muted); font-size:var(--text-sm); line-height:1.7; }
+.section-hint { margin-top:var(--s-4); font-size:var(--text-sm); color:var(--text-dim); }
+.section-missions { display:flex; flex-direction:column; gap:var(--s-1); margin-top:var(--s-3); }
+.section-mission {
+  display:grid; grid-template-columns:auto minmax(0,1fr) auto; gap:var(--s-3); align-items:center;
+  padding:var(--s-2) var(--s-3); border:1px solid transparent; border-radius:var(--r-sm);
+  background:none; text-align:left; cursor:pointer; font-size:var(--text-sm); color:var(--text-muted);
+}
+.section-mission:hover { border-color:var(--line); background:var(--surface-2); color:var(--text); }
+.section-mission.done { color:var(--text); }
+
+.rank-chip {
+  display:inline-grid; place-items:center; padding:2px var(--s-2); border-radius:999px;
+  border:1px solid var(--line-strong); background:var(--surface-sunken);
+  font:600 var(--text-2xs)/1.5 var(--font-mono); color:var(--text-dim); white-space:nowrap;
+}
+.rank-chip.gold { border-color:#e0b64a; background:color-mix(in srgb, #e0b64a 16%, transparent); color:#a67c12; }
+.rank-chip.silver { border-color:#9aa9bd; background:color-mix(in srgb, #9aa9bd 16%, transparent); color:#5d6b7e; }
+.rank-chip.bronze { border-color:#c08457; background:color-mix(in srgb, #c08457 16%, transparent); color:#8a5528; }
+
+.badge-list { display:flex; flex-direction:column; gap:var(--s-2); margin-top:var(--s-3); }
+.badge { display:grid; grid-template-columns:auto 1fr; gap:var(--s-3); align-items:start; padding:var(--s-3); border:1px solid var(--line); border-radius:var(--r-sm); background:var(--surface-2); opacity:.6; }
+.badge.earned { opacity:1; border-color:color-mix(in srgb, var(--success) 45%, transparent); }
+.badge-mark { display:grid; place-items:center; width:22px; height:22px; border-radius:50%; border:1px solid var(--line-strong); color:var(--text-dim); font-size:var(--text-xs); }
+.badge.earned .badge-mark { border-color:var(--success); color:var(--success); background:color-mix(in srgb, var(--success) 14%, transparent); }
+.badge strong { display:block; font-size:var(--text-sm); }
+.badge small { display:block; font-size:var(--text-xs); color:var(--text-dim); line-height:1.5; }
+.rank-key { display:flex; flex-wrap:wrap; gap:var(--s-3); margin-top:var(--s-4); padding-top:var(--s-4); border-top:1px solid var(--line-soft); font-size:var(--text-xs); color:var(--text-dim); }
+.rank-key span { display:inline-flex; align-items:center; gap:var(--s-2); }
+
+/* The win panel: a rank, a count-up, and anything newly unlocked. */
+.result-head { display:flex; align-items:center; gap:var(--s-3); }
+.result-power { display:flex; flex-wrap:wrap; align-items:baseline; gap:var(--s-3); margin-top:var(--s-3); }
+.result-power strong { font:600 var(--text-xl)/1 var(--font-display); color:var(--accent); font-variant-numeric:tabular-nums; }
+.result-power span { font-size:var(--text-sm); color:var(--text-muted); }
+.result-badges { display:flex; flex-wrap:wrap; gap:var(--s-2); margin-top:var(--s-3); }
+.result-badges:empty { display:none; }
+.badge-won {
+  padding:var(--s-1) var(--s-3); border-radius:999px;
+  border:1px solid var(--success); background:color-mix(in srgb, var(--success) 15%, transparent);
+  color:var(--success); font:600 var(--text-2xs)/1.6 var(--font-mono);
+}
+.mission-button .rank-chip { margin-left:auto; }
+
+@media (max-width:900px) {
+  .station-columns { grid-template-columns:1fr; }
+  .station-workspace { padding:var(--s-5) var(--s-4) var(--s-7); }
+}

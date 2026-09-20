@@ -129,3 +129,14 @@ test('every game mode is reachable on a phone without a hidden sideways scroller
   assert.match(phone, /\.mode-switch \{[^}]*flex-wrap:wrap/, 'the mode row does not wrap at phone width');
   assert.match(phone, /\.mode-switch \{[^}]*overflow-x:visible/, 'and it must stop being a hidden scroller');
 });
+
+test('the station mode is wired into the page the same way the others are', async () => {
+  const {sections} = await import('../dist/progress.js');
+  for (const id of ['station', 'station-mode', 'result-rank', 'result-power', 'result-note', 'result-badges']) {
+    assert.match(html, new RegExp(`id="${id}"`), `the page has no #${id}`);
+  }
+  // The power bar measures restored power now, so its ceiling has to match.
+  const {levels} = await import('../dist/levels.js');
+  assert.match(html, new RegExp(`<progress id="power" max="${levels.length * 100}"`), 'the power bar does not go up to the station\'s full capacity');
+  assert.ok(sections.length >= 6);
+});
