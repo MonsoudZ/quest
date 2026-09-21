@@ -200,6 +200,13 @@ array, and producing `Infinity` or `NaN` are all reported instead of returning `
 `NaN`. `tests/lang.test.mjs` pins both the agreements and
 these deviations against real JavaScript.
 
+### The build modes
+
+The architecture lab and Signal City are where the chapters get applied at scale. Each carries five
+scenarios, and each scenario now teaches at the same depth as a mission — a paragraph on the
+mechanism rather than a sentence on the conclusion, with a reference of its own rather than one
+shared across all five. A test holds them there.
+
 ### The models are teaching models
 
 Every number in the networking and system-design chapters is a simplification chosen to make a
