@@ -71,7 +71,8 @@ export const scenarios = [
     description:'1,200 requests per second, almost all reads, from a small working set. Find the tier that saturates first and give it enough capacity.',
     traffic:{rps:1200, readFraction:0.95, workingSetGb:6},
     slo:{p99Ms:150, availability:0.98, budget:16},
-    teaches:'Utilisation, not average speed, decides latency. A tier at 95% utilisation queues; the same tier at 50% does not.',
+    teaches:'Utilisation, not average speed, decides latency. A tier at 95% utilisation queues and the same tier at 50% does not, and the difference is not gradual: waiting time scales as 1/(1 − utilisation), so the curve is flat up to about 70% and then goes vertical. Past that point every extra request waits behind the ones already queued, and the 99th percentile — the number your users actually feel — leaves the average far behind. This is why capacity planning is done against headroom rather than against the mean, why an autoscaler set to trigger at 90% is already too late, and why the honest answer to “how many servers” is always larger than the arithmetic of requests divided by throughput suggests.',
+    reference:{label:'Reference: queueing delay and the utilisation curve', url:'https://en.wikipedia.org/wiki/M/M/1_queue'},
     allow:{queue:false, regions:false, shards:false}
   },
   {
@@ -80,7 +81,8 @@ export const scenarios = [
     description:'9,000 requests per second, 97% reads, over a 30 GB working set. Buying database capacity for all of it is too expensive; keep the hot set out of the datastore.',
     traffic:{rps:9000, readFraction:0.97, workingSetGb:30},
     slo:{p99Ms:120, availability:0.995, budget:70},
-    teaches:'A cache in front of the datastore removes read load at a fraction of the price, and read replicas add read capacity the primary cannot.',
+    teaches:'A cache in front of the datastore removes read load at a fraction of the price, and read replicas add read capacity the primary cannot. They are not interchangeable. A replica is a full copy: it costs what a datastore costs, serves any read at all including ones nobody has asked for before, and lags the primary by however long replication takes. A cache is a partial copy of whatever was asked for recently: a fraction of the price, serving only the hot set, and a miss costs the original read plus the work of storing it. Which is cheaper is decided by how concentrated the reads are, and that is a property of the workload you can measure on the system you already have rather than an opinion about architecture.',
+    reference:{label:'Reference: caching strategies and invalidation', url:'https://en.wikipedia.org/wiki/Cache_replacement_policies'},
     allow:{queue:false, regions:false, shards:true}
   },
   {
@@ -89,7 +91,8 @@ export const scenarios = [
     description:'6,000 requests per second, but 60% of them are writes. Writes cannot be cached and every write reaches a primary.',
     traffic:{rps:6000, readFraction:0.4, workingSetGb:20},
     slo:{p99Ms:60, availability:0.99, budget:130},
-    teaches:'Writes are the expensive direction. Sharding splits write load across primaries; a queue answers the client before the write lands, trading immediate consistency for latency.',
+    teaches:'Writes are the expensive direction. A read can be served by any copy; a write has to reach the one that owns the data, and then every other copy has to hear about it. Sharding splits the write load across primaries by key, so capacity grows with the number of shards and every write is still acknowledged by the datastore that holds it — paid for with queries that now span several shards and transactions across them that are a different, much harder problem. A queue is the other answer and it does not add capacity at all: it changes what an acknowledgement means. Before, “written” meant the datastore has it; after, it means something has promised to write it, and the cases where that promise is not kept are exactly the ones that matter.',
+    reference:{label:'Reference: partitioning and the write path', url:'https://en.wikipedia.org/wiki/Shard_(database_architecture)'},
     allow:{queue:true, regions:false, shards:true}
   },
   {
@@ -98,7 +101,8 @@ export const scenarios = [
     description:'4,000 requests per second with a 99.99% availability target. Redundancy, not speed, is the constraint here.',
     traffic:{rps:4000, readFraction:0.8, workingSetGb:12},
     slo:{p99Ms:150, availability:0.9999, budget:150},
-    teaches:'Redundant instances multiply availability in parallel; tiers in series multiply their failure. Every shard you add is another tier that must be up.',
+    teaches:'Redundant instances multiply availability in parallel and tiers in series multiply their failure, and the second half of that sentence is the one that surprises people. Four components at 99.9% each are 99.6% together, because any one of them can take the whole path down. Two independent copies of a component that is up 99.9% of the time are both down only 0.1% of 0.1% of the time, so the pair is 99.9999% — which means the first redundant copy buys almost everything and the second buys almost nothing. The load-bearing word is independent: two instances in a rack share a power feed, two racks share a roof, and two regions share a deployment pipeline and whoever pushed to it this morning. Every shard you add is another tier that has to be up.',
+    reference:{label:'Reference: Google SRE — service level objectives', url:'https://sre.google/sre-book/service-level-objectives/'},
     allow:{queue:true, regions:true, shards:true}
   },
   {
@@ -107,7 +111,8 @@ export const scenarios = [
     description:'30,000 requests per second over an 80 GB working set, a 99.99% availability target, and a budget that does not stretch far enough to buy your way out. Everything you have learned, at once.',
     traffic:{rps:30000, readFraction:0.97, workingSetGb:80},
     slo:{p99Ms:100, availability:0.9999, budget:230},
-    teaches:'Real designs are a budget negotiation between latency, durability, availability, and cost. There is no configuration that maximises all four.',
+    teaches:'Real designs are a budget negotiation between latency, durability, availability and cost, and there is no configuration that maximises all four. Every lever here moves at least two of them: a cache buys latency and costs you freshness, a shard buys write capacity and costs you cross-shard queries, a region buys availability and costs either write latency or the writes that had not replicated when it failed over. What a senior engineer actually does with a brief like this is not find the best design — there is not one — but work out which of the four the business is least able to give up, spend the budget there, and be able to say out loud what was traded away. A design nobody can describe the downside of is a design nobody has finished thinking about.',
+    reference:{label:'Reference: Google SRE — embracing risk', url:'https://sre.google/sre-book/embracing-risk/'},
     allow:{queue:true, regions:true, shards:true}
   }
 ];

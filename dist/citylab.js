@@ -206,6 +206,7 @@ export function mountCity(container, {onContract = () => {}} = {}) {
       <section class="panel-block">
         <div class="eyebrow">WHAT THIS CONTRACT TEACHES</div>
         <p>${scenario.teaches}</p>
+        <a class="lesson-reference" href="${scenario.reference.url}" target="_blank" rel="noopener noreferrer">${scenario.reference.label}</a>
         <p class="model-note">Routing follows the shortest path on an OSPF-style metric, so a fatter cable is preferred even when it is the longer way round. Bandwidth is shared max-min fairly rather than by TCP's real dynamics, queueing delay uses the M/M/1 factor 1/(1 − utilisation), and demand is steady rather than bursty. Distances, prices, and capacities are teaching values.</p>
       </section>
     </div>`;

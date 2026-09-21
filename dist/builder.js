@@ -137,7 +137,7 @@ export function mountBuilder(container, {onContract = () => {}} = {}) {
         <h3>${scenario.name}</h3>
         <p>${scenario.teaches}</p>
         <p class="syntax-note">${result.consistency}</p>
-        <a class="lesson-reference" href="https://sre.google/sre-book/service-level-objectives/" target="_blank" rel="noopener noreferrer">Reference: Google SRE — service level objectives</a>
+        <a class="lesson-reference" href="${scenario.reference.url}" target="_blank" rel="noopener noreferrer">${scenario.reference.label}</a>
       </section>
       <section class="help-panel">
         <div class="eyebrow">TRY AN EXPERIMENT</div>

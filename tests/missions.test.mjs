@@ -4,6 +4,8 @@ import {levels, chapters} from '../dist/levels.js';
 import {simulate, evaluateAlgorithm, evaluateSpec, algoKinds} from '../dist/engine.js';
 import {isPuzzle, initialState, solutionState, applyAction, widgets, view, evaluate} from '../dist/puzzles.js';
 import {sceneFor} from '../dist/scenes.js';
+import {scenarios as labScenarios} from '../dist/systems.js';
+import {scenarios as cityScenarios} from '../dist/city.js';
 
 const run = level => level.kind === 'spec' ? evaluateSpec : evaluateAlgorithm;
 const solve = level => level.kind === 'code' ? simulate(level, level.solution)
@@ -343,6 +345,17 @@ test('every mission that ships evidence ships all of it', () => {
   // as it goes rather than as one thing.
   for (const level of levels) {
     assert.ok(level.artifact || level.polyglot, `${level.id} (${level.chapter}) has nothing to read beside its lesson`);
+  }
+  // The two build modes are where the chapters are applied at scale, and they
+  // used to teach in one sentence beside missions that teach in a paragraph.
+  for (const [mode, list] of [['architecture lab', labScenarios], ['Signal City', cityScenarios]]) {
+    for (const scenario of list) {
+      assert.ok(scenario.teaches.length >= 400, `${mode}/${scenario.id} teaches in ${scenario.teaches.length} characters`);
+      assert.match(scenario.reference.url, /^https:\/\//, `${mode}/${scenario.id} has no reference`);
+      assert.ok(scenario.reference.label.length > 8, `${mode}/${scenario.id} reference label`);
+    }
+    assert.equal(new Set(list.map(scenario => scenario.reference.url)).size, list.length,
+      `${mode} points every scenario at the same page`);
   }
   for (const chapter of ['Programming', 'Computer science', 'Networking', 'System design']) {
     assert.ok(levels.some(level => level.chapter === chapter && level.artifact), `${chapter} has no mission with an artifact panel`);

@@ -53,7 +53,8 @@ export const scenarios = [
     id:'first-light',
     name:'Light up the city',
     brief:'Four districts and an uplink. Every district has to reach the orbital uplink, and copper does not stretch far enough to do it alone.',
-    teaches:'A network is a graph you pay for. Reach, not just price, decides which technology can carry a given span.',
+    teaches:'A network is a graph you pay for, and reach rather than price decides which technology can carry a given span. Copper is cheap and dies over distance; fibre carries further and costs more per block; microwave spans what neither can reach and is capped by the physics of the link rather than by what you spend. That is why a real build is never one technology: the trunk that everything aggregates onto has to be the expensive kind, and the short hops into each district do not. Getting this wrong in the obvious direction — running the cheapest cable everywhere and discovering half the districts cannot reach the uplink at all — is the first thing every network plan does.',
+    reference:{label:'Reference: network topology', url:'https://en.wikipedia.org/wiki/Network_topology'},
     districts:{uplink:0, habitat:300, labs:500, dock:250, market:400},
     budget:50,
     targets:{connect:true, delivered:1}
@@ -62,7 +63,8 @@ export const scenarios = [
     id:'peak-hour',
     name:'Survive peak hour',
     brief:'Shift change: every district is busy at once. Keep every cable under 80% loaded, because a link at 95% is a queue, not a link.',
-    teaches:'Utilisation, not capacity, is what you design against. Traffic aggregates as it approaches the uplink, so trunk links carry everyone.',
+    teaches:'Utilisation, not capacity, is what you design against. Traffic aggregates as it approaches the uplink, so a trunk carries the sum of everything behind it while a spur carries one district — which means the link that matters is almost never the one you were looking at. Queueing delay rises as 1/(1 − utilisation), so a cable at 60% is comfortable, one at 85% is visibly slow, and one at 95% is unusable while still, technically, not being full. Sizing for the average and then discovering the shift change is the whole reason capacity is quoted at the peak, and the reason a link that looks fine on a daily graph can be the thing everybody is complaining about.',
+    reference:{label:'Reference: Little’s law and queueing', url:'https://en.wikipedia.org/wiki/Little%27s_law'},
     districts:{uplink:0, habitat:900, labs:2600, dock:700, market:2200, foundry:800},
     budget:104,
     targets:{connect:true, maxUtilisation:0.8, delivered:1}
@@ -71,7 +73,8 @@ export const scenarios = [
     id:'no-single-point',
     name:'No single point of failure',
     brief:'A maintenance crew will cut exactly one cable, and you do not get to choose which. Nobody may lose the uplink when they do.',
-    teaches:'Redundancy is a ring, not a spare part. One extra path turns every cut into a reroute — and costs real money.',
+    teaches:'Redundancy is a ring, not a spare part. A second cable between two districts that already have one protects that pair and nothing else; a path that closes a loop turns every single cut anywhere on it into a reroute. That is why real networks are built as rings and meshes rather than trees, and why the question to ask of a topology is not “what is redundant” but “which single failure disconnects something”. The second half is that redundancy costs real money and carries no traffic on a good day, so the argument is always about which failures are worth surviving — and it is much easier to have before the cut than during it.',
+    reference:{label:'Reference: k-connectivity and network resilience', url:'https://en.wikipedia.org/wiki/K-vertex-connected_graph'},
     districts:{uplink:0, habitat:700, labs:1800, dock:600, market:1600, foundry:700, medbay:400},
     budget:128,
     targets:{connect:true, maxUtilisation:0.9, delivered:1, resilient:true}
@@ -80,7 +83,8 @@ export const scenarios = [
     id:'the-medical-bay',
     name:'The medical bay',
     brief:'Remote surgery runs from the medical bay. It needs a round trip under 9 ms while the rest of the city keeps working.',
-    teaches:'Latency is path length plus queueing. A congested short path can be slower than an idle long one, and the fix is usually headroom.',
+    teaches:'Latency is path length plus queueing, and the second term is the one that moves. A congested short path can be slower than an idle long one, because propagation is fixed by distance and physics while queueing rises without limit as a link fills. So the fix for a latency target is usually headroom rather than a shorter route: take load off the busy link and the delay collapses back to the propagation floor, which is the part no amount of money can buy below. It also means a latency problem and a capacity problem are frequently the same problem wearing different clothes, and measuring utilisation on the path is how you tell which one you have.',
+    reference:{label:'Reference: latency, bandwidth and the propagation floor', url:'https://hpbn.co/primer-on-latency-and-bandwidth/'},
     districts:{uplink:0, habitat:900, labs:2400, dock:800, market:2400, foundry:900, medbay:500},
     budget:155,
     targets:{connect:true, maxUtilisation:0.85, delivered:1, latency:{district:'medbay', ms:9}}
@@ -89,7 +93,8 @@ export const scenarios = [
     id:'the-city-grows',
     name:'The city grows',
     brief:'The labs double their instrument feed and the foundry comes online for real. One cut may not isolate anybody, and it may not cost the city more than 40% of its traffic either.',
-    teaches:'Real networks are rebuilt while running. The cheapest topology that met yesterday’s demand is rarely the one that meets tomorrow’s.',
+    teaches:'Real networks are rebuilt while running, and the cheapest topology that met yesterday’s demand is rarely the one that meets tomorrow’s. A design tuned exactly to its contract has no headroom by construction, so the first new tenant breaks it — which is an argument for spending a little of the budget on capacity nobody needs yet, and an argument against, depending on how much the rebuild costs and how certain the growth is. What does not change is the shape of the work: measure what actually saturated, add capacity where the utilisation is, and resist the urge to redesign the parts that were fine. Most network upgrades are three cables, not a new plan.',
+    reference:{label:'Reference: capacity planning', url:'https://sre.google/sre-book/software-engineering-in-sre/'},
     districts:{uplink:0, habitat:1200, labs:5200, dock:1100, market:3000, foundry:2400, medbay:600},
     budget:210,
     targets:{connect:true, maxUtilisation:0.8, delivered:1, resilient:true, survivesCut:0.6, latency:{district:'medbay', ms:11}}
