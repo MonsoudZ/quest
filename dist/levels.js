@@ -104,7 +104,17 @@ export const levels = [
     starter:'// Reach the power cell, four tiles ahead.\nmove();\n',
     solution:'move(4);',
     hints:['The drone faces east. Count four tile-to-tile moves from its starting tile.','Use four move(); commands, or pass 4 to move().'],
-    takeaway:'You wrote a simple algorithm: precise steps that solve this navigation problem.', reference:refs.basics
+    takeaway:'You wrote a simple algorithm: precise steps that solve this navigation problem.', reference:refs.basics,
+    artifact:{
+      title:'What a program is, before any of this',
+      note:'The drone runs a list of instructions in order. So does everything else, and it is worth seeing the same idea written four ways before the game\u2019s version starts to feel like a special case.',
+      panes:[
+        {label:'the same three steps', code:'JavaScript   move(4);\nPython       move(4)\nshell        move 4\nassembly     mov  edi, 4\n             call move', note:'Four languages, one instruction. The punctuation differs and the meaning does not, which is most of what people mean when they say a language is easy or hard to read.'},
+        {label:'in order, always', code:'move(1);\nmove(1);\nmove(1);\nmove(1);\n\n= move(4);\n\n(the order is the program)', note:'Nothing runs early and nothing runs twice unless you say so. That guarantee is the foundation everything else in this chapter is built on, and it stops being true the moment a second thing runs at the same time.'},
+        {label:'what the machine gets', code:'source      move(4);\n  |\nparsed      call move, argument 4\n  |\nexecuted    x = x + 4\n\n(three representations of one line)', note:'A program is text, then a structure, then something that happens. The chapter on tokenising later in this list is about the middle step, which is a program reading a program.'},
+        {label:'counting from where', code:'tiles:   0  1  2  3  4  5  6\ndrone at 1, cell at 5\n\n5 - 1 = 4 moves\n\n(not 5, and not 3)', note:'Fence posts. The number of steps between two positions is the difference, not the count of positions, and getting this wrong by one is the single most common mistake in the whole of programming.'}
+      ]
+    }
   },
   {
     id:'around-the-corner', kind:'code', chapter:'Programming', concept:'Debugging', name:'A change of direction', location:'Service corridor',
@@ -115,7 +125,17 @@ export const levels = [
     starter:'move(4);\n// Turn, then follow the corridor.\n',
     solution:'move(4);\nturnRight();\nmove(4);',
     hints:['Travel four tiles east to the corner, then turn south.','After move(4), use turnRight(), then move four more tiles.'],
-    takeaway:'Debugging means comparing actual behaviour with intended behaviour, then fixing the responsible instruction.', reference:refs.basics
+    takeaway:'Debugging means comparing actual behaviour with intended behaviour, then fixing the responsible instruction.', reference:refs.basics,
+    artifact:{
+      title:'Reading a failure instead of guessing at it',
+      note:'Every runtime tells you where it stopped and why. Learning to read that, rather than re-reading your own code hopefully, is the skill.',
+      panes:[
+        {label:'this game', code:'Step 5: move()\n  no traversable tile ahead\n  drone at (5,1) facing east\n\n(which step, where, and what\n it was trying to do)', note:'Three facts: the instruction that failed, the state when it failed, and what it wanted. Any decent error message carries all three, and the ones that do not are why debugging has a reputation.'},
+        {label:'a real stack trace', code:'TypeError: Cannot read properties of\n  undefined (reading \x27name\x27)\n    at formatUser (users.js:42:18)\n    at renderList (users.js:70:5)\n    at main (app.js:12:3)', note:'Read it from the top: the error is at users.js line 42, and the lines below are how the program got there. The bug is often not at the top — something further down handed it a value it should not have.'},
+        {label:'what to do first', code:'1. read the message, all of it\n2. go to the line it names\n3. print what the values actually are\n4. compare that with what you assumed\n\n(step 3 is the one people skip)', note:'Almost every bug is a gap between what you think a value is and what it is. Printing it is cheap, certain, and faster than any amount of staring at the code.'},
+        {label:'the trace in this game', code:'the step list beside the map is a\ndebugger you did not have to start\n\nreal ones do the same thing:\n  gdb, pdb, the browser devtools\n  breakpoint, step, inspect', note:'Running one instruction at a time and looking at the state between each is what a debugger is for. The step button here is the same idea with the setup removed.'}
+      ]
+    }
   },
   {
     id:'name-the-distance', kind:'code', chapter:'Programming', concept:'Variables', name:'Store the answer', location:'Reactor access', require:'variable',
@@ -126,7 +146,17 @@ export const levels = [
     starter:'let distance = 2;\nmove(distance);\nturnRight();\nmove(distance);\n',
     solution:'let distance = 4;\nmove(distance);\nturnRight();\nmove(distance);',
     hints:['The starter turns too soon. Both straight corridors require four moves.','Change the stored distance from 2 to 4. Keep using the same name in both move calls.'],
-    takeaway:'Reusing a named value avoids repeating a literal. Changing this one declaration changes both movement distances.', reference:refs.variables
+    takeaway:'Reusing a named value avoids repeating a literal. Changing this one declaration changes both movement distances.', reference:refs.variables,
+    artifact:{
+      title:'A name, and what the machine does with it',
+      note:'A variable is a name for a place. What differs between languages is how much they insist you say about that place in advance.',
+      panes:[
+        {label:'five declarations', code:'JavaScript  let distance = 4;\nPython      distance = 4\nGo          distance := 4\nRust        let distance: i32 = 4;\nC           int distance = 4;', note:'Two of these work out the type for themselves, two are told, and one does not have types at all in the way the others mean it. All five reserve somewhere to put a 4 and give it a name.'},
+        {label:'where the name lives', code:'let distance = 4;   // block scope\n{\n  let distance = 9;  // a different one\n  print(distance);   // 9\n}\nprint(distance);     // 4', note:'The inner name hides the outer one for the length of the block and then stops existing. A later mission in this chapter is about exactly this going wrong silently.'},
+        {label:'the name is not the value', code:'let a = [1, 2, 3];\nlet b = a;\nb.push(4);\nprint(a);   // [1, 2, 3, 4]\n\n(one array, two names)', note:'For numbers, assigning copies the value. For arrays and records it copies the reference, so both names point at one thing. There is a whole mission on this later; it catches everybody once.'},
+        {label:'why name it at all', code:'move(4); turnRight(); move(4);\n\nvs\n\nlet leg = 4;\nmove(leg); turnRight(); move(leg);\n\n(one place to change it)', note:'The computer does not care. A name says these two fours are the same four and will change together, which is information the literal cannot carry and the next person needs.'}
+      ]
+    }
   },
   {
     id:'repeat-the-route', kind:'code', chapter:'Programming', concept:'Loops', name:'Find the pattern', location:'Thermal array', require:'loop',
@@ -137,7 +167,17 @@ export const levels = [
     starter:'for (let i = 0; i < 3; i++) {\n  move(2);\n  // Go north one tile, then face east again.\n}\n',
     solution:'for (let i = 0; i < 3; i++) {\n  move(2);\n  turnLeft();\n  move();\n  turnRight();\n}',
     hints:['Each module is two tiles east and one north. Finish each repetition facing east.','Inside the loop: move(2), turnLeft(), move(), then turnRight().'],
-    takeaway:'Your loop repeats the same navigation pattern. The counter belongs to the for loop and is not accessible after it.', reference:refs.loops
+    takeaway:'Your loop repeats the same navigation pattern. The counter belongs to the for loop and is not accessible after it.', reference:refs.loops,
+    artifact:{
+      title:'One loop, five ways of writing it',
+      note:'Every one of these runs a body three times. What differs is how much of the counting you do yourself.',
+      panes:[
+        {label:'the C-style loop', code:'JavaScript  for (let i = 0; i < 3; i++) { }\nJava        for (int i = 0; i < 3; i++) { }\nC           for (int i = 0; i < 3; i++) { }\n\nsetup; test before each pass; step after', note:'Three expressions doing three jobs, and the semicolons between them are the only thing separating them. It is the most-copied line in programming and also the easiest to get off by one.'},
+        {label:'counting removed', code:'Python   for i in range(3):\nRuby     3.times do |i|\nGo       for i := range 3 {\nRust     for i in 0..3 {', note:'The bounds are stated once instead of three times, so the off-by-one has nowhere to hide. This is why newer languages keep the C loop and nobody writes it any more.'},
+        {label:'the counter belongs to the loop', code:'for (let i = 0; i < 3; i++) {\n  print(i);      // 0, 1, 2\n}\nprint(i);        // i is not defined\n\n(let, not var)', note:'Declaring the counter in the header keeps it inside. In older JavaScript var leaked it into the whole function, which is a source of bugs subtle enough that the language grew a second keyword rather than change it.'},
+        {label:'what it unrolls to', code:'for (let i = 0; i < 3; i++) {\n  move(2);\n}\n\nmove(2);\nmove(2);\nmove(2);\n\n(identical; the loop says why)', note:'A loop is not faster than writing it out — compilers sometimes unroll short ones back into exactly this. What the loop buys is that the count is stated once and can change without editing three lines.'}
+      ]
+    }
   },
   {
     id:'read-the-room', kind:'code', chapter:'Programming', concept:'Conditionals', name:'Read the room', location:'Sensor chamber', require:'conditional',
@@ -148,7 +188,17 @@ export const levels = [
     starter:'for (let i = 0; i < 8; i++) {\n  if (canMove()) {\n    // Move when the path is open.\n  } else {\n    turnRight();\n  }\n}\n',
     solution:'for (let i = 0; i < 8; i++) {\n  if (canMove()) {\n    move();\n  } else {\n    turnRight();\n  }\n}',
     hints:['The open-path block is empty. Add a movement command there.','Put move(); inside the if block. The else block already handles the blocked path.'],
-    takeaway:'Conditionals let a program respond to its environment. This rule works for this route; it is not a general-purpose maze solver.', reference:refs.conditions
+    takeaway:'Conditionals let a program respond to its environment. This rule works for this route; it is not a general-purpose maze solver.', reference:refs.conditions,
+    artifact:{
+      title:'A decision, and the shapes it takes',
+      note:'Every one of these picks between two paths. The last two are the same idea with the branches removed, which is worth recognising when you meet them.',
+      panes:[
+        {label:'the branch', code:'JavaScript  if (open) { go(); } else { turn(); }\nPython      if open: go()\n            else: turn()\nGo          if open { go() } else { turn() }\nRust        if open { go() } else { turn() }', note:'Braces or indentation, parentheses or not. Every one of these compiles to a test and a jump, and the argument about which punctuation is best has been running since 1972.'},
+        {label:'as a value', code:'let next = open ? "go" : "turn";\n\nPython:  "go" if open else "turn"\nRust:    let next = if open {"go"}\n                    else {"turn"};', note:'In several languages an if is an expression that produces a value, not a statement that does something. That removes the temporary variable that exists only to be assigned in two branches.'},
+        {label:'truthiness', code:'if ("")      false\nif ("0")     true   in JS, false in PHP\nif ([])      true   in JS, false in Python\nif (0)       false\n\n(this is why === exists)', note:'Languages disagree about which non-boolean values count as true, and the disagreements are arbitrary. Comparing explicitly costs three characters and removes the whole category of problem.'},
+        {label:'what the processor does', code:'  cmp  eax, 0\n  je   else_branch\n  call go\n  jmp  done\nelse_branch:\n  call turn\ndone:', note:'A comparison and a conditional jump. Modern processors guess which way the jump will go and run ahead on that assumption, so a branch that is hard to predict costs far more than one that is not.'}
+      ]
+    }
   },
   {
     id:'unknown-corridor', kind:'code', chapter:'Programming', concept:'While loops', name:'How long is the corridor?', location:'Cargo spine', require:'while',
@@ -159,7 +209,17 @@ export const levels = [
     starter:'while (canMove()) {\n  move();\n}\n// The corridor turns south here.\n',
     solution:'while (canMove()) {\n  move();\n}\nturnRight();\nwhile (canMove()) {\n  move();\n}',
     hints:['The first loop stops at the corner because canMove() becomes false. Turn, then loop again.','Add turnRight(); and a second identical while loop after the first one.'],
-    takeaway:'A while loop repeats on a condition rather than a count, so the same four lines work for a corridor of any length.', reference:refs.whileLoops
+    takeaway:'A while loop repeats on a condition rather than a count, so the same four lines work for a corridor of any length.', reference:refs.whileLoops,
+    artifact:{
+      title:'Looping on a condition instead of a count',
+      note:'A for loop needs to know how many. A while loop needs to know when to stop, which is a different and more dangerous kind of knowing.',
+      panes:[
+        {label:'the same shape', code:'JavaScript  while (canMove()) { move(); }\nPython      while can_move(): move()\nGo          for canMove() { move() }\nBash        while can_move; do move; done', note:'Go has no while keyword — a for with only a condition is one. That is the same observation from the other direction: a for loop is a while loop with the counting written into the header.'},
+        {label:'the one that never ends', code:'let i = 0;\nwhile (i < 10) {\n  print(i);\n  // i never changes\n}\n\n(the condition has to be able\n to become false)', note:'Something inside the body must move the condition towards being false. This sandbox stops a program that runs too long; a real one sits there at 100% of a core until you notice.'},
+        {label:'read the condition out loud', code:'while (queue.length > 0)\n  "while there is something queued"\n\nwhile (!done)\n  "while we are not done"\n\nwhile (i < n && a[i] !== target)', note:'A condition that cannot be read as an English sentence is usually one that is wrong. The third one has two reasons to stop, and which one actually stopped it is a question the code after the loop has to answer.'},
+        {label:'do-while', code:'do {\n  attempt();\n} while (!succeeded);\n\n(body first, test after:\n runs at least once)', note:'The variant that tests at the bottom, for when the work has to happen before there is anything to test. Rarer than the normal one and exactly right for retry loops and menu prompts.'}
+      ]
+    }
   },
   {
     id:'one-routine-twice', kind:'code', chapter:'Programming', concept:'Functions', name:'Name a routine', location:'Habitat ring', require:'function',
@@ -170,7 +230,17 @@ export const levels = [
     starter:'function leg() {\n  move(2);\n  // Turn south, cross, then face east again.\n}\n\nleg();\nleg();\n',
     solution:'function leg() {\n  move(2);\n  turnRight();\n  move(2);\n  turnLeft();\n}\n\nleg();\nleg();',
     hints:['Each leg is two tiles east, then two tiles south, and it has to end facing east so the next leg works.','Inside the function: move(2), turnRight(), move(2), turnLeft(). Then call leg() twice.'],
-    takeaway:'A function names a routine once and runs it wherever you call it. Fixing the routine fixes every call.', reference:refs.functions
+    takeaway:'A function names a routine once and runs it wherever you call it. Fixing the routine fixes every call.', reference:refs.functions,
+    artifact:{
+      title:'Naming a routine, and what it costs to call it',
+      note:'A function is a name for a piece of work. The machinery underneath is the same everywhere and explains most of what is surprising about recursion.',
+      panes:[
+        {label:'five declarations', code:'JavaScript  function leg(n) { ... }\nPython      def leg(n): ...\nGo          func leg(n int) { ... }\nRust        fn leg(n: i32) { ... }\nLisp        (defun leg (n) ...)', note:'The word changes and the idea does not: a name, a list of things it needs, and a body. Every one of these can be called from anywhere the name is visible.'},
+        {label:'the call stack', code:'main()\n  -> leg(2)\n       -> move(2)\n       <- returns\n  <- returns\n  -> leg(2)\n\neach call pushes a frame', note:'A frame holds the arguments, the local variables, and where to go back to. That is the stack a stack trace prints, and the reason a runaway recursion runs out of something.'},
+        {label:'parameters are copies', code:'function bump(n) { n = n + 1; }\nlet x = 5;\nbump(x);\nprint(x);   // 5\n\n(the parameter was a copy)', note:'Assigning to a parameter changes the copy and nothing else. This is true for numbers everywhere, and not true for arrays and records, which is the aliasing mission later in this chapter.'},
+        {label:'what it costs', code:'a call:  push frame, jump,\n         run, pop frame, jump back\n\n~1-5 ns, or nothing at all if the\ncompiler inlines it\n\n(do not avoid functions for this)', note:'The cost is real and almost always irrelevant, and compilers frequently remove it entirely by pasting the body in. Writing one long function to avoid call overhead is optimising the wrong thing.'}
+      ]
+    }
   },
   {
     id:'total-the-readings', kind:'algo', chapter:'Programming', concept:'Arrays', name:'Total the readings', location:'Telemetry bay',
@@ -188,7 +258,17 @@ export const levels = [
     starter:'function total(values) {\n  let sum = 0;\n  // Visit every entry and add it to sum.\n  return sum;\n}\n',
     solution:'function total(values) {\n  let sum = 0;\n  for (let i = 0; i < values.length; i++) {\n    sum += values[i];\n  }\n  return sum;\n}',
     hints:['Loop from i = 0 while i < values.length, and add values[i] to sum each time.','sum += values[i]; is the same as sum = sum + values[i];. Return sum after the loop, not inside it.'],
-    takeaway:'One pass over n entries does n additions, so the work grows in step with the array. Returning from inside the loop would stop after the first entry.', reference:refs.arrays
+    takeaway:'One pass over n entries does n additions, so the work grows in step with the array. Returning from inside the loop would stop after the first entry.', reference:refs.arrays,
+    artifact:{
+      title:'Walking a sequence, four ways',
+      note:'Every one of these adds up a list. The differences are about how much of the walking you do yourself and what you get to reuse.',
+      panes:[
+        {label:'the index loop', code:'let sum = 0;\nfor (let i = 0; i < values.length; i++) {\n  sum += values[i];\n}', note:'The most explicit version and the one that can go wrong in the most places: the start, the comparison and the step are three separate chances to be off by one.'},
+        {label:'the element loop', code:'for (const value of values) sum += value;\n\nPython:  for value in values:\nGo:      for _, value := range values {\nRust:    for value in &values {', note:'The index disappears because you were not using it for anything. Every off-by-one it could have carried disappears with it, which is why this is the default in every language that has it.'},
+        {label:'the fold', code:'values.reduce((sum, v) => sum + v, 0)\n\nPython:  sum(values)\nHaskell: foldl (+) 0 values\nSQL:     SELECT SUM(value) FROM ...', note:'The same shape — start with something, combine each element into it — named once and reused. Almost every list operation you will write is this with a different combining step.'},
+        {label:'the empty case', code:'total([])      -> 0\nmax([])        -> ?\naverage([])    -> ?\n\n(a sum has an obvious answer;\n the other two do not)', note:'Zero is the right answer for a sum because adding nothing changes nothing. There is no such value for a maximum or an average, so those functions have to decide what to do and say so.'}
+      ]
+    }
   },
   {
     id:'hold-the-line', kind:'algo', chapter:'Programming', concept:'Booleans', name:'Hold the line', location:'Reactor control',
@@ -209,7 +289,17 @@ export const levels = [
     starter:'function safe(temperature, pressure) {\n  // Return true only inside the operating window.\n  return false;\n}\n',
     solution:'function safe(temperature, pressure) {\n  return temperature <= 75 && pressure >= 20 && pressure <= 110;\n}',
     hints:['Three conditions have to hold at once: temperature at most 75, pressure at least 20, pressure at most 110.','Join them with &&, and return the whole expression.'],
-    takeaway:'Boundary values are where conditions go wrong. Writing the test cases at the limits is how you find an off-by-one comparison.', reference:refs.operators
+    takeaway:'Boundary values are where conditions go wrong. Writing the test cases at the limits is how you find an off-by-one comparison.', reference:refs.operators,
+    artifact:{
+      title:'What a boolean expression actually evaluates',
+      note:'The interesting part of && and || is not the truth table. It is which side runs and which does not.',
+      panes:[
+        {label:'short circuit', code:'a && b   // b only runs if a is true\na || b   // b only runs if a is false\n\nif (user && user.name)\nif (cache.get(k) || expensive())', note:'The right-hand side is not evaluated at all when the left has already settled the answer. Half the guard clauses ever written depend on this, and so does every accidental skipped side effect.'},
+        {label:'de Morgan', code:'!(a && b)  ===  !a || !b\n!(a || b)  ===  !a && !b\n\n!(open && ready)\n  =  "not open, or not ready"', note:'Pushing a negation inwards flips the operator. It is the standard move for turning a condition you cannot read into one you can, and getting it wrong is how a guard ends up letting everything through.'},
+        {label:'not a boolean', code:'"" || "default"     -> "default"\n0 || 42             -> 42     (oops)\n0 ?? 42             -> 0\n\nnull ?? "default"   -> "default"', note:'In JavaScript these operators return one of their operands rather than true or false, which is useful and is why 0 and the empty string get replaced by defaults nobody intended. ?? exists to fix exactly that.'},
+        {label:'the truth table nobody needs', code:'a  b  | and  or  xor\nF  F  |  F    F    F\nF  T  |  F    T    T\nT  F  |  F    T    T\nT  T  |  T    T    F', note:'Worth seeing once and then never again. Everything difficult about boolean logic in practice is short-circuiting, negation and values that are not booleans — none of which this table mentions.'}
+      ]
+    }
   },
 
   {
@@ -289,7 +379,17 @@ export const levels = [
     starter:'function average(readings) {\n  let sum = 0;\n  for (let i = 1; i <= readings.length; i++) {\n    sum += readings[i];\n  }\n  return sum / readings.length;\n}\n',
     solution:'function average(readings) {\n  if (readings.length === 0) {\n    return 0;\n  }\n  let sum = 0;\n  for (let i = 0; i < readings.length; i++) {\n    sum += readings[i];\n  }\n  return sum / readings.length;\n}',
     hints:['Array positions run from 0 to length − 1. Both ends of this loop are one out.','The empty case cannot be fixed inside the loop, because the loop never runs. Decide what to return before dividing.'],
-    takeaway:'A failing case is a description of the bug, not an accusation. Off-by-one errors and the empty input are the two mistakes that survive the longest, because a small hand-run rarely covers either.', reference:refs.offByOne
+    takeaway:'A failing case is a description of the bug, not an accusation. Off-by-one errors and the empty input are the two mistakes that survive the longest, because a small hand-run rarely covers either.', reference:refs.offByOne,
+    artifact:{
+      title:'The two bugs that outlive every review',
+      note:'Off-by-one and the empty input. Between them they account for a startling share of everything that has ever gone wrong.',
+      panes:[
+        {label:'the four ways to bound a loop', code:'for (i = 0; i <  n; i++)   right\nfor (i = 0; i <= n; i++)   one past\nfor (i = 1; i <  n; i++)   skips [0]\nfor (i = 1; i <= n; i++)   both', note:'Three of the four are wrong and they all look equally reasonable at a glance. Indices run from 0 to length-1, so the only correct pairing is start at 0 and stop before length.'},
+        {label:'what other languages do', code:'JavaScript  a[99] on a 3-item array\n            -> undefined, silently\nPython      -> IndexError\nRust        -> panic, or None\nC           -> whatever is in memory', note:'This sandbox reports it, which is a deliberate choice. JavaScript handing back undefined means the bug surfaces several lines later as something else entirely, and C not checking at all is the reason for most security advisories ever filed.'},
+        {label:'the empty case', code:'sum([])    / 0     -> NaN or crash\nmax([])            -> ?\nfirst([])          -> ?\n\nthe loop never runs, so nothing\ninside it can fix this', note:'Every guard that lives inside the loop is skipped when the list is empty. The decision has to be made before the loop, which is why it is so often missed by someone reading the loop carefully.'},
+        {label:'where they get caught', code:'property-based testing:\n  for any list, sum(xs) is a number\n  -> shrinks the failure to []\n\nfuzzing, and the boundary cases\nthe spec mission later is about', note:'Both of these bugs are found by testing the boundaries rather than the middle. A suite of three examples from the middle of the range passes code that is wrong at both ends.'}
+      ]
+    }
   },
   {
     id:'the-name-that-hides', kind:'debug', chapter:'Programming', concept:'Scope & shadowing', name:'The value that never changed', location:'Peak monitor',
@@ -308,7 +408,17 @@ export const levels = [
     starter:'function highest(values) {\n  let best = values[0];\n  for (let i = 1; i < values.length; i++) {\n    if (values[i] > best) {\n      let best = values[i];\n    }\n  }\n  return best;\n}\n',
     solution:'function highest(values) {\n  let best = values[0];\n  for (let i = 1; i < values.length; i++) {\n    if (values[i] > best) {\n      best = values[i];\n    }\n  }\n  return best;\n}',
     hints:['Two of the five cases pass. Ask what those two have in common, and what the other three need that they do not.','Look at the line inside the if. It declares something rather than changing something.'],
-    takeaway:'let declares; plain assignment changes. A let inside a block that repeats a name from outside it builds a second variable that is thrown away at the closing brace, and the outer one is never touched.', reference:refs.scope
+    takeaway:'let declares; plain assignment changes. A let inside a block that repeats a name from outside it builds a second variable that is thrown away at the closing brace, and the outer one is never touched.', reference:refs.scope,
+    artifact:{
+      title:'A name that already existed',
+      note:'Shadowing is legal in nearly every language, useful in some places, and silent everywhere. That combination is what makes it worth recognising by sight.',
+      panes:[
+        {label:'the bug', code:'let best = values[0];\nfor (...) {\n  if (values[i] > best) {\n    let best = values[i];   // a new one\n  }\n}\nreturn best;   // never changed', note:'The inner let creates a second variable that lives for three lines and is then discarded. The outer one is untouched, the code compiles, and every test with one element passes.'},
+        {label:'where it is on purpose', code:'Rust:\n  let input = "42";\n  let input: i32 = input.parse()?;\n\n(same name, new type, old one\n deliberately unreachable)', note:'Rust encourages this: rebinding a name after a conversion means the un-parsed version cannot be used by mistake. Shadowing is a feature there and a trap in a language that does not make it explicit.'},
+        {label:'what the tools say', code:'$ eslint --rule no-shadow\n  12:11  \x27best\x27 is already declared\n         in the upper scope\n\n$ rustc -W shadow\n$ go vet   (does not catch this)', note:'Most linters will flag it and most projects do not enable that rule, because shadowing is common in code that is fine. It is one of the cases where the tool knows and nobody asked it.'},
+        {label:'the older problem', code:'function f() {\n  for (var i = 0; i < 3; i++) { }\n  print(i);   // 3 — var leaked\n}\n\nlet: block scoped\nvar: function scoped', note:'Before let, every var in a function shared one scope regardless of the braces around it. That is why let was added rather than var being fixed, and why closures in loops used to behave so strangely.'}
+      ]
+    }
   },
   {
     id:'answer-and-leave', kind:'refactor', chapter:'Programming', concept:'Guard clauses', name:'Answer and leave', location:'Thermal monitor',
@@ -360,7 +470,17 @@ export const levels = [
     starter:'function hottest(deck) {\n  let best = {row: 0, column: 0, value: deck[0][0]};\n  // Visit every cell of every row.\n  return best;\n}\n',
     solution:'function hottest(deck) {\n  let best = {row: 0, column: 0, value: deck[0][0]};\n  for (let r = 0; r < deck.length; r++) {\n    for (let c = 0; c < deck[r].length; c++) {\n      if (deck[r][c] > best.value) {\n        best = {row: r, column: c, value: deck[r][c]};\n      }\n    }\n  }\n  return best;\n}',
     hints:['The outer loop runs to deck.length; the inner one to deck[r].length, because rows need not all be the same width.','When a cell beats the best so far, store all three facts at once: best = {row: r, column: c, value: deck[r][c]};'],
-    takeaway:'Nested loops multiply. One loop over n is n steps; a loop inside a loop is n × m, and that product is what you are agreeing to every time you write one.', reference:refs.nested
+    takeaway:'Nested loops multiply. One loop over n is n steps; a loop inside a loop is n × m, and that product is what you are agreeing to every time you write one.', reference:refs.nested,
+    artifact:{
+      title:'A loop inside a loop, and what it costs',
+      note:'Nesting is how you visit a grid, and it is also how a linear problem accidentally becomes a quadratic one.',
+      panes:[
+        {label:'row and column', code:'for (let r = 0; r < rows; r++)\n  for (let c = 0; c < cols; c++)\n    visit(grid[r][c]);\n\nrows x cols visits, in row order', note:'Each index means something different — one picks the row, one picks the position in it. Naming them r and c rather than i and j is the difference between a readable body and one you have to decode.'},
+        {label:'the accident', code:'for (const a of listA)\n  for (const b of listB)\n    if (a.id === b.id) ...\n\n1,000 x 1,000 = 1,000,000\n\n(a map makes it 2,000)', note:'Two loops over two lists is the most common quadratic algorithm in existence, and it is almost always a join that should have been a lookup. The refactor mission later in this chapter is exactly this.'},
+        {label:'the other order', code:'for r: for c:   row by row\nfor c: for r:   column by column\n\nsame visits, same answer\n4.5 MiB vs 1.0 MiB of memory traffic', note:'Swapping the two headers does not change what the loop computes and can change how long it takes by a factor of four. The Computer science chapter has a whole mission on why.'},
+        {label:'flattening it', code:'grid[r][c]\n  ==\nflat[r * cols + c]\n\n(one array, arithmetic instead\n of a second dereference)', note:'A two-dimensional array is usually one block of memory with a multiplication on top. Knowing that is what lets you reason about the previous pane, and it is how most numeric libraries actually store matrices.'}
+      ]
+    }
   },
 
   {
@@ -383,7 +503,17 @@ export const levels = [
     starter:'function find(sorted, target) {\n  let low = 0;\n  let high = sorted.length - 1;\n  while (low <= high) {\n    let middle = Math.floor((low + high) / 2);\n    // Compare sorted[middle] with target and discard half the range.\n  }\n  return -1;\n}\n',
     solution:'function find(sorted, target) {\n  let low = 0;\n  let high = sorted.length - 1;\n  while (low <= high) {\n    let middle = Math.floor((low + high) / 2);\n    if (sorted[middle] === target) {\n      return middle;\n    }\n    if (sorted[middle] < target) {\n      low = middle + 1;\n    } else {\n      high = middle - 1;\n    }\n  }\n  return -1;\n}',
     hints:['Three cases: the middle entry is the target, it is too small, or it is too large. Move low or high past the middle so the range always shrinks.','If sorted[middle] < target then low = middle + 1, otherwise high = middle - 1. Forgetting the + 1 or − 1 makes the loop run forever.'],
-    takeaway:'Logarithmic search does about 10 comparisons where a linear scan does 1,024. That gap is what algorithmic complexity measures, and it grows as the input does.', reference:refs.search
+    takeaway:'Logarithmic search does about 10 comparisons where a linear scan does 1,024. That gap is what algorithmic complexity measures, and it grows as the input does.', reference:refs.search,
+    artifact:{
+      title:'Halving, and the bugs that live in the middle',
+      note:'Binary search is four lines and was written incorrectly in published textbooks for two decades. It is worth seeing why.',
+      panes:[
+        {label:'the shape', code:'low = 0; high = n - 1;\nwhile (low <= high) {\n  mid = (low + high) / 2;\n  if (a[mid] === t) return mid;\n  if (a[mid] < t) low = mid + 1;\n  else high = mid - 1;\n}', note:'Every comparison discards half of what is left, so a million entries take twenty comparisons. The whole of the difficulty is in the three lines that move low and high.'},
+        {label:'the overflow', code:'mid = (low + high) / 2;\n\n// low and high both near 2^31\n// -> low + high overflows\n\nmid = low + (high - low) / 2;', note:'In Java\u2019s standard library this was a real bug, found in 2006, in code that had been reviewed for nine years. It cannot happen in JavaScript, where numbers are doubles, and it is still the canonical example of why the obvious line is not always right.'},
+        {label:'off by one, three ways', code:'while (low < high)   vs  <=\nhigh = mid           vs  mid - 1\nlow  = mid           vs  mid + 1\n\n(mixing them: infinite loop,\n or the answer skipped)', note:'The bounds convention has to be consistent across all three lines. Picking one — inclusive both ends, or inclusive-exclusive — and applying it everywhere is the only reliable way through.'},
+        {label:'what it needs', code:'sorted        : required\nrandom access : required\n\nlinked list  -> O(n) to reach mid\n                -> no better than scanning', note:'The algorithm assumes reaching the middle is free, which is true for an array and false for a linked list. That assumption is why a sorted array and a sorted list are not interchangeable.'}
+      ]
+    }
   },
   {
     id:'call-yourself', kind:'algo', chapter:'Programming', concept:'Recursion', name:'Call yourself', location:'Signal analyser',
@@ -404,7 +534,17 @@ export const levels = [
     starter:'function gcd(a, b) {\n  // Base case: when b is 0, the answer is a.\n  // Otherwise call gcd again with smaller numbers.\n  return a;\n}\n',
     solution:'function gcd(a, b) {\n  if (b === 0) {\n    return a;\n  }\n  return gcd(b, a % b);\n}',
     hints:['The base case is b === 0, and then the answer is a. Everything else reduces to gcd(b, a % b).','Two lines: if (b === 0) { return a; } then return gcd(b, a % b);. Notice the arguments swap.'],
-    takeaway:'Recursion describes a problem in terms of a smaller copy of itself. The base case is not optional: it is the only thing that ends the calls.', reference:refs.recursion
+    takeaway:'Recursion describes a problem in terms of a smaller copy of itself. The base case is not optional: it is the only thing that ends the calls.', reference:refs.recursion,
+    artifact:{
+      title:'A function that calls itself, and where it stops',
+      note:'Recursion is not a way of looping. It is a way of saying that a problem contains a smaller version of itself, and the base case is the whole of the correctness.',
+      panes:[
+        {label:'the two halves', code:'function gcd(a, b) {\n  if (b === 0) return a;      // base\n  return gcd(b, a % b);       // smaller\n}\n\ngcd(48,18) -> gcd(18,12) ->\ngcd(12,6) -> gcd(6,0) -> 6', note:'A base case that stops and a step that makes the problem smaller. Get either wrong and it either never stops or stops at the wrong answer — there is no third failure mode.'},
+        {label:'what the stack holds', code:'gcd(48,18)\n  gcd(18,12)\n    gcd(12,6)\n      gcd(6,0) -> 6\n\nfour frames, unwinding\n\nRangeError: Maximum call stack\n  size exceeded   (~10,000 deep)', note:'Each call keeps a frame until it returns, so depth costs memory. A recursion over a list of a million items will run out; one over a balanced tree of a million items is twenty deep and fine.'},
+        {label:'tail calls', code:'return gcd(b, a % b);\n  // nothing to do after the call\n\n-> can reuse the frame\n\nScheme, Lua: guaranteed\nJS: in the spec, in one engine', note:'When the recursive call is the last thing that happens, the frame is not needed any more and can be reused, making the recursion a loop. Few languages actually guarantee it, which is why deep recursion is still risky.'},
+        {label:'when it is the right shape', code:'trees, directories, JSON\nparsers and expressions\ndivide and conquer\n\nwalking a flat list: use a loop', note:'Recursion fits data that contains itself. Using it on a sequence is a stylistic choice that costs stack; using a loop on a tree means building the stack by hand, which is the same thing with more code.'}
+      ]
+    }
   },
   {
     id:'balance-the-manifest', kind:'algo', chapter:'Programming', concept:'Stacks', name:'Balance the manifest', location:'Cargo manifest',
@@ -426,7 +566,17 @@ export const levels = [
     starter:'function balanced(text) {\n  let stack = [];\n  for (let i = 0; i < text.length; i++) {\n    let character = text[i];\n    // Push openings; on a closing bracket, pop and compare.\n  }\n  return stack.length === 0;\n}\n',
     solution:'function balanced(text) {\n  let stack = [];\n  for (let i = 0; i < text.length; i++) {\n    let character = text[i];\n    if (character === "(" || character === "[" || character === "{") {\n      stack.push(character);\n    } else {\n      if (stack.length === 0) {\n        return false;\n      }\n      let open = stack.pop();\n      if (character === ")" && open !== "(") {\n        return false;\n      }\n      if (character === "]" && open !== "[") {\n        return false;\n      }\n      if (character === "}" && open !== "{") {\n        return false;\n      }\n    }\n  }\n  return stack.length === 0;\n}',
     hints:['Push "(", "[" and "{". On any other character, the stack must not be empty, and the popped bracket must be the matching opening one.','Return false as soon as a pair does not match or the stack is empty. At the end, the stack has to be empty too.'],
-    takeaway:'A stack turns “the most recent unclosed thing” into one operation. Parsers, undo histories, and the call stack behind your own function calls all work this way.', reference:refs.stack
+    takeaway:'A stack turns “the most recent unclosed thing” into one operation. Parsers, undo histories, and the call stack behind your own function calls all work this way.', reference:refs.stack,
+    artifact:{
+      title:'A stack, and the things that are secretly one',
+      note:'Last in, first out sounds like a data structure and is really a shape. Once you can see it, it is everywhere.',
+      panes:[
+        {label:'matching brackets', code:'( [ { } ] )\n\npush (   stack: (\npush [   stack: ( [\npush {   stack: ( [ {\n}  pops { and matches\n]  pops [ and matches\n)  pops ( and matches', note:'The most recent unclosed bracket is the only one that may close next, which is precisely last in, first out. Nothing else is needed — no counting, no lookahead.'},
+        {label:'the call stack', code:'main()\n  parse()\n    readToken()\n\nthe most recent call is the\nfirst to return\n\n(the trace prints the stack)', note:'Function calls nest the same way brackets do, which is why the machinery is called a stack and why a stack trace reads from the inside out.'},
+        {label:'undo, and the back button', code:'action -> push\nundo   -> pop\n\nnavigate -> push\nback     -> pop\n\n(redo is a second stack)', note:'Every undo feature and every browser history is this. The moment you notice that redo needs a second stack, the whole behaviour of the back button after you follow a new link becomes obvious.'},
+        {label:'evaluating without recursion', code:'3 4 + 5 *\n\npush 3, push 4\n+  pops both, pushes 7\npush 5\n*  pops both, pushes 35', note:'Postfix notation needs no parentheses and no precedence rules because the order is already in the arrangement. This is how a great many virtual machines, including the JVM, actually execute arithmetic.'}
+      ]
+    }
   },
 
   {
@@ -446,7 +596,17 @@ export const levels = [
     starter:'function sweep(rooms, start) {\n  let queue = [start];\n  let order = [];\n  while (queue.length > 0) {\n    let room = queue.pop();\n    order.push(room);\n    let next = rooms[room];\n    for (let i = 0; i < next.length; i++) {\n      queue.push(next[i]);\n    }\n  }\n  return order;\n}\n',
     solution:'function sweep(rooms, start) {\n  let queue = [start];\n  let order = [];\n  while (queue.length > 0) {\n    let room = queue.shift();\n    order.push(room);\n    let next = rooms[room];\n    for (let i = 0; i < next.length; i++) {\n      queue.push(next[i]);\n    }\n  }\n  return order;\n}',
     hints:['The second case passes and the others do not. A single corridor is the one shape where taking from the front and taking from the back give the same answer.','One call is wrong. pop() takes from the end that was pushed last; shift() takes from the end that was pushed first.'],
-    takeaway:'A queue and a stack differ by one call. Which end you take from decides whether you finish the near things first or follow one path to its end, and that decision is the algorithm, not a detail of it.', reference:refs.queue
+    takeaway:'A queue and a stack differ by one call. Which end you take from decides whether you finish the near things first or follow one path to its end, and that decision is the algorithm, not a detail of it.', reference:refs.queue,
+    artifact:{
+      title:'The same walk, two containers',
+      note:'One call decides whether you fan out or dive down. Everything else in these two algorithms is identical.',
+      panes:[
+        {label:'side by side', code:'queue.shift()   breadth first\n  a b c d e f\n  everything 1 away, then 2\n\nstack.pop()     depth first\n  a b d e c f\n  one path to its end, then back', note:'Same graph, same edges, same code apart from one method name. The order they come out in is the only difference and it changes what the walk is good for entirely.'},
+        {label:'which one to reach for', code:'shortest path, unweighted : breadth\nlevel by level            : breadth\ncycle detection           : depth\ntopological order         : depth\nsolving a maze on paper   : depth', note:'Depth-first is what a person does by hand because backtracking is cheap when you can see the whole page. Breadth-first is what you want when "nearest" matters, and it costs memory to keep the frontier.'},
+        {label:'what each costs', code:'breadth: holds the whole frontier\n  a wide tree -> a huge queue\n\ndepth: holds one path\n  a deep tree -> a deep stack\n  (or a stack overflow)', note:'The memory profiles are opposites. A wide shallow graph punishes breadth-first and a narrow deep one punishes depth-first, which is occasionally the thing that decides it.'},
+        {label:'queues elsewhere', code:'a task queue    : fairness\na print spooler : arrival order\na ring buffer   : fixed memory\nan event loop   : one at a time,\n                  in the order they happened', note:'Anywhere fairness matters, the container is a queue, because last-in-first-out means the person who arrived first waits longest. The System design chapter has a mission on what happens when one never drains.'}
+      ]
+    }
   },
   {
     id:'stop-searching-twice', kind:'refactor', chapter:'Programming', concept:'Lookup tables', name:'Stop searching twice', location:'Cargo registry',
@@ -499,7 +659,17 @@ export const levels = [
     starter:'function byMass(crates) {\n  let copy = crates.slice(0);\n  // Slide each crate left past everything heavier than it.\n  return copy;\n}\n',
     solution:'function byMass(crates) {\n  let copy = crates.slice(0);\n  for (let i = 1; i < copy.length; i++) {\n    let moving = copy[i];\n    let j = i;\n    while (j > 0 && copy[j - 1].mass > moving.mass) {\n      copy[j] = copy[j - 1];\n      j = j - 1;\n    }\n    copy[j] = moving;\n  }\n  return copy;\n}',
     hints:['Copy the array first: crates.slice(0) gives you one you can rearrange without changing the caller’s.','The inner loop slides left while the crate on the left is heavier. Using "heavier" rather than "not lighter" is what keeps equal crates in the order they arrived.'],
-    takeaway:'Sorting by a key compares one field and moves the whole record. A sort is stable when records that compare equal come out in the order they went in, and that is decided by a single > against a >=.', reference:refs.insertion
+    takeaway:'Sorting by a key compares one field and moves the whole record. A sort is stable when records that compare equal come out in the order they went in, and that is decided by a single > against a >=.', reference:refs.insertion,
+    artifact:{
+      title:'Sorting by a key, and the property nobody notices until it is gone',
+      note:'Stability costs one character in the comparison and is the difference between a sort that composes and one that does not.',
+      panes:[
+        {label:'the comparison', code:'while (j > 0 && copy[j-1].mass > m)\n  //                             ^\n  //  >   : stable, equals do not move\n  //  >=  : unstable, equals swap', note:'One character. With >, two crates of equal mass never trade places and the order they arrived in survives; with >=, they do and it does not.'},
+        {label:'why it matters', code:'sort by name   -> A, B, C\nthen by mass   -> within each mass,\n                  still A, B, C\n\n(only if the second sort is stable)', note:'Sorting twice is how you sort by two keys, and it only works from the least significant to the most. An unstable sort scrambles the first pass and the whole technique collapses.'},
+        {label:'what the libraries promise', code:'Python  sorted()   stable, guaranteed\nJava    Collections.sort  stable\nJS      Array.sort  stable since ES2019\nC++     std::sort   NOT stable\n        std::stable_sort  is', note:'C++ and older JavaScript leave it unspecified because the fastest algorithms are not stable. Knowing which you have is the difference between a two-key sort that works and one that works on your machine.'},
+        {label:'comparator conventions', code:'(a, b) => a.mass - b.mass\n\nnegative : a first\nzero     : leave them\npositive : b first\n\n(returning a boolean is the\n classic mistake)', note:'A comparator returns a number, not a yes or no, because three answers are needed and a boolean has two. Returning true or false sorts almost correctly, which is the worst way for it to be wrong.'}
+      ]
+    }
   },
   {
     id:'break-it-into-tokens', kind:'algo', chapter:'Programming', concept:'Tokenising', name:'Break it into tokens', location:'Command parser',
@@ -551,7 +721,17 @@ export const levels = [
     starter:'function evaluate(tokens) {\n  // Pass one: fold every × into the value on its left.\n  // Pass two: add and subtract what is left, left to right.\n  return 0;\n}\n',
     solution:'function evaluate(tokens) {\n  let folded = [tokens[0].value];\n  let signs = [];\n  let i = 1;\n  while (i < tokens.length) {\n    let sign = tokens[i].text;\n    let value = tokens[i + 1].value;\n    if (sign === "*") {\n      folded[folded.length - 1] = folded[folded.length - 1] * value;\n    } else {\n      signs.push(sign);\n      folded.push(value);\n    }\n    i += 2;\n  }\n  let total = folded[0];\n  for (let j = 0; j < signs.length; j++) {\n    if (signs[j] === "+") {\n      total += folded[j + 1];\n    } else {\n      total -= folded[j + 1];\n    }\n  }\n  return total;\n}',
     hints:['Keep two lists: the values after every × has been folded away, and the + and − signs between them. Start folded with tokens[0].value and step i by 2.','On a ×, multiply into the last value of folded instead of pushing a new one. Then walk signs once, adding or subtracting folded[j + 1].'],
-    takeaway:'You have now written both halves of an interpreter: text to tokens, tokens to a value. Precedence is not a property of arithmetic — it is a rule the language chooses, and the evaluator is where that choice lives.', reference:refs.precedence
+    takeaway:'You have now written both halves of an interpreter: text to tokens, tokens to a value. Precedence is not a property of arithmetic — it is a rule the language chooses, and the evaluator is where that choice lives.', reference:refs.precedence,
+    artifact:{
+      title:'Why 2 + 3 * 4 is 14',
+      note:'Precedence is not a property of arithmetic. It is a decision somebody made about how to read a flat list of tokens, and the parser is where it lives.',
+      panes:[
+        {label:'the same tokens, two trees', code:'2 + 3 * 4\n\n   +            *\n  / \\          / \\\n 2   *        +   4\n    / \\      / \\\n   3   4    2   3\n\n  = 14        = 20', note:'The tokens do not say which. The shape of the tree is the answer, and building the right one from a flat sequence is the whole job of a parser.'},
+        {label:'the table', code:'()        highest\n**\n* / %\n+ -\n< > <= >=\n== !=\n&&\n||\n=         lowest', note:'Each level binds tighter than the one below it. Most of the table is uncontroversial and the same in every language; the interesting arguments are all near the bottom, around && and ||.'},
+        {label:'where it bites', code:'a & b == c\n  // == binds tighter than &\n  // = a & (b == c)   in C\n\nif (flags & MASK == 0)   // wrong\nif ((flags & MASK) == 0) // right', note:'C gave the bitwise operators lower precedence than comparison, which is now agreed to have been a mistake. Every C compiler warns about it and the line still gets written.'},
+        {label:'how it is implemented', code:'precedence climbing:\n  parse a term\n  while the next operator binds\n  at least this tightly:\n    parse the right side harder\n    combine\n\n(one function, one parameter)', note:'The table becomes a number passed down the recursion. It is about fifteen lines and replaces the sprawling one-function-per-level grammar that textbooks usually show first.'}
+      ]
+    }
   },
   {
     id:'same-idea-five-ways', kind:'quiz', chapter:'Programming', concept:'Reading other languages', name:'Same idea, five ways', location:'Translation desk',
@@ -711,7 +891,17 @@ export const levels = [
     starter:'function cases() {\n  return [\n    {args: [1, 4], expect: 25}\n  ];\n}\n',
     solution:'function cases() {\n  return [\n    {args: [1, 4], expect: 25},\n    {args: [3, 0], expect: 0},\n    {args: [-1, 4], expect: -1},\n    {args: [4, -1], expect: -1},\n    {args: [2, 3], expect: 66},\n    {args: [4, 4], expect: 100}\n  ];\n}',
     hints:['Read the contract one sentence at a time. Three of them begin with "when", and each one is a case nobody has written yet.','Two thirds is 66.66…, so rounding down and rounding to nearest disagree there. A negative part with a positive whole is the case that tells the last two versions apart.'],
-    takeaway:'A contract’s edge cases are the ones its author thought about and its tests usually did not. Every sentence in a contract that starts with "when" is a case waiting to be written.', reference:refs.failFast
+    takeaway:'A contract’s edge cases are the ones its author thought about and its tests usually did not. Every sentence in a contract that starts with "when" is a case waiting to be written.', reference:refs.failFast,
+    artifact:{
+      title:'The inputs nobody wrote a case for',
+      note:'Every one of these is a real outage. None of them is a clever attack; they are all the ordinary edge of an ordinary contract.',
+      panes:[
+        {label:'the empty case', code:'average([])      -> NaN\nmax([])          -> -Infinity\n"".split(" ")    -> [""]\nsum([]) / len([]) -> divide by zero', note:'Nothing is a valid input and almost never a tested one. Three of these four return something plausible-looking rather than failing, which is how they reach production.'},
+        {label:'zero and negative', code:'progress = done / total * 100\n  // total is 0 on the first render\n\nretries = -1\n  // the loop runs 4 billion times\n  //  if the counter is unsigned', note:'A count that is usually positive is not always positive. The guard costs one line and the absence of it is a blank page or a hung process.'},
+        {label:'what a contract is for', code:'share(part, whole)\n  returns -1 when either is negative\n  returns 0  when whole is 0\n  otherwise the percentage, floored\n\nevery "when" is a test case', note:'A contract written this way hands you the suite. Read it for the sentences beginning with "when" and write one case for each; that alone catches most of what this mission is about.'},
+        {label:'the other direction', code:'Postel: be liberal in what you\naccept, conservative in what you send\n\n...which produced decades of\nincompatible HTML parsers and is\nnow considered mostly wrong', note:'Accepting anything sounds generous and means every implementation disagrees about what is valid. Modern protocol design — HTTP/2 onward — rejects malformed input outright, precisely because the alternative was tried.'}
+      ]
+    }
   },
   {
     id:'split-and-merge', kind:'algo', chapter:'Programming', concept:'Divide and conquer', name:'Split and merge', location:'Archive sorter',
@@ -734,7 +924,17 @@ export const levels = [
     starter:'function sorted(values) {\n  if (values.length <= 1) {\n    return values;\n  }\n  // Split in half, sort each half, then merge the two sorted halves.\n  return values;\n}\n',
     solution:'function sorted(values) {\n  if (values.length <= 1) {\n    return values;\n  }\n  let middle = Math.floor(values.length / 2);\n  let left = sorted(values.slice(0, middle));\n  let right = sorted(values.slice(middle, values.length));\n  let out = [];\n  let i = 0;\n  let j = 0;\n  while (i < left.length && j < right.length) {\n    if (right[j] < left[i]) {\n      out.push(right[j]);\n      j++;\n    } else {\n      out.push(left[i]);\n      i++;\n    }\n  }\n  while (i < left.length) {\n    out.push(left[i]);\n    i++;\n  }\n  while (j < right.length) {\n    out.push(right[j]);\n    j++;\n  }\n  return out;\n}',
     hints:['Write the merge first and test it in your head on [1, 4] and [2, 3]. Two indices, one into each half, and you always take the smaller front value.','values.slice(0, middle) and values.slice(middle, values.length) are the two halves. Sort each one with sorted() itself, then merge. Take from the left when the two fronts are equal.'],
-    takeaway:'Divide and conquer turns a problem you cannot do into two you can, plus a cheap way to combine them. The combining step is where the algorithm actually lives.', reference:refs.mergesort
+    takeaway:'Divide and conquer turns a problem you cannot do into two you can, plus a cheap way to combine them. The combining step is where the algorithm actually lives.', reference:refs.mergesort,
+    artifact:{
+      title:'Divide, conquer, and the merge that does the work',
+      note:'The splitting is trivial. Everything that makes merge sort fast is in the step that puts two sorted halves back together.',
+      panes:[
+        {label:'the recursion', code:'[7 2 9 4 1 8]\n[7 2 9] [4 1 8]\n[7][2 9]  [4][1 8]\n[7][2][9] [4][1][8]\n  merge upward\n[2 7 9] [1 4 8]\n[1 2 4 7 8 9]', note:'Splitting to single elements is free and they are all trivially sorted. The work happens on the way back up, and there are log n levels of it.'},
+        {label:'the merge', code:'two sorted lists, one pass:\n  compare the two fronts\n  take the smaller\n  repeat\n\nn comparisons per level\nlog n levels\n-> n log n', note:'Merging two sorted lists is linear because each comparison settles one element forever. That is the whole complexity argument, and it is why the split has to be even.'},
+        {label:'against quicksort', code:'merge : O(n log n) always\n        O(n) extra memory\n        stable\n\nquick : O(n log n) average\n        O(n^2) worst\n        O(log n) memory\n        not stable', note:'Quicksort is faster in practice because its constant is smaller and it sorts in place. Merge sort is what you use when the worst case matters or stability does — and it is what sorts data too large for memory.'},
+        {label:'what real sorts do', code:'Timsort (Python, Java):\n  find runs that are already sorted\n  merge sort those runs\n  insertion sort short ones\n\nreal data is rarely random', note:'The standard library sort in two of the most-used languages is merge sort with the observation that real input usually contains long sorted stretches. On nearly-sorted data it is linear.'}
+      ]
+    }
   },
   {
     id:'say-it-once', kind:'refactor', chapter:'Programming', concept:'Duplication', name:'Say it once', location:'Environment console',
@@ -778,7 +978,17 @@ export const levels = [
     lesson:'For these four unsigned binary digits, the place values are 8, 4, 2, and 1. A 1 includes its place value; a 0 contributes zero. The pattern 1101 means 8 + 4 + 0 + 1 = 13.',
     bits:{width:4}, target:13,
     hints:['13 is 8 + 4 + 1. Leave the 2-value bit off.','From left to right: 1, 1, 0, 1.'], solution:[1,1,0,1],
-    takeaway:'Four bits have 16 possible patterns. As an unsigned integer, they represent 0 through 15. Other encodings can give the same bits a different meaning.', reference:refs.basics
+    takeaway:'Four bits have 16 possible patterns. As an unsigned integer, they represent 0 through 15. Other encodings can give the same bits a different meaning.', reference:refs.basics,
+    artifact:{
+      title:'Counting in two, as four tools show it',
+      note:'Every one of these is the same eight bits. What changes is the base somebody chose to print them in.',
+      panes:[
+        {label:'the place values', code:'  128  64  32  16   8   4   2   1\n    0   0   1   0   1   1   0   1\n            32      8   4       1  = 45\n\neach place is twice the one to its right', note:'Decimal places are powers of ten and binary places are powers of two. That is the entire difference, and everything else about binary follows from it.'},
+        {label:'the same number', code:'>>> 45\n45\n>>> bin(45)\n\x270b101101\x27\n>>> hex(45)\n\x270x2d\x27\n>>> f"{45:08b}"\n\x2700101101\x27', note:'One value, four ways of writing it down. A number has no base of its own — the base belongs to the notation, and the machine holds bits whatever you type.'},
+        {label:'why eight', code:'4 bits  = 16 values      a nibble\n8 bits  = 256            a byte\n16 bits = 65,536\n32 bits = 4.29 billion\n64 bits = 1.8 x 10^19', note:'Each bit doubles the range, so the numbers get large very quickly and then stop: a 32-bit counter of seconds runs out in 2038, which is a real deadline in real code.'},
+        {label:'where you meet it', code:'chmod 755    rwx r-x r-x\n             111 101 101\n\n255.255.255.0   /24\n11111111.11111111.11111111.00000000', note:'File permissions and subnet masks are both bit fields wearing a decimal costume. Reading them in binary is the only way they make sense as anything other than numbers to memorise.'}
+      ]
+    }
   },
   {
     id:'one-byte-code', kind:'bits', chapter:'Computer science', concept:'Bytes & hexadecimal', name:'One byte, two digits', location:'Firmware vault',
@@ -788,7 +998,17 @@ export const levels = [
     bits:{width:8}, target:172,
     hints:['172 = 128 + 32 + 8 + 4. Turn on exactly those four place values.','Left to right: 1, 0, 1, 0, 1, 1, 0, 0. Read it as two groups of four: 1010 = A, 1100 = C.'],
     solution:[1,0,1,0,1,1,0,0],
-    takeaway:'Eight bits give 256 patterns. Hexadecimal is not a different number, only a shorter way to write the same bits.', reference:refs.basics
+    takeaway:'Eight bits give 256 patterns. Hexadecimal is not a different number, only a shorter way to write the same bits.', reference:refs.basics,
+    artifact:{
+      title:'Why anybody writes numbers in sixteens',
+      note:'Hexadecimal is not a different kind of number. It is a way of writing binary that a person can read aloud without losing their place.',
+      panes:[
+        {label:'four bits at a time', code:'1010 1101\n   |    |\n   A    D    ->  0xAD\n\n16 = 2^4, so one hex digit is\nexactly four bits, always', note:'The conversion is mechanical because sixteen is a power of two. Splitting binary into groups of four and naming each group is the whole of it, which is why it is done by eye rather than by arithmetic.'},
+        {label:'a hex dump', code:'00000000  7f 45 4c 46 02 01 01 00  |.ELF....|\n00000010  02 00 3e 00 01 00 00 00  |..>.....|\n\n7f 45 4c 46 = 0x7F "E" "L" "F"', note:'Every binary file begins with bytes that identify it. Reading them as hex and as characters at the same time is what a dump is for, and it is how you find out what a file actually is when its name lies.'},
+        {label:'the same byte, four ways', code:'binary   1010 1101\nhex      0xAD\ndecimal  173\noctal    0o255\n\n(decimal is the one that hides\n the bit boundaries)', note:'Decimal is the awkward one here: ten is not a power of two, so 173 gives no hint that the top four bits are 1010. That is why machine-facing values are almost never written in decimal.'},
+        {label:'where you meet it', code:'#ff8800     colour: r=255 g=136 b=0\n0xDEADBEEF  a marker value\n02:42:ac:11:00:02   a MAC address\nU+1F600     a code point', note:'Colours, addresses, magic numbers and code points are all byte strings, so they are all written in hex. Once the four-bits-per-digit rule is automatic, every one of these reads as bits.'}
+      ]
+    }
   },
   {
     id:'negative-space', kind:'bits', chapter:'Computer science', concept:'Signed integers', name:'Below zero', location:'Attitude computer',
@@ -798,7 +1018,17 @@ export const levels = [
     bits:{width:8, encoding:'twos'}, target:-40,
     hints:['40 is 00101000. Flip every bit to get 11010111, then add one.','The answer is 11011000: −128 + 64 + 16 + 8 = −40.'],
     solution:[1,1,0,1,1,0,0,0],
-    takeaway:'The same eight bits mean 216 unsigned and −40 signed. Bits carry no meaning on their own; the encoding supplies it.', reference:refs.twos
+    takeaway:'The same eight bits mean 216 unsigned and −40 signed. Bits carry no meaning on their own; the encoding supplies it.', reference:refs.twos,
+    artifact:{
+      title:'One bit for the sign, and the trouble it causes',
+      note:'Two\u2019s complement is not an obvious representation. It is the one that makes subtraction free, and the costs it carries are the price of that.',
+      panes:[
+        {label:'the trick', code:'  5  =  0000 0101\n -5  =  1111 1011\n        ---------\n  0  = 10000 0000   (carry falls off)\n\nadding gives zero, so one adder\ndoes both jobs', note:'The whole point: a - b is a + (-b), so a processor needs no subtraction circuit at all. Every other representation of negatives fails this test, which is why this one won.'},
+        {label:'the asymmetry', code:'8 bits: -128 .. 127\n\n-(-128) = ?\n\n  1000 0000  invert -> 0111 1111\n             add 1  -> 1000 0000\n\n  ... itself', note:'There is one more negative number than positive, so the most negative value has no positive counterpart. Negating it silently gives back itself, which is a real bug in real code and is why abs() has an edge case.'},
+        {label:'signed or not', code:'unsigned char  200\nsigned char   -56\n\nsame byte: 1100 1000\n\nfor (int i = 0; i < len - 1; i++)\n  // len is unsigned; len - 1\n  // when len == 0 is enormous', note:'The bits do not say which they are; the type does. A subtraction on an unsigned zero wraps to the largest value there is, and the loop that was meant not to run runs four billion times.'},
+        {label:'where it shows up', code:'>>> (-7) >> 1\n-4        # arithmetic shift: sign kept\n\n>>> (-7) >>> 1 in JavaScript\n2147483644   # logical: sign is a bit', note:'Shifting right has two meanings once negatives exist — keep the sign or do not — and languages differ on which operator is which. It is a reliable source of bugs in code that treats numbers as bit patterns.'}
+      ]
+    }
   },
   {
     id:'count-the-cents', kind:'money', chapter:'Computer science', concept:'Floating point', name:'Count the cents', location:'Commissary till',
@@ -873,7 +1103,17 @@ export const levels = [
     lesson:'An array is an ordered sequence of entries; JavaScript array indices start at 0. This puzzle permits any adjacent swap. Bubble sort is a particular algorithm: scan adjacent pairs in order, swap out-of-order pairs, and repeat passes until sorted.',
     values:[7,2,9,4,1],
     hints:['Try moving the largest value right by swapping it past smaller neighbours.','The final order is 1, 2, 4, 7, 9. Move 9 to the end, then work on the earlier entries.'], solution:[1,2,4,7,9],
-    takeaway:'You sorted an array with adjacent swaps. Following a systematic left-to-right pass repeatedly gives bubble sort, which has quadratic worst-case time. Arbitrary swaps need not follow that algorithm.', reference:refs.sort
+    takeaway:'You sorted an array with adjacent swaps. Following a systematic left-to-right pass repeatedly gives bubble sort, which has quadratic worst-case time. Arbitrary swaps need not follow that algorithm.', reference:refs.sort,
+    artifact:{
+      title:'The simplest sort, and what it costs',
+      note:'Swapping neighbours is how anybody sorts a hand of cards. Watching the count is how you find out why nobody sorts a million records that way.',
+      panes:[
+        {label:'the passes', code:'7 2 9 4 1\n2 7 9 4 1   swap 7,2\n2 7 4 9 1   swap 9,4\n2 7 4 1 9   swap 9,1\n2 4 7 1 9   swap 7,4\n...\n1 2 4 7 9   10 swaps', note:'Each pass walks the list and carries the largest remaining value to the end, which is why the sorted part grows from the right. Five values take at most ten comparisons.'},
+        {label:'what it costs', code:'      n      comparisons\n      5               10\n     10               45\n    100            4,950\n  1,000          499,500\n 10,000       49,995,000', note:'n(n-1)/2, which is n squared for any n worth talking about. Ten times the data is a hundred times the work, and that is the difference between instant and overnight.'},
+        {label:'against a real sort', code:'1,000,000 records\n\nbubble sort   ~5 x 10^11 comparisons\nmerge sort    ~2 x 10^7\n\n25,000 times fewer', note:'The same answer, the same machine. Merge sort is in the Programming chapter and is not much harder to write; the difference is entirely in how the work is divided.'},
+        {label:'why it is still taught', code:'sorted or nearly sorted input:\n  bubble sort  O(n)   one clean pass\n  quicksort    O(n^2) if pivots are bad\n\nsmall n: the constant factor wins', note:'It is genuinely the fastest thing available on a nearly-sorted list or a very short one, which is why real library sorts fall back to insertion sort below about sixteen elements.'}
+      ]
+    }
   },
   {
     id:'how-it-scales', kind:'quiz', chapter:'Computer science', concept:'Complexity', name:'How it scales', location:'Analysis deck',
@@ -890,7 +1130,17 @@ export const levels = [
     quizSuccess:'Growth rate, not raw speed, decides what survives a larger input.',
     solution:[1,1,0,2],
     hints:['Work out the factor the input grew by, then apply the growth rate: linear multiplies by it, quadratic by its square, logarithmic adds a constant.','Answers in order: 1 second, 100 seconds, 20 comparisons, the logarithmic search.'],
-    takeaway:'Choosing the algorithm changes the shape of the curve. No amount of faster hardware turns a quadratic algorithm into a linear one.', reference:refs.growth
+    takeaway:'Choosing the algorithm changes the shape of the curve. No amount of faster hardware turns a quadratic algorithm into a linear one.', reference:refs.growth,
+    artifact:{
+      title:'What the notation is actually claiming',
+      note:'Big-O is a statement about growth and nothing else. Reading it as a statement about speed is the usual mistake.',
+      panes:[
+        {label:'the shapes', code:'n        O(1)  O(log n)  O(n)   O(n log n)  O(n^2)\n10          1        3     10          33      100\n100         1        7    100         664   10,000\n1,000       1       10  1,000       9,966    10^6\n1,000,000   1       20    10^6    2 x 10^7    10^12', note:'Read down the columns rather than across. Logarithmic barely moves, linear keeps up with the data, and quadratic leaves the page — that difference is the whole reason the notation exists.'},
+        {label:'what it leaves out', code:'O(n)    with a 1000x constant\nO(n^2)  with a 1x constant\n\nn = 10    : 10,000  vs     100\nn = 10,000: 10^7    vs   10^8\n\ncrossover around n = 1,000', note:'Constants are dropped because they do not change the shape, not because they do not matter. Below the crossover the "worse" algorithm wins, which is why library sorts switch to insertion sort on short lists.'},
+        {label:'measured, not derived', code:'$ time ./search 1000\n0.004s\n$ time ./search 10000\n0.041s      # 10x data, 10x time\n$ time ./search 100000\n0.402s      # linear', note:'Doubling the input and timing it tells you the shape without reading a line of code. Four times the time for twice the data is quadratic, and no amount of arguing about the implementation changes that.'},
+        {label:'the other axis', code:'merge sort   O(n log n) time, O(n) space\nquicksort    O(n log n) time, O(log n) space\nheapsort     O(n log n) time, O(1) space\n\n(and quicksort is the fastest\n of the three in practice)', note:'Time is not the only resource. Three sorts with identical time complexity differ entirely in memory, and the one with the worst worst-case is the one everybody uses because its average case has the smallest constant.'}
+      ]
+    }
   },
   {
     id:'hash-it-out', kind:'hash', chapter:'Computer science', concept:'Hash tables', name:'Somewhere to put it', location:'Index memory',
@@ -910,7 +1160,17 @@ export const levels = [
     ],
     solution:{dials:{size:9, collisions:'chain'}},
     hints:['Work out (key mod size) for each ID at each size. Six of the seven are multiples of 10, so any size that shares a factor with 10 piles them up.','Two sizes keep the worst lookup to two, and only with one of the two collision strategies. At a load factor near 0.8 the runs of open addressing start merging into each other.'],
-    takeaway:'A hash table is judged by its worst lookup, not by whether it collided. The size decides how often keys land together, and the collision strategy decides what that costs — open addressing is faster until the table fills, and then the runs merge and it is not.', reference:refs.hash
+    takeaway:'A hash table is judged by its worst lookup, not by whether it collided. The size decides how often keys land together, and the collision strategy decides what that costs — open addressing is faster until the table fills, and then the runs merge and it is not.', reference:refs.hash,
+    artifact:{
+      title:'A hash table, from the inside',
+      note:'Every line here is the same seven keys. What changes is the size of the table, and what the table does when two of them collide.',
+      panes:[
+        {label:'the slots', code:'size 10:  slot 0 <- 10 20 30 40 50 60\n          slot 4 <- 84\n\nsize  9:  0<- 60  1<-10  2<-20\n          3<-30,84  4<-40  5<-50', note:'Six of the seven keys are multiples of ten, so a table of ten sends all six to slot zero. Nine shares no factor with ten and spreads them out, with one collision left over.'},
+        {label:'load factor', code:'keys / slots = load factor\n\n0.50  chaining ~1.25 probes\n0.75  chaining ~1.4   probing ~2.5\n0.90  chaining ~1.45  probing ~5.5\n0.99  chaining ~1.5   probing ~50', note:'Chaining degrades gently and open addressing falls off a cliff, which is why a probing table resizes at around 0.7 and a chaining one can be run much fuller.'},
+        {label:'what a resize costs', code:'table full -> allocate 2x\n           -> rehash every key\n           -> free the old table\n\none insert in n costs O(n);\nthe average stays O(1)', note:'Amortised constant time means the occasional insert is enormous and the average is fine. That is a very different promise from every insert being fast, and it matters if you have a latency budget.'},
+        {label:'why order is not promised', code:'>>> {"b":1, "a":2}.keys()\n\n# Python 3.7+ : insertion order\n# Go          : deliberately random\n# older Java  : hash order\n\nthe slot is the order', note:'A hash table stores keys wherever their hash lands, so any iteration order is an accident of the hash function and the table size. Go randomises it on purpose so nobody writes code that depends on it.'}
+      ]
+    }
   },
   {
     id:'the-tree-that-became-a-list', kind:'tree', chapter:'Computer science', concept:'Trees & balance', name:'The tree that became a list', location:'Catalogue index',
@@ -951,7 +1211,17 @@ export const levels = [
     nodes:[['uplink',12,50],['relay-a',39,22],['relay-b',39,77],['relay-c',65,77],['archive',87,50]],
     edges:[['uplink','relay-a',1],['relay-a','archive',1],['uplink','relay-b',1],['relay-b','relay-c',1],['relay-c','archive',1]], source:'uplink', target:'archive', maxEdges:2,
     hints:['Both routes connect the endpoints. Count the edges along each one.','The upper path is uplink → relay A → archive: two hops.'], solution:[0,1],
-    takeaway:'You minimised hops on an unweighted graph. Only traversed edges contribute to path length; unused enabled branches do not.', reference:refs.graph
+    takeaway:'You minimised hops on an unweighted graph. Only traversed edges contribute to path length; unused enabled branches do not.', reference:refs.graph,
+    artifact:{
+      title:'A graph, and the walk that finds the shortest path',
+      note:'Breadth-first search is three lines of bookkeeping. What it guarantees, and why, is the part worth having.',
+      panes:[
+        {label:'the walk', code:'queue: [A]        seen: A\nqueue: [B,C]      seen: A B C\nqueue: [C,D,E]    seen: A B C D E\nqueue: [D,E,F]    ...\n\neverything 1 hop away, then 2', note:'A queue visits in the order things were found, so the whole of distance one is explored before anything at distance two. That ordering is what makes the first arrival the shortest arrival.'},
+        {label:'why it is shortest', code:'first time you reach a node,\nyou reached it in the fewest hops\n\n(if there were a shorter route,\n it would have been found in an\n earlier round, by definition)', note:'The guarantee is not obvious and the proof is one line. It holds only while every edge costs the same — the moment they differ, first-found stops meaning cheapest and you need Dijkstra.'},
+        {label:'the same code, one change', code:'queue.shift()  -> breadth first\nstack.pop()    -> depth first\n\nsame visits, same edges,\nentirely different order', note:'The container is the algorithm. Depth-first follows one path to its end and is what you want for cycle detection or topological order; breadth-first fans out and is what you want for shortest paths.'},
+        {label:'where it runs', code:'six degrees of separation\nweb crawler frontier\nGPS route without traffic\nchess: positions n moves away\ngarbage collector: reachable objects', note:'Any question of the form "what is reachable, and how far" is this walk. The last one runs in the background of the language this game is written in, every few seconds.'}
+      ]
+    }
   },
   {
     id:'latency-matters', kind:'network', chapter:'Computer science', concept:'Weighted graphs', name:'Find the fastest route', location:'Long-range relay',
@@ -961,7 +1231,17 @@ export const levels = [
     nodes:[['uplink',12,50],['relay-a',49,20],['relay-b',35,78],['relay-c',64,78],['archive',87,50]],
     edges:[['uplink','relay-a',9],['relay-a','archive',9],['uplink','relay-b',3],['relay-b','relay-c',4],['relay-c','archive',3]], source:'uplink', target:'archive', budget:12,
     hints:['The two-hop route takes 18 ms in this model. Add the delays on the three-hop route.','The lower route costs 3 + 4 + 3 = 10 ms.'], solution:[2,3,4],
-    takeaway:'The minimum-weight path costs 10 ms here, despite using more hops. Costs are summed along the chosen route, not across every enabled cable.', reference:refs.graph
+    takeaway:'The minimum-weight path costs 10 ms here, despite using more hops. Costs are summed along the chosen route, not across every enabled cable.', reference:refs.graph,
+    artifact:{
+      title:'When the fewest hops is the wrong answer',
+      note:'The same graph, priced two ways. The route with fewer hops and the route that arrives first are not the same route, and rarely are.',
+      panes:[
+        {label:'hops against milliseconds', code:'A -> D        1 hop,   400 ms\nA -> B -> C -> D   3 hops,  60 ms\n\n(a satellite link is one hop\n and a quarter of a second)', note:'Counting hops assumes every edge costs the same, and on a real network they differ by three orders of magnitude. One satellite hop costs more than a dozen terrestrial ones.'},
+        {label:'what Dijkstra does', code:'always expand the cheapest\nfrontier node next\n\n(so the first time you finalise\n a node, no cheaper route to it\n can still be out there)', note:'Breadth-first with a priority queue instead of a plain one. The guarantee survives edges of different cost, which is the one thing breadth-first cannot do.'},
+        {label:'the requirement', code:'costs must not be negative\n\nwith a -5 edge, a route already\nfinalised as cheapest can be\nbeaten later -> the whole\nargument collapses', note:'Dijkstra finalises a node the moment it is cheapest, which is only safe if adding more edges can never make a path cheaper. Negative weights need Bellman-Ford, which is slower and exists for exactly this reason.'},
+        {label:'what it is really used for', code:'traceroute output, 14 hops\nBGP: not shortest, but policy\nmaps: time, not distance\ngame AI: A*, Dijkstra plus a hint', note:'Internet routing between networks is not shortest-path at all — it is commercial policy wearing a graph algorithm. Inside one network, and in almost everything else that plans a route, this is the algorithm.'}
+      ]
+    }
   },
   {
     id:'the-loop-that-misses', kind:'cache', chapter:'Computer science', concept:'Locality', name:'The loop that misses', location:'Sensor array',

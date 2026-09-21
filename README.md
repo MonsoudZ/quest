@@ -53,6 +53,13 @@ The chapter closes by reading the same function in JavaScript, Python, Ruby, Go,
 missions carry a read-only **language panel** showing the same idea in all five, with a note on
 what each language makes you declare. Only the JavaScript subset runs; the rest is for reading.
 
+Every mission in the game — all sixty-eight — carries read-only evidence beside its lesson, and a
+test enforces it. Sometimes that is the same idea in five languages; more often it is the output of
+a tool an engineer would actually have been looking at: a stack trace, a hex dump, `perf stat`,
+`ip route get`, `ss -ti`, `dig +trace`, `openssl s_client`, `conntrack`, a waterfall, a flame of
+retries. None of it runs and none of it is the answer — it is there to be read against what the
+mission is asking.
+
 **Chapter 2 — Computer science** (14 missions, in three movements). *How a machine writes a value
 down*: binary, bytes and hexadecimal, two's-complement negatives, floating point, and UTF-8 text.
 *How data is arranged*: sorting, complexity, hash tables, binary search trees, and shortest paths

@@ -337,8 +337,14 @@ test('every mission that ships evidence ships all of it', () => {
       assert.ok(pane.code.split('\n').length <= 10, `${level.id}/${pane.label} is too tall for the panel`);
     }
   }
-  // Every chapter that was built out carries evidence, not just Programming.
-  for (const chapter of ['Computer science', 'Networking', 'System design']) {
+  // Every mission carries read-only evidence beside its lesson — a language
+  // panel, a tool's real output, or both. The chapters written later had it and
+  // the ones written first did not, which a player feels as the game improving
+  // as it goes rather than as one thing.
+  for (const level of levels) {
+    assert.ok(level.artifact || level.polyglot, `${level.id} (${level.chapter}) has nothing to read beside its lesson`);
+  }
+  for (const chapter of ['Programming', 'Computer science', 'Networking', 'System design']) {
     assert.ok(levels.some(level => level.chapter === chapter && level.artifact), `${chapter} has no mission with an artifact panel`);
   }
 });
