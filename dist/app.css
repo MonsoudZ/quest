@@ -552,6 +552,17 @@ kbd { padding:2px 5px; border:1px solid var(--line-strong); border-radius:4px; b
   .game-scene { min-height:280px; }
 }
 
+/* A keyboard user should not have to pass sixty-eight mission buttons to reach
+   the mission. Off screen until focused, and then unmistakable. */
+.skip-link {
+  position:absolute; left:var(--s-3); top:-100px; z-index:100;
+  padding:var(--s-2) var(--s-4); border-radius:var(--r-md);
+  background:var(--accent); color:var(--accent-ink);
+  font:600 var(--text-sm)/1 var(--font-text); text-decoration:none;
+  box-shadow:var(--shadow-3);
+}
+.skip-link:focus { top:var(--s-3); }
+
 /* ------------------------------------------------------------ Signal City */
 .city-layout { display:grid; grid-template-columns:minmax(0,1.55fr) minmax(320px,1fr); gap:var(--s-4); margin-top:var(--s-4); }
 .city-stage { display:flex; flex-direction:column; gap:var(--s-3); }

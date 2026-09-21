@@ -1,4 +1,4 @@
-import {levels} from './levels.js';
+import {levels, chapters} from './levels.js';
 import {simulate, evaluateAlgorithm, algoKinds, evaluateSpec, isCoding} from './engine.js';
 import {isPuzzle, initialState, solutionState, applyAction, evaluate} from './puzzles.js';
 import {mountBuilder} from './builder.js';
@@ -52,6 +52,10 @@ let unit = null, visited = [], trace = null, traceIndex = 0, runToken = 0, runni
 let sound = false, audioContext = null;
 let puzzleState = null, algoResult = null, mode = 'campaign';
 const level = () => levels[current];
+
+// Written from the mission list rather than typed into the markup, because the
+// hand-written version said 54 for a long time after there were 68.
+$('mission-count').textContent = `${chapters.length} chapters · ${levels.length} missions`;
 
 // The console owns how a mission is being attempted; the arena owns what is
 // drawn beside it. Both are built once and told which mission is current.
@@ -235,6 +239,23 @@ function loadMission(index) {
   renderArena();
   controls();
   persist();
+  showMissionTop();
+}
+
+// A mission you have just chosen should start at its own title. Without this you
+// keep whatever scroll position the last one left you at, which on a long page
+// means landing halfway down a case list with the title well above the fold.
+function showMissionTop() {
+  if (mode !== 'campaign') return;
+  const heading = document.querySelector('.mission-heading') ?? $('mission-meta');
+  if (!heading) return;
+  const header = document.querySelector('header')?.getBoundingClientRect().height ?? 0;
+  const modes = document.querySelector('.mode-switch')?.getBoundingClientRect().height ?? 0;
+  const top = heading.getBoundingClientRect().top + window.scrollY - header - modes - 16;
+  // Only ever scrolls up to the mission; it does not drag the page down when the
+  // mission is already fully in view.
+  if (window.scrollY <= top) return;
+  window.scrollTo({top:Math.max(0, top), behavior:reduceMotion() ? 'auto' : 'smooth'});
 }
 
 
@@ -496,6 +517,7 @@ $('sound').addEventListener('click', () => {
 });
 
 loadMission(current);
+aimSkipLink();
 const recordSpare = key => ({spare}) => {
   if (!(spare > (feats[key] ?? 0))) return;
   feats[key] = spare;
@@ -552,6 +574,22 @@ function setMode(nextMode) {
     $(`${name}-mode`).classList.toggle('active', name === mode);
     $(`${name}-mode`).setAttribute('aria-pressed', String(name === mode));
   }
+  aimSkipLink();
+}
+
+// The skip link has to land somewhere that exists. In the campaign that is the
+// mission title; in the other four it is the panel the mode just opened.
+function aimSkipLink() {
+  const link = document.querySelector('.skip-link');
+  if (!link) return;
+  const panel = $(mode);
+  const target = mode === 'campaign' ? $('mission-title') : panel;
+  if (!target) return;
+  target.setAttribute('tabindex', '-1');
+  link.setAttribute('href', `#${target.id}`);
+  link.textContent = mode === 'campaign'
+    ? 'Skip to the mission'
+    : `Skip to ${$(`${mode}-mode`).textContent.replace(/^\s*\d+\s*·\s*/, '').toLowerCase()}`;
 }
 // Colour scheme: follows the system until the player chooses, then stays put.
 // Stored as a bare string rather than through writeStore, because a saved theme

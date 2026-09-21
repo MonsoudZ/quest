@@ -17,6 +17,7 @@
   <script type="module" src="./game.js"></script>
 </head>
 <body>
+  <a class="skip-link" href="#mission-title">Skip to the mission</a>
   <header class="topbar">
     <a class="brand" href="./" aria-label="Signal Quest home">
       <span class="brand-mark">S<span>Q</span></span>
@@ -45,7 +46,7 @@
       <button id="station-mode" class="mode-button" aria-pressed="false">04 · Station</button>
       <button id="review-mode" class="mode-button" aria-pressed="false">05 · Review</button>
     </div>
-    <span>4 chapters · 54 missions</span>
+    <span id="mission-count"></span>
   </nav>
 
   <main class="shell" id="campaign">
@@ -67,7 +68,7 @@
       <div class="mission-heading">
         <div>
           <div class="eyebrow" id="mission-meta"></div>
-          <h2 id="mission-title"></h2>
+          <h2 id="mission-title" tabindex="-1"></h2>
         </div>
         <span id="concept" class="concept"></span>
       </div>

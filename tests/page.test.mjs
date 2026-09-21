@@ -22,6 +22,34 @@ test('every local file the page links to exists', () => {
   assert.ok(references.includes('./game.js'));
 });
 
+test('the front end does not carry numbers somebody has to remember to change', async () => {
+  const {levels} = await import('../dist/levels.js');
+  // The header said "4 chapters · 54 missions" for a long time after there were
+  // sixty-eight of them, because it was typed into the markup.
+  assert.match(html, /id="mission-count"/, 'the mission count has no element to be written into');
+  const counts = [...html.matchAll(/\b(\d{2,})\s+missions?\b/gi)].map(match => match[1]);
+  assert.deepEqual(counts, [], `index.html hard-codes a mission count: ${counts.join(', ')}`);
+  assert.match(scripts, /mission-count.*levels\.length/s, 'the count is not derived from the mission list');
+  // The power bar is the other number of this kind, and it is checked below.
+  assert.ok(levels.length > 0);
+});
+
+test('a keyboard reaches the mission without passing every mission', () => {
+  // Sixty-eight mission buttons and four chapter headers sit before the main
+  // content, so without this a keyboard user needs eighty-one tab stops.
+  assert.match(html, /class="skip-link"/, 'there is no skip link');
+  const link = html.match(/<a class="skip-link"[^>]*>/)[0];
+  assert.match(link, /href="#/, 'the skip link points nowhere');
+  // Its target has to be focusable, or following it moves the page and not the
+  // focus, and the next Tab starts from the top again.
+  assert.match(html, /id="mission-title" tabindex="-1"/, 'the skip target cannot take focus');
+  // It is the first thing in the body, or it is not a skip link.
+  const body = html.slice(html.indexOf('<body'));
+  assert.ok(body.indexOf('skip-link') < body.indexOf('<header'), 'the skip link is not the first thing in the body');
+  assert.match(styles, /\.skip-link \{[^}]*position:absolute/, 'the skip link is not taken out of the layout');
+  assert.match(styles, /\.skip-link:focus \{[^}]*top:/, 'the skip link never comes back on focus');
+});
+
 test('every element the interface looks up by id is in the markup', () => {
   const ids = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map(match => match[1]));
   const wanted = new Set([...scripts.matchAll(/\$\('([^']+)'\)/g)].map(match => match[1]));
